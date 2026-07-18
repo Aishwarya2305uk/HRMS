@@ -1,0 +1,135 @@
+/* ============================================================
+   HRMS — "Layered Depth" Design System
+   2020s modern: overlapping elements, elevation shadows,
+   z-index stacking, a 3D paper-stack feel.
+   ============================================================ */
+
+:root {
+  /* --- Surfaces --- */
+  --surface-0: #f5f5f7;   /* app background (deepest layer) */
+  --surface-1: #ffffff;   /* raised cards */
+  --surface-2: #ffffff;   /* floating panels / modals */
+  --surface-sunken: #f5f5f5;
+  --surface-muted: #eef0f4;
+
+  /* --- Lines & text --- */
+  --border: #e0e0e0;
+  --border-strong: #d1d5db;
+  --text: #1f2430;
+  --text-muted: #6b7280;
+  --text-faint: #9ca3af;
+
+  /* --- Brand (indigo / blue) --- */
+  --primary: #6366f1;
+  --primary-600: #4f46e5;
+  --primary-700: #4338ca;
+  --primary-soft: #eef0ff;
+  --accent: #3b82f6;
+  --accent-soft: #eff6ff;
+
+  /* --- Semantic --- */
+  --success: #16a34a;
+  --success-soft: #dcfce7;
+  --warning: #d97706;
+  --warning-soft: #fef3c7;
+  --danger: #dc2626;
+  --danger-soft: #fee2e2;
+
+  /* --- Elevation scale (4 levels) --- */
+  --elev-1:
+    0 1px 2px rgba(16, 24, 40, 0.06),
+    0 1px 3px rgba(16, 24, 40, 0.10);
+  --elev-2:
+    0 2px 4px rgba(16, 24, 40, 0.06),
+    0 4px 8px rgba(16, 24, 40, 0.08);
+  --elev-3:
+    0 6px 12px rgba(16, 24, 40, 0.08),
+    0 12px 24px rgba(16, 24, 40, 0.10);
+  --elev-4:
+    0 12px 24px rgba(16, 24, 40, 0.10),
+    0 24px 48px rgba(16, 24, 40, 0.16);
+
+  /* --- Rings for brand-tinted floating elements --- */
+  --ring-primary: 0 10px 30px rgba(99, 102, 241, 0.35);
+  --ring-accent: 0 10px 30px rgba(59, 130, 246, 0.30);
+
+  /* --- Radii --- */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 18px;
+  --r-xl: 24px;
+  --r-pill: 999px;
+
+  /* --- Type --- */
+  --sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Consolas, monospace;
+
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text);
+  color-scheme: light;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-0);
+  color: var(--text);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--primary-600);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  font-family: inherit;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+/* ---- Reusable elevation utilities ---- */
+.elev-1 { box-shadow: var(--elev-1); }
+.elev-2 { box-shadow: var(--elev-2); }
+.elev-3 { box-shadow: var(--elev-3); }
+.elev-4 { box-shadow: var(--elev-4); }
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

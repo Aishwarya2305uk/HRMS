@@ -1,0 +1,376 @@
+/* ============================================================
+   Auth screens — layered depth login (staff + admin)
+   ============================================================ */
+
+.auth {
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  overflow: hidden;
+  background: var(--surface-0);
+}
+
+/* ---------- Ambient depth background ---------- */
+.auth__bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.auth__blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.55;
+}
+.auth__blob--1 {
+  width: 420px;
+  height: 420px;
+  top: -120px;
+  left: -80px;
+  background: radial-gradient(circle at 30% 30%, #6366f1, transparent 70%);
+}
+.auth__blob--2 {
+  width: 520px;
+  height: 520px;
+  bottom: -160px;
+  right: -120px;
+  background: radial-gradient(circle at 60% 40%, #3b82f6, transparent 70%);
+}
+.auth__blob--3 {
+  width: 300px;
+  height: 300px;
+  top: 40%;
+  left: 45%;
+  background: radial-gradient(circle at 50% 50%, #a5b4fc, transparent 70%);
+  opacity: 0.35;
+}
+
+/* ---------- Left brand / marketing panel ---------- */
+.auth__brand {
+  position: relative;
+  z-index: 1;
+  padding: 56px 64px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: #fff;
+  background: linear-gradient(150deg, #4338ca 0%, #4f46e5 45%, #3b82f6 100%);
+  overflow: hidden;
+}
+.auth__brand::after {
+  /* faint stacked-card motif in the corner */
+  content: '';
+  position: absolute;
+  right: -80px;
+  bottom: -80px;
+  width: 320px;
+  height: 320px;
+  border-radius: var(--r-xl);
+  background: rgba(255, 255, 255, 0.06);
+  transform: rotate(18deg);
+  box-shadow:
+    -40px -40px 0 rgba(255, 255, 255, 0.05),
+    -80px -80px 0 rgba(255, 255, 255, 0.04);
+}
+
+.brand__logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
+}
+.brand__logo .mark {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(6px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+.brand__headline {
+  position: relative;
+  z-index: 1;
+  max-width: 26ch;
+}
+.brand__headline h1 {
+  color: #fff;
+  font-size: 2.6rem;
+  line-height: 1.1;
+  margin-bottom: 16px;
+}
+.brand__headline p {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+
+/* floating stat cards — the signature overlapping/elevation motif */
+.brand__cards {
+  position: relative;
+  z-index: 1;
+  height: 150px;
+}
+.float-card {
+  position: absolute;
+  padding: 16px 18px;
+  border-radius: var(--r-lg);
+  background: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(12px);
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.float-card .fc-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.8;
+}
+.float-card .fc-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-top: 2px;
+}
+.float-card--a { left: 0; top: 10px; z-index: 3; }
+.float-card--b { left: 130px; top: 52px; z-index: 2; }
+.float-card--c { left: 268px; top: 4px; z-index: 1; opacity: 0.92; }
+
+/* ---------- Right form panel ---------- */
+.auth__panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 40px 24px;
+}
+
+.auth-card {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 400px;
+  padding: 36px 34px 30px;
+  border-radius: var(--r-xl);
+  background: var(--surface-2);
+  box-shadow: var(--elev-4);
+  border: 1px solid var(--border);
+}
+/* stacked "paper" behind the card to reinforce depth */
+.auth-card::before,
+.auth-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-xl);
+  background: var(--surface-1);
+  z-index: -1;
+}
+.auth-card::before {
+  transform: translate(10px, 12px) scale(0.985);
+  box-shadow: var(--elev-2);
+  opacity: 0.9;
+}
+.auth-card::after {
+  transform: translate(20px, 24px) scale(0.97);
+  box-shadow: var(--elev-1);
+  opacity: 0.7;
+}
+
+.auth-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  background: var(--primary-soft);
+  color: var(--primary-700);
+  margin-bottom: 18px;
+}
+.auth-card__badge.is-admin {
+  background: #111827;
+  color: #fff;
+}
+
+.auth-card h2 {
+  font-size: 1.6rem;
+  margin-bottom: 6px;
+}
+.auth-card__sub {
+  color: var(--text-muted);
+  font-size: 0.94rem;
+  margin-bottom: 24px;
+}
+
+.field {
+  margin-bottom: 16px;
+}
+.field label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 7px;
+}
+.field .control {
+  position: relative;
+}
+.field input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--text);
+  box-shadow: inset 0 1px 2px rgba(16, 24, 40, 0.04);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field input::placeholder {
+  color: var(--text-faint);
+}
+.field input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow:
+    inset 0 1px 2px rgba(16, 24, 40, 0.04),
+    0 0 0 4px var(--primary-soft);
+}
+.field .toggle-pw {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 6px;
+}
+
+.auth-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 0.86rem;
+  font-weight: 500;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  margin-bottom: 16px;
+}
+
+.auth-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px 0 22px;
+  font-size: 0.85rem;
+}
+.auth-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 13px 16px;
+  border: none;
+  border-radius: var(--r-md);
+  background: linear-gradient(180deg, var(--primary) 0%, var(--primary-600) 100%);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 650;
+  cursor: pointer;
+  box-shadow: var(--ring-primary);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s;
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 34px rgba(99, 102, 241, 0.42);
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+.btn-primary:disabled {
+  filter: grayscale(0.3) opacity(0.7);
+  cursor: default;
+  transform: none;
+}
+.btn-primary.is-admin {
+  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+  box-shadow: 0 10px 30px rgba(17, 24, 39, 0.35);
+}
+.btn-primary.is-admin:hover {
+  box-shadow: 0 14px 34px rgba(17, 24, 39, 0.45);
+}
+
+.auth-foot {
+  margin-top: 22px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* demo credential helper */
+.demo-hint {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  border: 1px dashed var(--border-strong);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.demo-hint b {
+  color: var(--text);
+}
+.demo-hint button {
+  border: none;
+  background: transparent;
+  color: var(--primary-600);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.78rem;
+}
+
+/* ---------- Admin portal variant ---------- */
+.auth__brand--admin {
+  background: linear-gradient(155deg, #0f172a 0%, #1e293b 50%, #312e81 100%);
+}
+.auth--admin .auth__blob--1 {
+  background: radial-gradient(circle at 30% 30%, #818cf8, transparent 70%);
+}
+.auth--admin .auth__blob--2 {
+  background: radial-gradient(circle at 60% 40%, #1e293b, transparent 70%);
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+  .auth {
+    grid-template-columns: 1fr;
+  }
+  .auth__brand {
+    display: none;
+  }
+  .auth__panel {
+    padding: 32px 20px;
+  }
+}
