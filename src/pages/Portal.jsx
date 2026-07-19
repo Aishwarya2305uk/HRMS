@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
+import { useAsyncData } from '../lib/useAsyncData'
 import Icon from '../components/Icon'
 import { haptic, tactile } from '../lib/haptics'
 import { attendance, leaves as leavesApi, employees as employeesApi } from '../lib/hrms'
@@ -16,6 +18,7 @@ import OrgTree from '../components/OrgTree'
 import LeaveCalendar from '../components/LeaveCalendar'
 import PeopleAdmin from '../components/PeopleAdmin'
 import AllLeaves from '../components/AllLeaves'
+import { SkeletonCard, ErrorState, InlineError } from '../components/States'
 
 import './EmployeeDashboard.css'
 import './Portal.css'
@@ -41,52 +44,67 @@ function navFor(role) {
 
 const thisMonthKey = () => new Date().toISOString().slice(0, 7)
 
+/** Stable identity for "no data yet" so memos don't recompute every render. */
+const EMPTY = []
+
+/** Renders loading / error / content for a lazily-loaded section. */
+function Section({ query, children, skeletonRows = 4 }) {
+  if (query.loading && query.data === null) return <SkeletonCard rows={skeletonRows} />
+  if (query.error && query.data === null) {
+    return <ErrorState message={query.error.message} onRetry={query.reload} retrying={query.loading} />
+  }
+  return children
+}
+
 export default function Portal() {
-  const { user, role, logout } = useAuth()
+  const { user, role, logout, refreshUser } = useAuth()
+  const toast = useToast()
   const navigate = useNavigate()
   const [active, setActive] = useState('dashboard')
   const [showApply, setShowApply] = useState(false)
 
-  // Shared data.
-  const [types, setTypes] = useState([])
-  const [myLeaves, setMyLeaves] = useState([])
-  const [history, setHistory] = useState([])
-  const [pending, setPending] = useState([])
-  // Lazily-loaded per section.
-  const [orgRoots, setOrgRoots] = useState(null)
-  const [people, setPeople] = useState(null)
-  const [allLeaves, setAllLeaves] = useState(null)
-
   const isManager = role === 'manager' || role === 'admin'
+
+  // ---- Shared data (loaded up front, with visible failure states) ----
+  const configQ = useAsyncData(useCallback(() => leavesApi.config(), []))
+  const myLeavesQ = useAsyncData(useCallback(() => leavesApi.mine(), []))
+  const historyQ = useAsyncData(useCallback(() => attendance.history(), []))
+  const pendingQ = useAsyncData(useCallback(() => leavesApi.pending(), []), {
+    enabled: isManager,
+  })
+
+  // ---- Lazily loaded per section ----
+  const orgQ = useAsyncData(useCallback(() => employeesApi.orgTree(), []), {
+    enabled: active === 'org',
+  })
+  const peopleQ = useAsyncData(useCallback(() => employeesApi.list(), []), {
+    enabled: active === 'people',
+  })
+  const allLeavesQ = useAsyncData(useCallback(() => leavesApi.all(), []), {
+    enabled: active === 'allleaves',
+  })
+
+  const types = configQ.data?.types ?? EMPTY
+  const myLeaves = myLeavesQ.data ?? EMPTY
+  const history = historyQ.data ?? EMPTY
+  const pending = pendingQ.data ?? EMPTY
+
   const typeLabels = useMemo(
     () => Object.fromEntries(types.map((t) => [t.key, t.label])),
     [types],
   )
 
-  // Initial load: config + the current user's own leaves, attendance & queue.
+  // If the leave types can't load, the apply form can't be trusted — tell the
+  // user once rather than letting them open a broken form.
   useEffect(() => {
-    leavesApi.config().then((c) => setTypes(c.types)).catch(() => {})
-    leavesApi.mine().then(setMyLeaves).catch(() => {})
-    attendance.history().then(setHistory).catch(() => {})
-    if (isManager) leavesApi.pending().then(setPending).catch(() => {})
-  }, [isManager])
+    if (configQ.error) {
+      toast.error('Leave types couldn’t load, so applying is unavailable right now.')
+    }
+  }, [configQ.error, toast])
 
-  // Lazy loaders — fetch a section's data the first time it's opened.
-  useEffect(() => {
-    if (active === 'org' && orgRoots === null) {
-      employeesApi.orgTree().then((r) => setOrgRoots(r.roots)).catch(() => setOrgRoots([]))
-    }
-    if (active === 'people' && people === null) {
-      employeesApi.list().then(setPeople).catch(() => setPeople([]))
-    }
-    if (active === 'allleaves' && allLeaves === null) {
-      leavesApi.all().then(setAllLeaves).catch(() => setAllLeaves([]))
-    }
-  }, [active, orgRoots, people, allLeaves])
-
-  const refreshHistory = useCallback(() => {
-    attendance.history().then(setHistory).catch(() => {})
-  }, [])
+  const refreshAfterAttendance = useCallback(() => {
+    historyQ.reload()
+  }, [historyQ])
 
   function handleLogout() {
     haptic('medium')
@@ -95,14 +113,24 @@ export default function Portal() {
   }
 
   function onLeaveCreated(leave) {
-    setMyLeaves((prev) => [leave, ...prev])
+    myLeavesQ.setData((prev) => [leave, ...(prev ?? [])])
+    toast.success('Leave request submitted — your manager has been notified.')
   }
 
-  async function onApprovalDecided(id) {
-    setPending((prev) => prev.filter((l) => l.id !== id))
-    // A decision may change balances / all-leaves; refresh what's loaded.
-    if (allLeaves !== null) leavesApi.all().then(setAllLeaves).catch(() => {})
-  }
+  const onApprovalDecided = useCallback(
+    (id, outcome, employeeName) => {
+      pendingQ.setData((prev) => (prev ?? []).filter((l) => l.id !== id))
+      toast.success(
+        outcome === 'approved'
+          ? `Approved ${employeeName}'s leave. Their balance has been updated.`
+          : `Rejected ${employeeName}'s leave.`,
+      )
+      // A decision changes company-wide data; refresh anything already on screen.
+      if (allLeavesQ.data !== null) allLeavesQ.reload()
+      refreshUser()
+    },
+    [pendingQ, allLeavesQ, toast, refreshUser],
+  )
 
   // ---- Stats for the dashboard header ----
   const stats = useMemo(() => {
@@ -146,18 +174,21 @@ export default function Portal() {
           <span>Trula</span>
         </div>
 
-        <nav className="emp__nav">
+        <nav className="emp__nav" aria-label="Main">
           {nav.map((item) => (
             <button
               key={item.key}
               className={`nav-item${active === item.key ? ' is-active' : ''}`}
+              aria-current={active === item.key ? 'page' : undefined}
               onClick={() => { haptic('light'); setActive(item.key) }}
               {...tactile('light')}
             >
               <Icon name={item.icon} size={19} />
               <span>{item.label}</span>
               {item.key === 'approvals' && pending.length > 0 && (
-                <span className="nav-badge">{pending.length}</span>
+                <span className="nav-badge" aria-label={`${pending.length} pending`}>
+                  {pending.length}
+                </span>
               )}
             </button>
           ))}
@@ -211,48 +242,104 @@ export default function Portal() {
                 ))}
               </section>
 
+              {/* A failed history load shouldn't silently zero the stats above. */}
+              {historyQ.error && (
+                <InlineError onRetry={historyQ.reload}>
+                  Attendance figures may be out of date — {historyQ.error.message}
+                </InlineError>
+              )}
+
               <div className="emp__grid">
-                <AttendanceCard onChange={refreshHistory} />
-                <LeaveBalanceCard user={user} types={types} onApply={() => setShowApply(true)} />
-                <RecentLeaves leaves={myLeaves} typeLabels={typeLabels} limit={5} />
+                <AttendanceCard onChange={refreshAfterAttendance} />
+                <LeaveBalanceCard
+                  user={user}
+                  types={types}
+                  loading={configQ.loading}
+                  onApply={() => setShowApply(true)}
+                  canApply={types.length > 0}
+                />
+                <RecentLeaves
+                  leaves={myLeaves}
+                  typeLabels={typeLabels}
+                  limit={5}
+                  loading={myLeavesQ.loading && myLeavesQ.data === null}
+                  error={myLeavesQ.error}
+                  onRetry={myLeavesQ.reload}
+                  onApply={() => setShowApply(true)}
+                />
               </div>
 
               {isManager && (
-                <Approvals pending={pending} typeLabels={typeLabels} onDecided={onApprovalDecided} />
+                <Approvals
+                  pending={pending}
+                  typeLabels={typeLabels}
+                  onDecided={onApprovalDecided}
+                  loading={pendingQ.loading && pendingQ.data === null}
+                  error={pendingQ.error}
+                  onRetry={pendingQ.reload}
+                />
               )}
             </>
           )}
 
           {active === 'attendance' && (
             <div className="single-col">
-              <AttendanceCard onChange={refreshHistory} />
-              <AttendanceHistory rows={history} />
+              <AttendanceCard onChange={refreshAfterAttendance} />
+              <Section query={historyQ} skeletonRows={5}>
+                <AttendanceHistory rows={history} />
+              </Section>
             </div>
           )}
 
           {active === 'leaves' && (
             <div className="two-col">
-              <LeaveBalanceCard user={user} types={types} onApply={() => setShowApply(true)} />
-              <RecentLeaves leaves={myLeaves} typeLabels={typeLabels} />
+              <LeaveBalanceCard
+                user={user}
+                types={types}
+                loading={configQ.loading}
+                onApply={() => setShowApply(true)}
+                canApply={types.length > 0}
+              />
+              <RecentLeaves
+                leaves={myLeaves}
+                typeLabels={typeLabels}
+                loading={myLeavesQ.loading && myLeavesQ.data === null}
+                error={myLeavesQ.error}
+                onRetry={myLeavesQ.reload}
+                onApply={() => setShowApply(true)}
+              />
             </div>
           )}
 
           {active === 'approvals' && isManager && (
-            <Approvals pending={pending} typeLabels={typeLabels} onDecided={onApprovalDecided} />
+            <Approvals
+              pending={pending}
+              typeLabels={typeLabels}
+              onDecided={onApprovalDecided}
+              loading={pendingQ.loading && pendingQ.data === null}
+              error={pendingQ.error}
+              onRetry={pendingQ.reload}
+            />
           )}
 
           {active === 'org' && (
-            orgRoots === null ? <Loading /> : <OrgTree roots={orgRoots} currentUserId={user?.id} />
+            <Section query={orgQ} skeletonRows={5}>
+              <OrgTree roots={orgQ.data?.roots ?? []} currentUserId={user?.id} />
+            </Section>
           )}
 
           {active === 'calendar' && <LeaveCalendar />}
 
           {active === 'people' && (
-            people === null ? <Loading /> : <PeopleAdmin people={people} setPeople={setPeople} />
+            <Section query={peopleQ} skeletonRows={5}>
+              <PeopleAdmin people={peopleQ.data ?? []} setPeople={peopleQ.setData} />
+            </Section>
           )}
 
           {active === 'allleaves' && (
-            allLeaves === null ? <Loading /> : <AllLeaves leaves={allLeaves} typeLabels={typeLabels} />
+            <Section query={allLeavesQ} skeletonRows={5}>
+              <AllLeaves leaves={allLeavesQ.data ?? []} typeLabels={typeLabels} />
+            </Section>
           )}
         </div>
       </div>
@@ -267,8 +354,4 @@ export default function Portal() {
       )}
     </div>
   )
-}
-
-function Loading() {
-  return <div className="loading-block">Loading…</div>
 }

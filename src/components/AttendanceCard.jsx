@@ -3,6 +3,8 @@ import Icon from './Icon'
 import { haptic } from '../lib/haptics'
 import { formatElapsed, formatHours, formatTime } from '../lib/format'
 import { attendance } from '../lib/hrms'
+import { useToast } from '../context/ToastContext'
+import { InlineError } from './States'
 
 /**
  * Zoho-style check-in timer, backed by the server event log.
@@ -15,10 +17,12 @@ import { attendance } from '../lib/hrms'
  * @param {(session:object)=>void} [props.onChange]  notified after each action
  */
 export default function AttendanceCard({ onChange }) {
+  const toast = useToast()
   const [session, setSession] = useState(null)
   const [now, setNow] = useState(Date.now())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [loadFailed, setLoadFailed] = useState(false)
   // Wall-clock time of the last server sync + the workedSeconds at that moment.
   const sync = useRef({ at: Date.now(), base: 0, running: false })
 
@@ -37,12 +41,34 @@ export default function AttendanceCard({ onChange }) {
   )
 
   // Initial load.
+  const load = useCallback(() => {
+    setError('')
+    return attendance
+      .today()
+      .then((live) => {
+        setLoadFailed(false)
+        apply(live)
+      })
+      .catch((err) => {
+        setLoadFailed(true)
+        setError(err.message)
+      })
+  }, [apply])
+
   useEffect(() => {
     let active = true
     attendance
       .today()
-      .then((live) => active && apply(live))
-      .catch(() => active && setError('Could not load attendance.'))
+      .then((live) => {
+        if (!active) return
+        setLoadFailed(false)
+        apply(live)
+      })
+      .catch((err) => {
+        if (!active) return
+        setLoadFailed(true)
+        setError(err.message)
+      })
     return () => {
       active = false
     }
@@ -55,6 +81,15 @@ export default function AttendanceCard({ onChange }) {
     return () => clearInterval(id)
   }, [session])
 
+  /** Confirmation copy per action — states the outcome, not just "success". */
+  const CONFIRM = {
+    'check-in': () => 'Checked in. Your day has started.',
+    pause: () => 'Paused — this time won’t be counted.',
+    resume: () => 'Back on the clock.',
+    'check-out': (live) =>
+      `Checked out. You worked ${formatHours(live.workedSeconds)} today.`,
+  }
+
   async function act(action, feel = 'medium') {
     if (busy) return
     setBusy(true)
@@ -63,8 +98,12 @@ export default function AttendanceCard({ onChange }) {
     try {
       const live = await attendance.action(action)
       apply(live)
+      toast.success(CONFIRM[action]?.(live) ?? 'Attendance updated.')
     } catch (err) {
-      setError(err.message || 'Something went wrong.')
+      // Shown inline (next to the control that failed) AND announced, because
+      // an attendance action failing silently would cost the user real hours.
+      setError(err.message)
+      toast.error(err.message)
     } finally {
       setBusy(false)
     }
@@ -117,12 +156,7 @@ export default function AttendanceCard({ onChange }) {
         </p>
       )}
 
-      {error && (
-        <div className="auth-error" role="alert" style={{ marginBottom: 12 }}>
-          <span aria-hidden="true">⚠️</span>
-          {error}
-        </div>
-      )}
+      {error && <InlineError onRetry={loadFailed ? load : undefined}>{error}</InlineError>}
 
       {state === 'out' && (
         <button className="btn-tactile primary block" onClick={() => act('check-in', 'success')} disabled={busy}>

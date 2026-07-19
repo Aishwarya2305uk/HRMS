@@ -37,10 +37,27 @@ export function createApp() {
   app.use('/api/employees', employeeRoutes)
   app.use('/api/cron', cronRoutes)
 
-  // Catch-all error handler so route bugs return JSON, not an HTML stack trace.
-  app.use((err, _req, res, _next) => {
-    console.error('[api] unhandled error:', err)
-    res.status(err.status || 500).json({ error: err.message || 'Something went wrong.' })
+  // Unknown /api route -> JSON 404. The method/path are logged server-side for
+  // debugging but NOT reflected back in the response: echoing raw request input
+  // is needless attack surface, and the client can't act on it anyway.
+  app.use('/api', (req, res) => {
+    console.warn(`[api] 404 ${req.method} ${req.originalUrl}`)
+    res.status(404).json({ error: 'That endpoint does not exist.' })
+  })
+
+  // Catch-all error handler. Full details go to the server log; the client only
+  // ever gets a generic line, so DB/stack/internal messages can never leak
+  // (OWASP: improper error handling / information disclosure).
+  app.use((err, req, res, _next) => {
+    const status = err.status || err.statusCode || 500
+    console.error(`[api] ${req.method} ${req.originalUrl} ->`, err)
+    // 4xx raised deliberately by our own routes carry user-safe copy; anything
+    // else (including unexpected 500s) is replaced with a generic message.
+    const safe =
+      status < 500 && err.expose !== false && err.message
+        ? err.message
+        : 'Something went wrong. Please try again.'
+    res.status(status).json({ error: safe })
   })
 
   return app

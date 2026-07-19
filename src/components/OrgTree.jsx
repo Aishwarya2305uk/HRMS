@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { haptic } from '../lib/haptics'
+import { EmptyState } from './States'
 
 const ROLE_TINT = { admin: 'indigo', manager: 'blue', employee: 'green' }
 
@@ -58,7 +59,11 @@ export default function OrgTree({ roots, currentUserId }) {
         <h2>Organization</h2>
       </div>
       {(!roots || roots.length === 0) ? (
-        <p className="empty">No people to show yet.</p>
+        <EmptyState
+          icon="tree"
+          title="No reporting structure yet"
+          message="The tree builds itself as an admin adds people and assigns their managers."
+        />
       ) : (
         <ul className="org-tree">
           {roots.map((r) => (

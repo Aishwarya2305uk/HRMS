@@ -13,7 +13,7 @@ import { useAuth } from '../context/AuthContext'
  * @param {{email:string, password:string}} props.demo  quick-fill credentials
  */
 export default function LoginForm({ portal, title, subtitle, badge, demo }) {
-  const { login } = useAuth()
+  const { login, notice, clearNotice } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -30,6 +30,7 @@ export default function LoginForm({ portal, title, subtitle, badge, demo }) {
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+    clearNotice() // they're acting on it now — the explanation has done its job
     setSubmitting(true)
 
     // Read straight from the form fields so browser password-manager autofill
@@ -68,6 +69,15 @@ export default function LoginForm({ portal, title, subtitle, badge, demo }) {
 
       <h2>{title}</h2>
       <p className="auth-card__sub">{subtitle}</p>
+
+      {/* Explains why they were bounced back here (expired session), so the
+          login screen doesn't feel like it appeared at random. */}
+      {notice && !error && (
+        <div className="auth-notice" role="status">
+          <span aria-hidden="true">🔒</span>
+          {notice}
+        </div>
+      )}
 
       {error && (
         <div className="auth-error" role="alert">

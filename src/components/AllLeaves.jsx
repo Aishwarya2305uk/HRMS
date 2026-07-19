@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { formatRange, formatDate } from '../lib/format'
+import { EmptyState } from './States'
 
 /**
  * Admin company-wide leave view: every application with employee, dates and
@@ -37,7 +38,16 @@ export default function AllLeaves({ leaves, typeLabels }) {
       </div>
 
       {rows.length === 0 ? (
-        <p className="empty">No leaves in this view.</p>
+        <EmptyState
+          icon="calendarDays"
+          title={filter === 'all' ? 'No leave requests yet' : `No ${filter} requests`}
+          message={
+            filter === 'all'
+              ? 'Company-wide leave applications will appear here.'
+              : 'Try a different filter to see other requests.'
+          }
+          action={filter !== 'all' ? { label: 'Show all', onClick: () => setFilter('all') } : undefined}
+        />
       ) : (
         <div className="table-wrap">
           <table className="table">

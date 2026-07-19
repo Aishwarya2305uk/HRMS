@@ -1,4 +1,5 @@
 import { formatDate, formatTime, formatHours } from '../lib/format'
+import { EmptyState } from './States'
 
 /**
  * The user's own attendance history table (server-computed).
@@ -13,7 +14,11 @@ export default function AttendanceHistory({ rows }) {
       </div>
 
       {rows.length === 0 ? (
-        <p className="empty">No attendance recorded yet. Check in from your dashboard.</p>
+        <EmptyState
+          icon="clock"
+          title="No attendance yet"
+          message="Once you check in, each day appears here with your hours and status."
+        />
       ) : (
         <div className="table-wrap">
           <table className="table">

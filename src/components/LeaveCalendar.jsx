@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { haptic } from '../lib/haptics'
 import { leaves as leavesApi } from '../lib/hrms'
+import { InlineError } from './States'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -25,18 +26,34 @@ export default function LeaveCalendar() {
   const [month, setMonth] = useState(() => monthKey(new Date()))
   const [days, setDays] = useState({})
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
-  useEffect(() => {
-    let active = true
+  const load = useCallback(() => {
+    let cancelled = false
     setLoading(true)
+    setError(null)
     leavesApi
       .calendar(month)
-      .then((res) => active && setDays(res.days || {}))
-      .finally(() => active && setLoading(false))
+      .then((res) => {
+        if (!cancelled) setDays(res.days || {})
+      })
+      .catch((err) => {
+        // Without this the month would silently render as "nobody on leave",
+        // which is worse than saying we couldn't load it.
+        if (!cancelled) {
+          setError(err)
+          setDays({})
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
     return () => {
-      active = false
+      cancelled = true
     }
   }, [month])
+
+  useEffect(() => load(), [load])
 
   function shift(delta) {
     haptic('light')
@@ -66,7 +83,9 @@ export default function LeaveCalendar() {
         </div>
       </div>
 
-      <div className={`cal-grid${loading ? ' is-loading' : ''}`}>
+      {error && <InlineError onRetry={load}>{error.message}</InlineError>}
+
+      <div className={`cal-grid${loading ? ' is-loading' : ''}`} aria-busy={loading}>
         {WEEKDAYS.map((w) => (
           <div key={w} className="cal-weekday">{w}</div>
         ))}
