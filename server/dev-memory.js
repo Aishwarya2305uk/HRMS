@@ -12,7 +12,11 @@ import { MongoMemoryServer } from 'mongodb-memory-server'
 import { seedDemoUsers } from './seed.js'
 import { createApp } from './app.js'
 
-const PORT = Number(process.env.PORT) || 4000
+// The Vite dev proxy targets port 4000 (see vite.config.js), so the in-memory
+// API binds there by default. We read API_PORT (not PORT) so that a PORT env
+// injected for the web server — e.g. by tooling that sets PORT=5173 — never
+// accidentally steals the API onto the web port and breaks the proxy.
+const PORT = Number(process.env.API_PORT) || 4000
 
 async function start() {
   const mem = await MongoMemoryServer.create()
