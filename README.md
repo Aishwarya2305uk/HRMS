@@ -53,6 +53,44 @@ npm run dev:all         # API + Vite against the real DB
 `node server/jobs/finalize.js` runs the end-of-day attendance finalizer (also
 applied lazily on read, so it's optional on serverless).
 
+## Deploying to Vercel (frontend + API together — no separate backend)
+
+The whole app deploys as one Vercel project: the React build is served
+statically and the Express API runs as a single serverless function
+(`api/[...path].js` catches every `/api/*` request). No other backend to host.
+
+1. **Push to GitHub and import the repo in Vercel.** The build settings come
+   from [vercel.json](vercel.json) (build → `dist`, API function, SPA rewrites).
+2. **Add environment variables** (Project → Settings → Environment Variables):
+
+   | Variable         | Required | Notes                                              |
+   | ---------------- | -------- | -------------------------------------------------- |
+   | `MONGODB_URL`    | ✅       | MongoDB Atlas connection string                    |
+   | `JWT_SECRET`     | ✅       | long random string                                 |
+   | `JWT_EXPIRES_IN` | –        | defaults to `7d`                                   |
+   | `CRON_SECRET`    | –        | if set, protects the daily finalizer cron endpoint |
+
+   In Atlas, allow Vercel's egress by adding `0.0.0.0/0` to the IP access list
+   (or Vercel's ranges).
+3. **Seed the first admin once.** Serverless can't run a seed step itself, so
+   from your machine, pointed at the production DB:
+
+   ```bash
+   MONGODB_URL="<your-atlas-url>" npm run seed
+   ```
+
+   Then sign in at `/admin` (admin@trula.com / admin123), **change the demo
+   passwords**, and add real people from the admin console.
+
+**End-of-day finalizer on Vercel:** [vercel.json](vercel.json) registers a daily
+cron (`00:05 UTC`) hitting `/api/cron/finalize`. Attendance is *also* finalized
+lazily whenever data is read, so the app stays correct even between cron runs.
+
+> The API is designed to run both ways from the same code: a long-running
+> Express server locally and a serverless function on Vercel. Body parsing
+> adapts automatically (see `smartJson` in `server/app.js`) so POSTs work in
+> both environments.
+
 ## Layout
 
 ```
