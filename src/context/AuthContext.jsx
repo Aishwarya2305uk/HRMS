@@ -60,6 +60,17 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
+  /** Re-fetch the current user (e.g. after a leave balance changes). */
+  async function refreshUser() {
+    try {
+      const { user } = await apiFetch('/auth/me')
+      setUser(user)
+      return user
+    } catch {
+      return null
+    }
+  }
+
   const value = useMemo(
     () => ({
       user,
@@ -68,6 +79,7 @@ export function AuthProvider({ children }) {
       role: user?.role ?? null,
       login,
       logout,
+      refreshUser,
     }),
     [user, loading],
   )

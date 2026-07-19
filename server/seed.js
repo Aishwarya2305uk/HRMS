@@ -9,6 +9,7 @@ import mongoose from 'mongoose'
 import { pathToFileURL } from 'node:url'
 import { connectDB } from './db.js'
 import { User } from './models/User.js'
+import { defaultLeaveBalances } from './config.js'
 
 const DEMO_USERS = [
   {
@@ -19,7 +20,6 @@ const DEMO_USERS = [
     designation: 'HR Administrator',
     department: 'People Ops',
     joiningDate: '2022-01-10',
-    leaveBalance: 18,
   },
   {
     name: 'Rahul Manager',
@@ -29,7 +29,6 @@ const DEMO_USERS = [
     designation: 'Engineering Manager',
     department: 'Engineering',
     joiningDate: '2022-03-01',
-    leaveBalance: 15,
   },
   {
     name: 'Aisha Employee',
@@ -39,7 +38,15 @@ const DEMO_USERS = [
     designation: 'Software Engineer',
     department: 'Engineering',
     joiningDate: '2023-06-15',
-    leaveBalance: 12,
+  },
+  {
+    name: 'Vikram Rao',
+    email: 'vikram@trula.com',
+    password: 'employee123',
+    role: 'employee',
+    designation: 'QA Engineer',
+    department: 'Engineering',
+    joiningDate: '2023-09-01',
   },
 ]
 
@@ -54,7 +61,7 @@ export async function seedDemoUsers() {
     doc.designation = u.designation
     doc.department = u.department
     doc.joiningDate = new Date(u.joiningDate)
-    doc.leaveBalance = u.leaveBalance
+    if (!doc.leaveBalances) doc.leaveBalances = defaultLeaveBalances()
     await doc.setPassword(u.password)
     await doc.save()
     byEmail[u.email] = doc
@@ -63,9 +70,11 @@ export async function seedDemoUsers() {
 
   byEmail['manager@trula.com'].managerId = byEmail['admin@trula.com']._id
   byEmail['employee@trula.com'].managerId = byEmail['manager@trula.com']._id
+  byEmail['vikram@trula.com'].managerId = byEmail['manager@trula.com']._id
   await byEmail['manager@trula.com'].save()
   await byEmail['employee@trula.com'].save()
-  console.log('[seed] linked reporting tree: employee → manager → admin')
+  await byEmail['vikram@trula.com'].save()
+  console.log('[seed] linked reporting tree: 2 employees → manager → admin')
   return byEmail
 }
 
