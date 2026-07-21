@@ -153,6 +153,11 @@ export default function Portal() {
     toast.success('Leave request submitted — your manager has been notified.')
   }
 
+  function onLeaveCancelled(id) {
+    myLeavesQ.setData((prev) => (prev ?? []).filter((l) => l.id !== id))
+    toast.success('Leave request cancelled.')
+  }
+
   const onApprovalDecided = useCallback(
     (id, outcome, employeeName) => {
       pendingQ.setData((prev) => (prev ?? []).filter((l) => l.id !== id))
@@ -287,6 +292,7 @@ export default function Portal() {
                   error={myLeavesQ.error}
                   onRetry={myLeavesQ.reload}
                   onApply={() => setShowApply(true)}
+                  onCancel={onLeaveCancelled}
                 />
               </div>
 
@@ -313,7 +319,7 @@ export default function Portal() {
           )}
 
           {active === 'leaves' && (
-            <div className="two-col">
+            <div className="leaves-grid">
               <LeaveBalanceCard
                 user={user}
                 types={types}
@@ -328,6 +334,7 @@ export default function Portal() {
                 error={myLeavesQ.error}
                 onRetry={myLeavesQ.reload}
                 onApply={() => setShowApply(true)}
+                onCancel={onLeaveCancelled}
               />
             </div>
           )}

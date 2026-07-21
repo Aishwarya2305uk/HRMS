@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import mongoose from 'mongoose'
 import { requireAuth } from '../middleware/auth.js'
 import { User } from '../models/User.js'
 import { Leave } from '../models/Leave.js'
@@ -65,6 +66,31 @@ router.get('/mine', async (req, res, next) => {
   try {
     const leaves = await Leave.find({ userId: req.user._id }).sort({ createdAt: -1 })
     res.json(leaves.map((l) => l.toJSONSafe()))
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * DELETE /api/leaves/:id — cancel one of the CURRENT USER's own PENDING
+ * leave requests. Balance is never touched: it's only deducted on approval
+ * (see /:id/approve below), so a pending request cancels for free.
+ */
+router.delete('/:id', async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid leave id.' })
+    }
+    const leave = await Leave.findById(req.params.id)
+    if (!leave) return res.status(404).json({ error: 'Leave request not found.' })
+    if (leave.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'You can only cancel your own leave requests.' })
+    }
+    if (leave.status !== 'pending') {
+      return res.status(409).json({ error: 'Only pending leave requests can be cancelled.' })
+    }
+    await leave.deleteOne()
+    res.json({ id: req.params.id })
   } catch (err) {
     next(err)
   }

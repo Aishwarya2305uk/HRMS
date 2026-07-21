@@ -15,6 +15,7 @@ export const leaves = {
   apply: (body) => apiFetch('/leaves', { method: 'POST', body }),
   mine: () => apiFetch('/leaves/mine'),
   pending: () => apiFetch('/leaves/pending'),
+  cancel: (id) => apiFetch(`/leaves/${id}`, { method: 'DELETE' }),
   approve: (id) => apiFetch(`/leaves/${id}/approve`, { method: 'POST' }),
   reject: (id, comment) => apiFetch(`/leaves/${id}/reject`, { method: 'POST', body: { comment } }),
   all: () => apiFetch('/leaves/all'),

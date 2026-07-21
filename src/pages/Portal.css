@@ -14,6 +14,18 @@
 @media (max-width: 1040px) {
   .two-col { grid-template-columns: 1fr; }
 }
+/* Leaves tab: balance card stays a comfortable fixed-ish width so the request
+   list — the primary content, and the one that grows — gets the rest of the
+   space instead of being squeezed into a near-even split. */
+.leaves-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 340px) 1fr;
+  gap: 22px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .leaves-grid { grid-template-columns: 1fr; }
+}
 .loading-block, .empty {
   color: var(--text-muted);
   font-size: 0.92rem;

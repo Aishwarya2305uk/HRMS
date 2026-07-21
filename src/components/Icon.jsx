@@ -16,6 +16,7 @@ const PATHS = {
   search: <><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></>,
   chevronDown: <path d="m6 9 6 6 6-6" />,
   chevronsLeft: <><path d="M11 17l-5-5 5-5" /><path d="M18 17l-5-5 5-5" /></>,
+  x: <path d="M18 6 6 18M6 6l12 12" />,
 }
 
 export default function Icon({ name, size = 20, strokeWidth = 1.9, ...rest }) {

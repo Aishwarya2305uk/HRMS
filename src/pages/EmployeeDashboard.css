@@ -564,9 +564,9 @@
     'requests requests';
   gap: 22px;
 }
-.attendance { grid-area: attendance; }
-.leave-balance { grid-area: leave; }
-.requests { grid-area: requests; }
+.emp__grid .attendance { grid-area: attendance; }
+.emp__grid .leave-balance { grid-area: leave; }
+.emp__grid .requests { grid-area: requests; }
 
 .attendance__head {
   display: flex;
@@ -714,11 +714,19 @@
 .lg.green { background: var(--success); }
 
 /* ---------------- Requests ---------------- */
-.req-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.req-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  align-items: start;
+}
 .req {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 8px;
   padding: 13px 15px;
   border-radius: var(--r-md);
   background: var(--surface-sunken);
@@ -727,15 +735,55 @@
   transition: transform 0.2s var(--spring), box-shadow 0.2s, background 0.2s;
 }
 .req:hover {
-  transform: translateX(4px) scale(1.005);
+  transform: translateY(-2px) scale(1.005);
   box-shadow: var(--elev-2);
   background: var(--surface-1);
 }
 .req:active { transform: scale(0.99); }
-.req__type { display: flex; align-items: center; gap: 12px; color: var(--primary-700); }
-.req__type > span { display: flex; flex-direction: column; }
+.req__row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.req__type { display: flex; align-items: center; gap: 12px; color: var(--primary-700); min-width: 0; }
+.req__type > span { display: flex; flex-direction: column; min-width: 0; }
 .req__type strong { color: var(--text); font-size: 0.92rem; }
 .req__type em { font-style: normal; font-size: 0.78rem; color: var(--text-muted); }
+.req__note {
+  margin: -2px 0 0;
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--text-muted);
+}
+.req__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.req__applied { font-size: 0.76rem; color: var(--text-faint); }
+.req__cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: none;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.req__cancel:hover { color: var(--danger); background: var(--danger-soft); }
+.req__confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
 .status {
   font-size: 0.74rem;
   font-weight: 700;

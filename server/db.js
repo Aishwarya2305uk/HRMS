@@ -1,6 +1,13 @@
+import dns from 'node:dns'
 import mongoose from 'mongoose'
 import { MONGODB_URL } from './env.js'
 import { bootstrapAdmin } from './bootstrapAdmin.js'
+
+// Some routers/VPNs proxy DNS in a way that answers plain lookups (nslookup)
+// but refuses the raw SRV query Node's resolver sends for mongodb+srv://
+// URLs, failing with "querySrv ECONNREFUSED". Pointing Node at public
+// resolvers sidesteps that without touching OS network settings.
+dns.setServers(['8.8.8.8', '1.1.1.1'])
 
 /**
  * Cached connection — critical for serverless (e.g. Vercel functions), where
