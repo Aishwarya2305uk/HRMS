@@ -15,3 +15,10 @@ export const JWT_SECRET =
   process.env.JWT_SECRET?.trim() || 'dev-only-insecure-secret-change-me'
 export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN?.trim() || '7d'
 export const PORT = Number(process.env.PORT) || 4000
+
+// Bootstraps exactly one admin account on first DB connect (see
+// bootstrapAdmin.js). That admin then adds every other employee/manager
+// through the People screen — the app never ships or seeds demo accounts.
+export const ADMIN_EMAIL = process.env.ADMIN_EMAIL?.trim().toLowerCase()
+export const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD?.trim()
+export const ADMIN_NAME = process.env.ADMIN_NAME?.trim() || 'Administrator'

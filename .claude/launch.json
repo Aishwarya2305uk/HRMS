@@ -12,6 +12,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:all:mem"],
       "port": 5173
+    },
+    {
+      "name": "hrms-api-mem",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:mem"],
+      "port": 4000
+    },
+    {
+      "name": "hrms-api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "server"],
+      "port": 4000
     }
   ]
 }

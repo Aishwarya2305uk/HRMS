@@ -1,15 +1,19 @@
 /**
  * Runs the full backend against an in-memory MongoDB — no Atlas password
- * needed. Great for local dev / demos before the real MONGODB_URL is set.
+ * needed. Useful for local development before a real MONGODB_URL is set.
  *
  * Run with:  npm run dev:mem   (starts this API; run `npm run dev` for the UI)
  * Or both:   npm run dev:all:mem
+ *
+ * Requires ADMIN_EMAIL / ADMIN_PASSWORD (see .env.example) — same bootstrap
+ * as production, just against a throwaway database. There is no seeded demo
+ * data; sign in as that admin and add people from the People screen.
  *
  * NOTE: data lives only in memory and is wiped when the process exits.
  */
 import mongoose from 'mongoose'
 import { MongoMemoryServer } from 'mongodb-memory-server'
-import { seedDemoUsers } from './seed.js'
+import { bootstrapAdmin } from './bootstrapAdmin.js'
 import { createApp } from './app.js'
 
 // The Vite dev proxy targets port 4000 (see vite.config.js), so the in-memory
@@ -23,7 +27,7 @@ async function start() {
   await mongoose.connect(mem.getUri(), { dbName: 'hrms' })
   console.log('[dev:mem] in-memory MongoDB ready (data is not persisted)')
 
-  await seedDemoUsers()
+  await bootstrapAdmin()
 
   createApp().listen(PORT, () => {
     console.log(`[dev:mem] API listening on http://localhost:${PORT}`)

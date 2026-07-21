@@ -47,7 +47,6 @@ export default function AdminLogin() {
           badge="Admin access"
           title="Admin sign in"
           subtitle="Restricted area. Administrator credentials required."
-          demo={{ email: 'admin@trula.com', password: 'admin123' }}
         />
       </main>
     </div>

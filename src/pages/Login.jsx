@@ -49,7 +49,6 @@ export default function Login() {
           badge="Welcome back"
           title="Sign in to Trula"
           subtitle="Use your work email to access your dashboard, leaves and team."
-          demo={{ email: 'employee@trula.com', password: 'employee123' }}
         />
       </main>
     </div>

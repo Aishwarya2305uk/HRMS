@@ -327,30 +327,6 @@
   color: var(--text-muted);
 }
 
-/* demo credential helper */
-.demo-hint {
-  margin-top: 18px;
-  padding: 12px 14px;
-  border-radius: var(--r-md);
-  background: var(--surface-sunken);
-  border: 1px dashed var(--border-strong);
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  line-height: 1.6;
-}
-.demo-hint b {
-  color: var(--text);
-}
-.demo-hint button {
-  border: none;
-  background: transparent;
-  color: var(--primary-600);
-  font-weight: 600;
-  cursor: pointer;
-  padding: 0;
-  font-size: 0.78rem;
-}
-
 /* ---------- Admin portal variant ---------- */
 .auth__brand--admin {
   background: linear-gradient(155deg, #0f172a 0%, #1e293b 50%, #312e81 100%);

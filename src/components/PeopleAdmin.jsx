@@ -29,8 +29,11 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  *  - Per-field validation with messages under the offending field.
  *  - Manager changes are optimistic but roll back visibly if the server
  *    rejects them, so the table never shows a change that didn't persist.
+ *
+ * `searchQuery` filters only the roster table below — the manager-assignment
+ * dropdowns always see the full, unfiltered `people` list.
  */
-export default function PeopleAdmin({ people, setPeople }) {
+export default function PeopleAdmin({ people, setPeople, searchQuery = '' }) {
   const toast = useToast()
   const [form, setForm] = useState(BLANK)
   const [touched, setTouched] = useState({})
@@ -52,6 +55,14 @@ export default function PeopleAdmin({ people, setPeople }) {
     }
     return e
   }, [form, people])
+
+  const filteredPeople = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return people
+    return people.filter((p) =>
+      [p.name, p.email, p.designation, p.department].some((f) => f?.toLowerCase().includes(q)),
+    )
+  }, [people, searchQuery])
 
   const isValid = Object.keys(errors).length === 0
   const showError = (f) => (touched[f] || touched._submitted) && errors[f]
@@ -266,6 +277,12 @@ export default function PeopleAdmin({ people, setPeople }) {
             title="No employees yet"
             message="Add your first employee using the form above."
           />
+        ) : filteredPeople.length === 0 ? (
+          <EmptyState
+            icon="users"
+            title="No matches"
+            message={`Nobody matches "${searchQuery.trim()}".`}
+          />
         ) : (
           <div className="table-wrap">
             <table className="table">
@@ -279,7 +296,7 @@ export default function PeopleAdmin({ people, setPeople }) {
                 </tr>
               </thead>
               <tbody>
-                {people.map((p) => (
+                {filteredPeople.map((p) => (
                   <tr key={p.id}>
                     <td>
                       <div className="cell-name">

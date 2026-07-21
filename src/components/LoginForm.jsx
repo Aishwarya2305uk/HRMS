@@ -10,9 +10,8 @@ import { useAuth } from '../context/AuthContext'
  * @param {string}  props.title
  * @param {string}  props.subtitle
  * @param {string}  props.badge
- * @param {{email:string, password:string}} props.demo  quick-fill credentials
  */
-export default function LoginForm({ portal, title, subtitle, badge, demo }) {
+export default function LoginForm({ portal, title, subtitle, badge }) {
   const { login, notice, clearNotice } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
@@ -52,13 +51,6 @@ export default function LoginForm({ portal, title, subtitle, badge, demo }) {
       return
     }
     navigate(redirectTo, { replace: true })
-  }
-
-  function fillDemo() {
-    if (!demo) return
-    setEmail(demo.email)
-    setPassword(demo.password)
-    setError('')
   }
 
   return (
@@ -142,15 +134,6 @@ export default function LoginForm({ portal, title, subtitle, badge, demo }) {
           {submitting ? 'Signing in…' : isAdmin ? 'Enter admin console' : 'Sign in'}
         </button>
       </form>
-
-      {demo && (
-        <div className="demo-hint">
-          <b>Demo login</b> — {demo.email} / {demo.password}{' '}
-          <button type="button" onClick={fillDemo}>
-            Autofill
-          </button>
-        </div>
-      )}
 
       <p className="auth-foot">
         {isAdmin ? (

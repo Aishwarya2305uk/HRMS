@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 /**
  * Loads async data with the three outcomes every view needs: loading, error and
@@ -52,5 +52,11 @@ export function useAsyncData(fetcher, { enabled = true, initial = null } = {}) {
     load()
   }, [enabled, load])
 
-  return { data, setData, error, loading, reload: load }
+  // Memoised so the returned object only changes when its contents actually
+  // change. `setData` and `reload` are stable, so consumers can safely depend
+  // on them in effects without triggering render loops.
+  return useMemo(
+    () => ({ data, setData, error, loading, reload: load }),
+    [data, error, loading, load],
+  )
 }

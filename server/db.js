@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import { MONGODB_URL } from './env.js'
+import { bootstrapAdmin } from './bootstrapAdmin.js'
 
 /**
  * Cached connection — critical for serverless (e.g. Vercel functions), where
@@ -34,8 +35,12 @@ export async function connectDB() {
         // Keep the pool small — serverless spawns many isolated instances.
         maxPoolSize: 5,
       })
-      .then((m) => {
+      .then(async (m) => {
         console.log('[db] connected to MongoDB (database: hrms)')
+        // Runs exactly once per connection (this .then() only fires on the
+        // first successful connect — later calls reuse cache.conn), so this
+        // is safe for both the long-running server and serverless cold starts.
+        await bootstrapAdmin()
         return m
       })
   }

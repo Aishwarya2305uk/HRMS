@@ -239,6 +239,7 @@
 }
 .seg__btn b { font-weight: 700; opacity: 0.7; }
 .seg__btn.is-active { background: var(--surface-1); color: var(--text); box-shadow: var(--elev-1); }
+.seg__btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ---- People (admin) ---- */
 .people { display: flex; flex-direction: column; gap: 22px; }
@@ -288,6 +289,46 @@
 }
 .org-toggle .chev { transition: transform 0.2s; font-size: 0.9rem; }
 .org-toggle .chev.open { transform: rotate(180deg); }
+
+/* Presence dot, pinned to the corner of the avatar. */
+.org-avatar { position: relative; display: inline-flex; flex: none; }
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--text-muted);
+  box-shadow: 0 0 0 2px var(--surface-1);
+}
+.org-avatar .status-dot { position: absolute; right: -1px; bottom: -1px; }
+.status-dot--online { background: var(--success); }
+.status-dot--idle { background: var(--warning); }
+.status-dot--offline { background: var(--border-strong); }
+
+.org-legend {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 14px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.org-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---- Org list (flat roster view) ---- */
+.org-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.org-list .org-card:hover { transform: none; }
+.org-list__manager {
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+@media (max-width: 560px) {
+  .org-list__manager { display: none; }
+}
+
+.seg__btn--icon { display: inline-flex; align-items: center; gap: 6px; }
 
 /* ---- Calendar ---- */
 .cal-nav { display: flex; align-items: center; gap: 8px; }

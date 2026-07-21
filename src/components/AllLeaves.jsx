@@ -7,13 +7,16 @@ import { EmptyState } from './States'
  * status, filterable by status.
  * @param {Array}  props.leaves      from /leaves/all
  * @param {object} props.typeLabels  { key: label }
+ * @param {string} [props.searchQuery]  filters rows by employee name
  */
-export default function AllLeaves({ leaves, typeLabels }) {
+export default function AllLeaves({ leaves, typeLabels, searchQuery = '' }) {
   const [filter, setFilter] = useState('all')
-  const rows = useMemo(
-    () => (filter === 'all' ? leaves : leaves.filter((l) => l.status === filter)),
-    [leaves, filter],
-  )
+  const rows = useMemo(() => {
+    const byStatus = filter === 'all' ? leaves : leaves.filter((l) => l.status === filter)
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return byStatus
+    return byStatus.filter((l) => l.employeeName?.toLowerCase().includes(q))
+  }, [leaves, filter, searchQuery])
   const counts = useMemo(() => {
     const c = { all: leaves.length, pending: 0, approved: 0, rejected: 0 }
     for (const l of leaves) c[l.status]++
@@ -40,13 +43,15 @@ export default function AllLeaves({ leaves, typeLabels }) {
       {rows.length === 0 ? (
         <EmptyState
           icon="calendarDays"
-          title={filter === 'all' ? 'No leave requests yet' : `No ${filter} requests`}
+          title={searchQuery.trim() ? 'No matches' : filter === 'all' ? 'No leave requests yet' : `No ${filter} requests`}
           message={
-            filter === 'all'
-              ? 'Company-wide leave applications will appear here.'
-              : 'Try a different filter to see other requests.'
+            searchQuery.trim()
+              ? `Nobody named "${searchQuery.trim()}" has ${filter === 'all' ? 'a request' : `a ${filter} request`}.`
+              : filter === 'all'
+                ? 'Company-wide leave applications will appear here.'
+                : 'Try a different filter to see other requests.'
           }
-          action={filter !== 'all' ? { label: 'Show all', onClick: () => setFilter('all') } : undefined}
+          action={filter !== 'all' && !searchQuery.trim() ? { label: 'Show all', onClick: () => setFilter('all') } : undefined}
         />
       ) : (
         <div className="table-wrap">

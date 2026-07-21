@@ -26,21 +26,28 @@ export default function AttendanceCard({ onChange }) {
   // Wall-clock time of the last server sync + the workedSeconds at that moment.
   const sync = useRef({ at: Date.now(), base: 0, running: false })
 
-  const apply = useCallback(
-    (live) => {
-      setSession(live)
-      sync.current = {
-        at: Date.now(),
-        base: live.workedSeconds ?? 0,
-        running: Boolean(live.running),
-      }
-      setNow(Date.now())
-      onChange?.(live)
-    },
-    [onChange],
-  )
+  // Held in a ref, NOT a dependency: onChange comes from the parent and gets a
+  // fresh identity on every parent render. Depending on it here would re-create
+  // `apply`, re-run the load effect, notify the parent, re-render it... an
+  // infinite fetch loop. The ref lets us always call the latest callback while
+  // keeping `apply` stable.
+  const onChangeRef = useRef(onChange)
+  useEffect(() => {
+    onChangeRef.current = onChange
+  }, [onChange])
 
-  // Initial load.
+  const apply = useCallback((live) => {
+    setSession(live)
+    sync.current = {
+      at: Date.now(),
+      base: live.workedSeconds ?? 0,
+      running: Boolean(live.running),
+    }
+    setNow(Date.now())
+    onChangeRef.current?.(live)
+  }, [])
+
+  /** Fetch today's session. Used on mount and by the retry button. */
   const load = useCallback(() => {
     setError('')
     return attendance
@@ -55,24 +62,10 @@ export default function AttendanceCard({ onChange }) {
       })
   }, [apply])
 
+  // `load` is stable, so this runs once on mount.
   useEffect(() => {
-    let active = true
-    attendance
-      .today()
-      .then((live) => {
-        if (!active) return
-        setLoadFailed(false)
-        apply(live)
-      })
-      .catch((err) => {
-        if (!active) return
-        setLoadFailed(true)
-        setError(err.message)
-      })
-    return () => {
-      active = false
-    }
-  }, [apply])
+    load()
+  }, [load])
 
   // Tick once a second only while the timer is actually running.
   useEffect(() => {

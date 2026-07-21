@@ -18,8 +18,9 @@ export default function ProtectedRoute({ roles, children }) {
   // otherwise a refresh on a protected page bounces to login.
   if (loading) {
     return (
-      <div style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
-        <span style={{ color: 'var(--text-muted)' }}>Loading…</span>
+      <div className="route-loading" role="status" aria-live="polite">
+        <span className="spinner" aria-hidden="true" />
+        <span className="sr-only">Loading…</span>
       </div>
     )
   }

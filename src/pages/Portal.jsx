@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
@@ -19,9 +19,20 @@ import LeaveCalendar from '../components/LeaveCalendar'
 import PeopleAdmin from '../components/PeopleAdmin'
 import AllLeaves from '../components/AllLeaves'
 import { SkeletonCard, ErrorState, InlineError } from '../components/States'
+import Sidebar from '../components/dashboard/Sidebar'
+import TopBar from '../components/dashboard/TopBar'
+import QuickAccessTiles from '../components/dashboard/QuickAccessTiles'
 
 import './EmployeeDashboard.css'
 import './Portal.css'
+
+/** Sections whose data is a filterable list of people — everywhere else the
+ *  top bar search box is simply not shown. */
+const SEARCHABLE_TABS = {
+  org: 'Search the organization…',
+  people: 'Search people…',
+  allleaves: 'Search by employee…',
+}
 
 /** Sidebar items available to each role (order matters). */
 function navFor(role) {
@@ -62,6 +73,22 @@ export default function Portal() {
   const navigate = useNavigate()
   const [active, setActive] = useState('dashboard')
   const [showApply, setShowApply] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem('hrms.sidebarCollapsed') === '1',
+  )
+
+  function toggleCollapsed() {
+    setCollapsed((c) => {
+      localStorage.setItem('hrms.sidebarCollapsed', c ? '0' : '1')
+      return !c
+    })
+  }
+
+  function selectTab(key) {
+    setActive(key)
+    setSearchQuery('') // a filter from one section shouldn't silently apply to the next
+  }
 
   const isManager = role === 'manager' || role === 'admin'
 
@@ -95,16 +122,25 @@ export default function Portal() {
   )
 
   // If the leave types can't load, the apply form can't be trusted — tell the
-  // user once rather than letting them open a broken form.
+  // user ONCE. The ref guard matters: pushing a toast changes the toast
+  // context's identity, which would re-run this effect and spam notifications.
+  const warnedConfigRef = useRef(false)
+  const toastError = toast.error
   useEffect(() => {
-    if (configQ.error) {
-      toast.error('Leave types couldn’t load, so applying is unavailable right now.')
+    if (configQ.error && !warnedConfigRef.current) {
+      warnedConfigRef.current = true
+      toastError('Leave types couldn’t load, so applying is unavailable right now.')
     }
-  }, [configQ.error, toast])
+    if (!configQ.error) warnedConfigRef.current = false
+  }, [configQ.error, toastError])
 
+  // Depend on `reload` (stable) rather than the query object (new every
+  // render) — otherwise this callback's identity churns and re-triggers the
+  // child's load effect on a loop.
+  const reloadHistory = historyQ.reload
   const refreshAfterAttendance = useCallback(() => {
-    historyQ.reload()
-  }, [historyQ])
+    reloadHistory()
+  }, [reloadHistory])
 
   function handleLogout() {
     haptic('medium')
@@ -164,72 +200,57 @@ export default function Portal() {
   })
   const nav = navFor(role)
   const activeLabel = nav.find((n) => n.key === active)?.label ?? 'Dashboard'
+  const isSearchable = active in SEARCHABLE_TABS
+
+  function handleBellClick() {
+    if (isManager) {
+      selectTab('approvals')
+    } else {
+      toast.info("You're all caught up — no pending approvals.")
+    }
+  }
 
   return (
-    <div className="emp">
-      {/* ---------------- Sidebar ---------------- */}
-      <aside className="emp__sidebar">
-        <div className="emp__logo">
-          <span className="mark">◈</span>
-          <span>Trula</span>
-        </div>
-
-        <nav className="emp__nav" aria-label="Main">
-          {nav.map((item) => (
-            <button
-              key={item.key}
-              className={`nav-item${active === item.key ? ' is-active' : ''}`}
-              aria-current={active === item.key ? 'page' : undefined}
-              onClick={() => { haptic('light'); setActive(item.key) }}
-              {...tactile('light')}
-            >
-              <Icon name={item.icon} size={19} />
-              <span>{item.label}</span>
-              {item.key === 'approvals' && pending.length > 0 && (
-                <span className="nav-badge" aria-label={`${pending.length} pending`}>
-                  {pending.length}
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
-
-        <div className="emp__side-foot">
-          <div className="mini-profile">
-            <div className="avatar" aria-hidden="true">{firstName[0]}</div>
-            <div className="mini-profile__text">
-              <strong>{user?.name}</strong>
-              <span>{user?.designation || role}</span>
-            </div>
-          </div>
-          <button className="nav-item logout" onClick={handleLogout} {...tactile('medium')}>
-            <Icon name="logout" size={19} />
-            <span>Log out</span>
-          </button>
-        </div>
-      </aside>
+    <div className={`emp${collapsed ? ' emp--collapsed' : ''}`} data-role={role}>
+      <Sidebar
+        nav={nav}
+        active={active}
+        onSelect={selectTab}
+        role={role}
+        pendingCount={pending.length}
+        userName={user?.name}
+        userTitle={user?.designation}
+        collapsed={collapsed}
+        onToggleCollapse={toggleCollapsed}
+      />
 
       {/* ---------------- Main ---------------- */}
       <div className="emp__main">
-        <header className="emp__topbar">
-          <div>
-            <p className="emp__eyebrow">{dateLabel}</p>
-            <h1>
-              {active === 'dashboard' ? (
-                <>Good to see you, {firstName} <span className="wave">👋</span></>
-              ) : (
-                activeLabel
-              )}
-            </h1>
-          </div>
-          <div className="emp__top-actions">
-            <span className={`role-pill ${role}`}>{role}</span>
-          </div>
-        </header>
+        <TopBar
+          dateLabel={dateLabel}
+          title={activeLabel}
+          greeting={active === 'dashboard' ? (
+            <>Good to see you, {firstName} <span className="wave">👋</span></>
+          ) : undefined}
+          searchable={isSearchable}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          searchPlaceholder={SEARCHABLE_TABS[active]}
+          pendingCount={isManager ? pending.length : 0}
+          onBellClick={handleBellClick}
+          user={user}
+          role={role}
+          onLogout={handleLogout}
+        />
 
         <div className="emp__content">
           {active === 'dashboard' && (
             <>
+              <QuickAccessTiles
+                items={nav.filter((n) => n.key !== 'dashboard')}
+                onSelect={selectTab}
+              />
+
               <section className="stat-row">
                 {stats.map((s, i) => (
                   <article key={s.label} className={`card stat pop tint-${s.tint}`} style={{ '--d': `${i * 70}ms` }} tabIndex={0} {...tactile('light')}>
@@ -324,7 +345,7 @@ export default function Portal() {
 
           {active === 'org' && (
             <Section query={orgQ} skeletonRows={5}>
-              <OrgTree roots={orgQ.data?.roots ?? []} currentUserId={user?.id} />
+              <OrgTree roots={orgQ.data?.roots ?? []} currentUserId={user?.id} searchQuery={searchQuery} />
             </Section>
           )}
 
@@ -332,13 +353,13 @@ export default function Portal() {
 
           {active === 'people' && (
             <Section query={peopleQ} skeletonRows={5}>
-              <PeopleAdmin people={peopleQ.data ?? []} setPeople={peopleQ.setData} />
+              <PeopleAdmin people={peopleQ.data ?? []} setPeople={peopleQ.setData} searchQuery={searchQuery} />
             </Section>
           )}
 
           {active === 'allleaves' && (
             <Section query={allLeavesQ} skeletonRows={5}>
-              <AllLeaves leaves={allLeavesQ.data ?? []} typeLabels={typeLabels} />
+              <AllLeaves leaves={allLeavesQ.data ?? []} typeLabels={typeLabels} searchQuery={searchQuery} />
             </Section>
           )}
         </div>

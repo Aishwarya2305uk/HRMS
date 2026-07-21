@@ -1,28 +1,59 @@
 import { Router } from 'express'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { User } from '../models/User.js'
+import { WorkSession, isRunning } from '../models/WorkSession.js'
+import { dayKey } from '../utils/time.js'
 import { defaultLeaveBalances } from '../config.js'
 
 const router = Router()
 router.use(requireAuth)
 
 /**
+ * Coarse presence for everyone, derived from today's work sessions — there is no
+ * separate presence store, the attendance timer *is* the signal.
+ *
+ *   online  — checked in and the timer is running
+ *   idle    — checked in but paused (on a break)
+ *   offline — not checked in yet, or already checked out / auto-closed
+ *
+ * Deliberately coarse: this endpoint is readable by every role, so it exposes a
+ * single enum and never worked hours, check-in times or session internals.
+ * Scoped to today's dayKey, so stale sessions from previous days can't leak.
+ * @returns {Promise<Map<string, 'online'|'idle'|'offline'>>} keyed by user id
+ */
+async function activityByUser() {
+  const sessions = await WorkSession.find({ date: dayKey() }).select('userId events status')
+  const map = new Map()
+  for (const s of sessions) {
+    const open = s.status === 'active'
+    map.set(s.userId.toString(), !open ? 'offline' : isRunning(s.events) ? 'online' : 'idle')
+  }
+  return map
+}
+
+/**
  * GET /api/employees/org-tree — the whole reporting structure as a nested tree.
  * Available to ALL roles (per requirements): it's built purely from the
  * managerId self-reference. Roots are people with no manager (e.g. admins).
+ * Each node also carries a coarse `activity` state for the presence dot.
  */
 router.get('/org-tree', async (_req, res, next) => {
   try {
-    const users = await User.find({}).select('name designation department role managerId')
+    const [users, activity] = await Promise.all([
+      User.find({}).select('name designation department role managerId'),
+      activityByUser(),
+    ])
     const nodes = new Map()
     for (const u of users) {
-      nodes.set(u._id.toString(), {
-        id: u._id.toString(),
+      const id = u._id.toString()
+      nodes.set(id, {
+        id,
         name: u.name,
         designation: u.designation,
         department: u.department,
         role: u.role,
         managerId: u.managerId ? u.managerId.toString() : null,
+        activity: activity.get(id) ?? 'offline',
         reports: [],
       })
     }
