@@ -41,3 +41,17 @@ export function formatRange(start, end) {
   const b = formatDate(end)
   return a === b ? a : `${a} – ${b}`
 }
+
+/** ISO datetime -> "Just now" / "12m ago" / "3h ago" / "2d ago", falling back to formatDate past a week. */
+export function formatRelativeTime(value) {
+  if (!value) return ''
+  const diffMs = Date.now() - new Date(value).getTime()
+  const mins = Math.floor(diffMs / 60000)
+  if (mins < 1) return 'Just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days}d ago`
+  return formatDate(value)
+}

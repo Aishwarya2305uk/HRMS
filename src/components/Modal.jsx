@@ -11,8 +11,12 @@ import { useEffect, useRef } from 'react'
  *    disorienting and lets you interact with hidden controls).
  *  - Background scrolling is locked.
  *  - Labelled via aria-labelledby so the title is announced on open.
+ *
+ * @param {'center'|'right'} [placement='center']  'right' renders a full-height
+ *   drawer anchored to the right edge instead of a centered dialog (see
+ *   .modal--right in Portal.css) — same a11y behavior either way.
  */
-export default function Modal({ titleId, label, onClose, children }) {
+export default function Modal({ titleId, label, onClose, children, placement = 'center' }) {
   const ref = useRef(null)
   const restoreTo = useRef(null)
 
@@ -60,9 +64,12 @@ export default function Modal({ titleId, label, onClose, children }) {
   }, [onClose])
 
   return (
-    <div className="modal-overlay" onMouseDown={onClose}>
+    <div
+      className={`modal-overlay${placement === 'right' ? ' modal-overlay--right' : ''}`}
+      onMouseDown={onClose}
+    >
       <div
-        className="modal"
+        className={`modal${placement === 'right' ? ' modal--right' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

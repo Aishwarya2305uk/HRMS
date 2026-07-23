@@ -5,6 +5,7 @@ import attendanceRoutes from './routes/attendance.js'
 import leaveRoutes from './routes/leaves.js'
 import employeeRoutes from './routes/employees.js'
 import cronRoutes from './routes/cron.js'
+import announcementRoutes from './routes/announcements.js'
 
 /**
  * JSON body parsing that works BOTH as a standalone server and inside a Vercel
@@ -36,6 +37,7 @@ export function createApp() {
   app.use('/api/leaves', leaveRoutes)
   app.use('/api/employees', employeeRoutes)
   app.use('/api/cron', cronRoutes)
+  app.use('/api/announcements', announcementRoutes)
 
   // Unknown /api route -> JSON 404. The method/path are logged server-side for
   // debugging but NOT reflected back in the response: echoing raw request input

@@ -16,7 +16,7 @@ export default function TopBar({
   searchQuery,
   onSearchChange,
   searchPlaceholder = 'Search…',
-  pendingCount = 0,
+  notificationCount = 0,
   onBellClick,
   user,
   role,
@@ -46,11 +46,11 @@ export default function TopBar({
         <button
           className="icon-btn"
           onClick={() => { haptic('light'); onBellClick() }}
-          aria-label={pendingCount > 0 ? `${pendingCount} pending approvals` : 'Notifications'}
+          aria-label={notificationCount > 0 ? `${notificationCount} unread notifications` : 'Notifications'}
           {...tactile('light')}
         >
           <Icon name="bell" size={18} />
-          {pendingCount > 0 && <span className="dot" aria-hidden="true" />}
+          {notificationCount > 0 && <span className="dot" aria-hidden="true" />}
         </button>
 
         <Menu

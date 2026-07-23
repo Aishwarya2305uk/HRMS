@@ -5,7 +5,12 @@ import { useToast } from '../context/ToastContext'
 import { useAsyncData } from '../lib/useAsyncData'
 import Icon from '../components/Icon'
 import { haptic, tactile } from '../lib/haptics'
-import { attendance, leaves as leavesApi, employees as employeesApi } from '../lib/hrms'
+import {
+  attendance,
+  leaves as leavesApi,
+  employees as employeesApi,
+  announcements as announcementsApi,
+} from '../lib/hrms'
 import { formatHours } from '../lib/format'
 
 import AttendanceCard from '../components/AttendanceCard'
@@ -22,6 +27,7 @@ import { SkeletonCard, ErrorState, InlineError } from '../components/States'
 import Sidebar from '../components/dashboard/Sidebar'
 import TopBar from '../components/dashboard/TopBar'
 import QuickAccessTiles from '../components/dashboard/QuickAccessTiles'
+import NotificationsPanel from '../components/notifications/NotificationsPanel'
 
 import './EmployeeDashboard.css'
 import './Portal.css'
@@ -73,6 +79,7 @@ export default function Portal() {
   const navigate = useNavigate()
   const [active, setActive] = useState('dashboard')
   const [showApply, setShowApply] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('hrms.sidebarCollapsed') === '1',
@@ -99,6 +106,7 @@ export default function Portal() {
   const pendingQ = useAsyncData(useCallback(() => leavesApi.pending(), []), {
     enabled: isManager,
   })
+  const announcementsQ = useAsyncData(useCallback(() => announcementsApi.list(), []))
 
   // ---- Lazily loaded per section ----
   const orgQ = useAsyncData(useCallback(() => employeesApi.orgTree(), []), {
@@ -115,6 +123,15 @@ export default function Portal() {
   const myLeaves = myLeavesQ.data ?? EMPTY
   const history = historyQ.data ?? EMPTY
   const pending = pendingQ.data ?? EMPTY
+  const announcementsList = announcementsQ.data ?? EMPTY
+  const myPendingLeaves = useMemo(
+    () => myLeaves.filter((l) => l.status === 'pending'),
+    [myLeaves],
+  )
+  const unreadCount = useMemo(
+    () => announcementsList.filter((a) => !a.read).length,
+    [announcementsList],
+  )
 
   const typeLabels = useMemo(
     () => Object.fromEntries(types.map((t) => [t.key, t.label])),
@@ -142,6 +159,15 @@ export default function Portal() {
     reloadHistory()
   }, [reloadHistory])
 
+  // Same rationale as above: NotificationsPanel keys an effect off this
+  // callback's identity, so it must stay stable even though calling it
+  // updates announcementsQ's data (which would otherwise churn a new
+  // identity every render if we depended on the query object itself).
+  const setAnnouncementsData = announcementsQ.setData
+  const onAnnouncementsRead = useCallback(() => {
+    setAnnouncementsData((prev) => (prev ?? []).map((a) => (a.read ? a : { ...a, read: true })))
+  }, [setAnnouncementsData])
+
   function handleLogout() {
     haptic('medium')
     logout()
@@ -156,6 +182,16 @@ export default function Portal() {
   function onLeaveCancelled(id) {
     myLeavesQ.setData((prev) => (prev ?? []).filter((l) => l.id !== id))
     toast.success('Leave request cancelled.')
+  }
+
+  function onAnnouncementCreated(item) {
+    announcementsQ.setData((prev) => [item, ...(prev ?? [])])
+    toast.success(item.type === 'urgent' ? 'Urgent message posted.' : 'Announcement posted.')
+  }
+
+  function onAnnouncementRemoved(id) {
+    announcementsQ.setData((prev) => (prev ?? []).filter((a) => a.id !== id))
+    toast.success('Announcement removed.')
   }
 
   const onApprovalDecided = useCallback(
@@ -182,8 +218,6 @@ export default function Portal() {
     const avgSec = finalized.length
       ? finalized.reduce((s, h) => s + (h.workedSeconds || 0), 0) / finalized.length
       : 0
-    const myPending = myLeaves.filter((l) => l.status === 'pending').length
-
     const list = [
       { icon: 'leaf', tint: 'indigo', label: 'Leave balance', value: user?.leaveBalance ?? 0, unit: 'days' },
       { icon: 'check', tint: 'green', label: 'Present this month', value: presentDays, unit: 'days' },
@@ -192,10 +226,10 @@ export default function Portal() {
     if (isManager) {
       list.push({ icon: 'users', tint: 'amber', label: 'Pending approvals', value: pending.length, unit: '' })
     } else {
-      list.push({ icon: 'trending', tint: 'amber', label: 'My pending requests', value: myPending, unit: '' })
+      list.push({ icon: 'trending', tint: 'amber', label: 'My pending requests', value: myPendingLeaves.length, unit: '' })
     }
     return list
-  }, [history, myLeaves, pending, user, isManager])
+  }, [history, myPendingLeaves, pending, user, isManager])
 
   const firstName = user?.name?.split(' ')[0] ?? 'there'
   const dateLabel = new Date().toLocaleDateString(undefined, {
@@ -207,12 +241,8 @@ export default function Portal() {
   const activeLabel = nav.find((n) => n.key === active)?.label ?? 'Dashboard'
   const isSearchable = active in SEARCHABLE_TABS
 
-  function handleBellClick() {
-    if (isManager) {
-      selectTab('approvals')
-    } else {
-      toast.info("You're all caught up — no pending approvals.")
-    }
+  function openNotifications() {
+    setShowNotifications(true)
   }
 
   return (
@@ -241,8 +271,8 @@ export default function Portal() {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           searchPlaceholder={SEARCHABLE_TABS[active]}
-          pendingCount={isManager ? pending.length : 0}
-          onBellClick={handleBellClick}
+          notificationCount={unreadCount}
+          onBellClick={openNotifications}
           user={user}
           role={role}
           onLogout={handleLogout}
@@ -378,6 +408,24 @@ export default function Portal() {
           balances={user?.leaveBalances}
           onClose={() => setShowApply(false)}
           onCreated={onLeaveCreated}
+        />
+      )}
+
+      {showNotifications && (
+        <NotificationsPanel
+          query={announcementsQ}
+          onMarkedRead={onAnnouncementsRead}
+          canCompose={isManager}
+          onCreated={onAnnouncementCreated}
+          onRemoved={onAnnouncementRemoved}
+          approvalsPending={pending}
+          myPendingLeaves={myPendingLeaves}
+          typeLabels={typeLabels}
+          currentUserId={user?.id}
+          role={role}
+          onViewApprovals={() => { selectTab('approvals'); setShowNotifications(false) }}
+          onViewLeaves={() => { selectTab('leaves'); setShowNotifications(false) }}
+          onClose={() => setShowNotifications(false)}
         />
       )}
     </div>

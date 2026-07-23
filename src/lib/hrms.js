@@ -29,3 +29,11 @@ export const employees = {
   setManager: (id, managerId) =>
     apiFetch(`/employees/${id}/manager`, { method: 'PATCH', body: { managerId } }),
 }
+
+export const announcements = {
+  list: () => apiFetch('/announcements'),
+  markAllRead: () => apiFetch('/announcements/read-all', { method: 'POST' }),
+  audienceOptions: () => apiFetch('/announcements/audience-options'),
+  create: (body) => apiFetch('/announcements', { method: 'POST', body }),
+  remove: (id) => apiFetch(`/announcements/${id}`, { method: 'DELETE' }),
+}

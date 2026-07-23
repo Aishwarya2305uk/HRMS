@@ -25,6 +25,12 @@ payroll/performance reviews, public holidays, editing approved leaves, native
 mobile apps. See [HRMS_v1_Requirements.md §7](HRMS_v1_Requirements.md) for the
 full out-of-scope list — do not casually add these without updating that doc.
 
+> **2026-07-24 clarification:** "notifications (email/push)" above refers
+> specifically to messages sent *outside* the app. An in-app notifications
+> drawer (announcements, urgent messages, pending work — see the Feature Log)
+> was added and is a different thing: nothing leaves the app, no email/push
+> provider is involved. Email/push themselves remain out of scope.
+
 ---
 
 ## 2. Architecture Overview
@@ -75,8 +81,8 @@ Three roles, strict hierarchy, enforced server-side in `middleware/auth.js`
 | Role     | Can do                                                                                     |
 | -------- | -------------------------------------------------------------------------------------------- |
 | Employee | Own attendance timer, own leave applications + balance, org tree, leave calendar.             |
-| Manager  | Everything Employee can, **plus** approve/reject leaves for **direct reports only** (`managerId` match is checked server-side per request, not just "is a manager"). |
-| Admin    | Everything above, **plus** add employees, edit any employee's `managerId`, view all leaves company-wide. |
+| Manager  | Everything Employee can, **plus** approve/reject leaves for **direct reports only** (`managerId` match is checked server-side per request, not just "is a manager"), **plus** broadcast an announcement/urgent message to their own downstream team (see §4 `announcements`). |
+| Admin    | Everything above, **plus** add employees, edit any employee's `managerId`, view all leaves company-wide, **plus** broadcast to everyone, to a specific role, or to any team in the company. |
 
 Adding a new role or permission: extend the `role` enum in
 `server/models/User.js`, add/adjust `requireRole(...)` calls in the affected
@@ -121,6 +127,21 @@ if these drift, trust the model files and fix this section.
   **Balance is deducted only on approval**, never at submit time, so a
   rejected leave costs nothing.
 
+### `announcements`
+- `title`, `body`, `type` (`announcement | urgent`), `authorId`
+- `audienceScope`: `all | role | team`
+  - `all` — everyone (admin only)
+  - `role` — everyone with `audienceRole` (admin only)
+  - `team` — `audienceRootId` plus everyone who **transitively** reports to
+    them. Admin can root this at any user; a manager can only root it at
+    **themselves** (their whole downstream org, however deep). Resolved by
+    walking `managerId` — see `server/services/hierarchy.js` — never trusted
+    from the client.
+- `readBy`: user ids who've seen it (`$addToSet`, never returned wholesale —
+  the API exposes a per-viewer `read` boolean instead).
+- No push/email and no separate audit-log collection — matches the rest of
+  v1's minimal-infra posture (see §8).
+
 ### Single source of truth for business constants
 `server/config.js` holds `LEAVE_TYPES` (key/label/annual quota) and
 `FULL_WORKDAY_HOURS`. Anything that looks like a magic number belongs here,
@@ -162,6 +183,7 @@ route files for full request/response shapes.
 | Attendance | `GET /attendance/today`, `POST /attendance/{check-in,pause,resume,check-out}`, `GET /attendance/history` | `requireAuth`            |
 | Leaves     | `POST /leaves`, `GET /leaves/mine`, `GET /leaves/pending`, `POST /leaves/:id/{approve,reject}`, `GET /leaves/all`, `GET /leaves/calendar?month=YYYY-MM` | `requireAuth`; pending/approve/reject also check direct-report ownership; `all` is admin-only |
 | Employees  | `GET /employees/org-tree`, `GET|POST /employees`, `PATCH /employees/:id/manager`           | org-tree: any role; create/list/manager-edit: admin only |
+| Announcements | `GET /announcements`, `POST /announcements/read-all`, `GET /announcements/audience-options`, `POST /announcements`, `DELETE /announcements/:id` | `requireAuth`; audience-options/create/delete require admin or manager, with hierarchy-checked authorization on `team`-scoped targets |
 | Cron       | `POST /cron/finalize`                                                                      | optional `CRON_SECRET` header  |
 
 When adding a route: put it in the matching `server/routes/*.js` file, wrap it
@@ -182,6 +204,9 @@ src/
     PeopleAdmin.jsx        # admin-only: add employee, edit manager
     AllLeaves.jsx          # admin-only: company-wide leave list
     ApplyLeaveModal.jsx, LeaveBalanceCard.jsx, AttendanceHistory.jsx, ...
+    notifications/
+      NotificationsPanel.jsx        # right-side drawer: urgent/announcements/pending work
+      ComposeAnnouncementForm.jsx   # admin/manager-only composer, swapped into the drawer
   context/AuthContext.jsx  # session/JWT state
   lib/hrms.js              # typed API client helpers (one function per endpoint)
 ```
@@ -219,6 +244,17 @@ calls an endpoint that independently re-checks the role server-side.
 
 Append one entry per feature/change, newest first. Each entry: date, what
 changed, why, and which sections above were touched.
+
+### 2026-07-24 — In-app notifications drawer
+Added a right-side notifications drawer (opened from the top bar's bell,
+previously a stub) with three feeds: urgent messages, announcements, and
+pending work (the existing approvals queue / own pending leave requests —
+no new storage for that part). New `announcements` collection and
+`/api/announcements` routes; both admins and managers can compose, targeted
+by a hierarchy-aware audience (everyone / a role / a team rooted anywhere an
+admin chooses, or a manager's own downstream org). Touched: §1 (non-goal
+clarification), §3 (roles table), §4 (new `announcements` subsection), §6
+(API surface), §7 (new `notifications/` components).
 
 ### 2026-07-22 — Initial design document
 Captured the as-built v1 architecture (attendance timer, leave management,
