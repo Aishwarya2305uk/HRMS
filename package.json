@@ -10,6 +10,7 @@
     "dev": "vite",
     "server": "node server/index.js",
     "seed": "node server/seed.js",
+    "finalize": "node server/jobs/finalize.js",
     "dev:mem": "node server/dev-memory.js",
     "dev:all": "concurrently -n api,web -c blue,magenta \"npm run server\" \"npm run dev\"",
     "dev:all:mem": "concurrently -n api,web -c blue,magenta \"npm run dev:mem\" \"npm run dev\"",

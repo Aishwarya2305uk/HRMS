@@ -1,0 +1,42 @@
+# Render Blueprint — deploys the backend as a web service plus the daily
+# attendance finalizer as a separate Cron Job, since Vercel's `crons` config
+# (see vercel.json) only fires for functions deployed on Vercel itself.
+#
+# Usage: Render dashboard -> New -> Blueprint -> point at this repo. Render
+# reads this file and creates both services. Secrets (marked `sync: false`)
+# are left blank in the YAML on purpose — you'll be prompted to fill them in
+# during the Blueprint setup, so nothing sensitive is committed here.
+services:
+  - type: web
+    name: hrms-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run server
+    envVars:
+      - key: MONGODB_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_NAME
+        value: Administrator
+
+  # Runs server/jobs/finalize.js directly against MongoDB — no HTTP call, no
+  # CRON_SECRET needed, since it's not going through the /api/cron/finalize
+  # endpoint at all. Schedule matches vercel.json's cron (00:05 UTC daily).
+  - type: cron
+    name: hrms-finalize
+    runtime: node
+    plan: free
+    schedule: '5 0 * * *'
+    buildCommand: npm install
+    startCommand: npm run finalize
+    envVars:
+      - key: MONGODB_URL
+        sync: false
