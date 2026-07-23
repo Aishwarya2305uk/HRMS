@@ -1,4 +1,6 @@
-"rewrites": [
-  { "source": "/api/(.*)", "destination": "https://hrms-backend-7rnx.onrender.com/api/$1" },
-  { "source": "/((?!api/).*)", "destination": "/index.html" }
-]
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "https://hrms-backend-7rnx.onrender.com/api/$1" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ]
+}
