@@ -386,7 +386,7 @@ export default function Portal() {
             </Section>
           )}
 
-          {active === 'calendar' && <LeaveCalendar />}
+          {active === 'calendar' && <LeaveCalendar typeLabels={typeLabels} />}
 
           {active === 'people' && (
             <Section query={peopleQ} skeletonRows={5}>

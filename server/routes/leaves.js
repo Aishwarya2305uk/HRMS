@@ -214,20 +214,34 @@ router.get('/calendar', async (req, res, next) => {
       endDate: { $gte: monthStart },
     }).populate('userId', 'name')
 
-    // Build a per-day map: { 'YYYY-MM-DD': [{ name, type, self }] }.
+    // Build a per-day map: { 'YYYY-MM-DD': [{ name, type, self, ... }] }.
+    // Every entry carries enough to render a full detail view on click
+    // (dates, day count, status) — but `reason`/`decisionComment` are only
+    // attached when the entry belongs to the viewer. The company-wide view is
+    // deliberately "who + how many" only (requirements §4.5); a leave's reason
+    // is personal justification meant for the employee and their manager
+    // (§4.2), never for every coworker who happens to view the calendar.
     const byDay = {}
     const push = (key, entry) => {
       if (key.slice(0, 7) !== month) return
       ;(byDay[key] ??= []).push(entry)
     }
     for (const l of approved) {
+      const isSelf = l.userId?._id?.toString() === req.user._id.toString()
       const keys = dateKeysInRange(dayKey(l.startDate), dayKey(l.endDate))
       for (const k of keys) {
         push(k, {
+          id: l._id.toString(),
           name: l.userId?.name ?? 'Someone',
           type: l.type,
-          self: l.userId?._id?.toString() === req.user._id.toString(),
+          self: isSelf,
           kind: 'leave',
+          status: 'approved',
+          startDate: dayKey(l.startDate),
+          endDate: dayKey(l.endDate),
+          days: l.days,
+          createdAt: l.createdAt,
+          ...(isSelf ? { reason: l.reason, decisionComment: l.decisionComment || '' } : {}),
         })
       }
     }
@@ -241,7 +255,20 @@ router.get('/calendar', async (req, res, next) => {
     })
     for (const l of own) {
       for (const k of dateKeysInRange(dayKey(l.startDate), dayKey(l.endDate))) {
-        push(k, { name: 'You', type: l.type, self: true, kind: l.status })
+        push(k, {
+          id: l._id.toString(),
+          name: 'You',
+          type: l.type,
+          self: true,
+          kind: l.status,
+          status: l.status,
+          startDate: dayKey(l.startDate),
+          endDate: dayKey(l.endDate),
+          days: l.days,
+          reason: l.reason,
+          decisionComment: l.decisionComment || '',
+          createdAt: l.createdAt,
+        })
       }
     }
 
@@ -253,7 +280,18 @@ router.get('/calendar', async (req, res, next) => {
       date: { $gte: `${month}-01`, $lte: `${month}-31` },
     }).select('date')
     for (const s of leaveDays) {
-      push(s.date, { name: 'You', type: 'attendance', self: true, kind: 'auto-leave' })
+      push(s.date, {
+        id: `attendance-${s.date}`,
+        name: 'You',
+        type: 'attendance',
+        self: true,
+        kind: 'auto-leave',
+        status: 'auto-leave',
+        startDate: s.date,
+        endDate: s.date,
+        days: 1,
+        reason: 'Automatically marked as leave — fewer than 8 hours were recorded that day.',
+      })
     }
 
     res.json({ month, days: byDay })
