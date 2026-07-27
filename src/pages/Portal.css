@@ -88,7 +88,13 @@
 
 /* ---- Forms ---- */
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
-.field label { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); }
+.field label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
 .field input,
 .field select,
 .field textarea {
@@ -105,7 +111,7 @@
 .field textarea:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
+  box-shadow: 0 0 0 2px var(--primary-soft);
 }
 .field textarea { resize: vertical; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -152,7 +158,7 @@
   overflow: auto;
   background: var(--surface-2);
   border-radius: var(--r-xl);
-  box-shadow: var(--elev-4);
+  box-shadow: var(--elev-2);
   padding: 24px;
   animation: pop-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
@@ -271,20 +277,75 @@
 
 .notif-compose { display: flex; flex-direction: column; }
 
+/* ---- Announcements (dedicated management page) ---- */
+.notif-manage { display: flex; flex-direction: column; gap: 22px; }
+.notif-manage .notif-list { gap: 12px; }
+
+/* ---- Teams (self-service project teams for targeted announcements) ---- */
+.team-manager__hint { margin-bottom: 14px; }
+.team-form { display: flex; flex-direction: column; gap: 4px; }
+.team-member-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 190px;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+}
+.team-member-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--r-pill);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.team-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.team-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.team-list__text { display: flex; flex-direction: column; min-width: 0; }
+.team-list__text strong { font-size: 0.9rem; }
+.team-list__text em {
+  font-style: normal;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.team-list__actions { display: flex; gap: 6px; flex: none; }
+
 /* ---- Tables ---- */
 .table-wrap { overflow-x: auto; margin: 0 -4px; }
 .table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .table th {
   text-align: left;
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-faint);
-  font-weight: 700;
+  font-weight: 600;
   padding: 10px 12px;
+  background: var(--surface-sunken);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
+.table thead tr:first-child th:first-child { border-top-left-radius: var(--r-sm); }
+.table thead tr:first-child th:last-child { border-top-right-radius: var(--r-sm); }
 .table td { padding: 12px; border-bottom: 1px solid var(--surface-muted); vertical-align: middle; }
 .table tbody tr { transition: background 0.15s; }
 .table tbody tr:hover { background: var(--surface-sunken); }
@@ -308,8 +369,8 @@
   border-radius: 50%;
 }
 .avatar.tint-indigo { background: linear-gradient(135deg, var(--primary), var(--primary-700)); }
-.avatar.tint-blue { background: linear-gradient(135deg, var(--accent), #1d4ed8); }
-.avatar.tint-green { background: linear-gradient(135deg, #22c55e, var(--success)); }
+.avatar.tint-blue { background: linear-gradient(135deg, var(--accent), var(--primary-600)); }
+.avatar.tint-green { background: linear-gradient(135deg, #34d399, var(--success)); }
 
 /* ---- Approvals ---- */
 .approval-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
@@ -356,14 +417,14 @@
 /* ---- People (admin) ---- */
 .people { display: flex; flex-direction: column; gap: 22px; }
 
-/* ---- Org tree ---- */
-.org-tree, .org-children { list-style: none; margin: 0; padding: 0; }
-.org-children {
+/* ---- Org outline (indented collapsible list — the "List" view) ---- */
+.org-outline, .org-outline-children { list-style: none; margin: 0; padding: 0; }
+.org-outline-children {
   margin-left: 22px;
   padding-left: 18px;
   border-left: 2px solid var(--border);
 }
-.org-node { margin: 8px 0; }
+.org-outline-node { margin: 8px 0; }
 .org-card {
   display: flex;
   align-items: center;
@@ -426,7 +487,7 @@
 }
 .org-legend span { display: inline-flex; align-items: center; gap: 6px; }
 
-/* ---- Org list (flat roster view) ---- */
+/* ---- Org list (flat roster — search results) ---- */
 .org-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .org-list .org-card:hover { transform: none; }
 .org-list__manager {
@@ -442,52 +503,234 @@
 
 .seg__btn--icon { display: inline-flex; align-items: center; gap: 6px; }
 
+/* ---- Org chart (graphical tree view) — Teams/Hyperfish-style boxes joined
+   by elbow connectors. Built with the classic display:table trick: each
+   nested <ul> is its own mini-table, so every subtree centers itself under
+   its parent regardless of how wide its siblings are. ---- */
+.org-chart-wrap { position: relative; }
+.org-chart-zoom {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 4px;
+  box-shadow: var(--elev-2);
+}
+.org-chart-zoom button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.org-chart-zoom button:hover:not(:disabled) { background: var(--surface-muted); color: var(--text); }
+.org-chart-zoom button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.org-chart-scroll { overflow-x: auto; padding: 28px 16px 20px; }
+
+.org-chart, .org-chart ul {
+  display: table;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+  transform-origin: top center;
+}
+.org-chart ul { width: 100%; }
+.org-chart li {
+  display: table-cell;
+  position: relative;
+  padding: 28px 14px 0;
+  vertical-align: top;
+}
+/* horizontal bar spanning one row of siblings, trimmed at the outer edges */
+.org-chart li::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  border-top: 2px solid var(--border-strong);
+}
+.org-chart li:first-child::before { left: 50%; }
+.org-chart li:last-child::before { right: 50%; }
+.org-chart li:only-child::before { display: none; }
+/* vertical drop from that bar down to this card */
+.org-chart-card::before {
+  content: '';
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  width: 0;
+  height: 20px;
+  border-left: 2px solid var(--border-strong);
+}
+/* small downward arrowhead where the connector meets the card — matches the
+   Microsoft Teams org-structure reference. Every non-root card gets one. */
+.org-chart-card::after {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--border-strong);
+}
+/* vertical rise from a parent card down to its children's horizontal bar */
+.org-chart ul::before {
+  content: '';
+  display: block;
+  width: 0;
+  height: 20px;
+  margin: 0 auto;
+  border-left: 2px solid var(--border-strong);
+}
+/* the top level has nothing above it to connect to */
+.org-chart > li { padding-top: 0; }
+.org-chart > li::before,
+.org-chart > li > .org-chart-card::before,
+.org-chart > li > .org-chart-card::after { display: none; }
+
+.org-chart-card {
+  position: relative;
+  width: 190px;
+  text-align: left;
+  border-radius: var(--r-md);
+  box-shadow: var(--elev-1);
+  transition: transform 0.18s ease, box-shadow 0.18s;
+}
+.org-chart-card:hover { box-shadow: var(--elev-2); transform: translateY(-2px); }
+
+/* Admin/manager tier — solid "org unit" box, matching the reference's Team
+   boxes. Uses this app's existing role-tint colors rather than a literal
+   copy of the reference's palette, so it stays consistent with the rest of
+   the app (same tints as the role pills, avatars, etc.). */
+.org-chart-card--unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--primary);
+  color: #fff;
+}
+.org-chart-card--unit.tint-blue { background: var(--accent); }
+.org-chart-card--unit.is-you { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--primary-700), var(--elev-1); }
+.org-chart-card--unit .org-chart-card__text em { color: rgba(255, 255, 255, 0.8); }
+.org-chart-card--unit .you-tag { background: rgba(255, 255, 255, 0.24); color: #fff; }
+.org-chart-card--unit .org-chart-card__avatar .status-dot { box-shadow: 0 0 0 2px var(--primary); }
+.org-chart-card--unit.tint-blue .org-chart-card__avatar .status-dot { box-shadow: 0 0 0 2px var(--accent); }
+
+/* Employee tier — header + body card, matching the reference's Channel
+   cards (dark header strip, plain detail rows below). */
+.org-chart-card--leaf {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+}
+.org-chart-card--leaf.is-you { box-shadow: 0 0 0 2px var(--primary-soft), var(--elev-1); }
+.org-chart-card__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  background: var(--success);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+.org-chart-card__head .status-dot { box-shadow: 0 0 0 2px var(--success); }
+.org-chart-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 12px;
+}
+.org-chart-card__row {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.org-chart-card__row--muted { color: var(--text-faint); font-style: italic; }
+
+.org-chart-card__avatar { position: relative; display: inline-flex; flex: none; }
+.org-chart-card__avatar .status-dot { position: absolute; right: -1px; bottom: -1px; }
+.org-chart-card__badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  background: #fff;
+  color: var(--primary-700);
+  font-size: 0.62rem;
+  font-weight: 700;
+  box-shadow: 0 0 0 2px var(--surface-1);
+}
+.org-chart-card__text { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.org-chart-card__text strong {
+  font-size: 0.86rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.org-chart-card__text em {
+  font-style: normal;
+  font-size: 0.74rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ---- Calendar page (full-screen dedicated view, not a cramped widget) ---- */
 .cal-page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 22px;
   /* Fills the viewport like a real page, but never collapses on short
      screens or balloons absurdly tall on huge ones. */
   min-height: clamp(560px, calc(100vh - 200px), 1000px);
 }
 .cal-page__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
 }
+/* Matches the app-wide section-header size (.attendance__head h2) — this
+   page's own <h2> would otherwise fall back to the browser's default h2
+   size, badly out of step with every other card title in the dashboard. */
+.cal-page__head h2 { font-size: 1.15rem; }
 .cal-page__subtitle { margin-top: 4px; font-size: 0.86rem; color: var(--text-muted); }
 
 .cal-nav { display: flex; align-items: center; gap: 8px; }
 .cal-month { font-weight: 650; font-size: 0.94rem; min-width: 130px; text-align: center; }
 
-/* ---- Month-at-a-glance stats ---- */
-.cal-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-.cal-stat {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  background: var(--surface-1);
-  box-shadow: var(--elev-1);
-}
-.cal-stat strong { display: block; font-size: 1.25rem; font-weight: 750; letter-spacing: -0.02em; }
-.cal-stat span { font-size: 0.78rem; color: var(--text-muted); font-weight: 500; }
-.cal-stat__icon {
-  width: 38px;
-  height: 38px;
-  flex: none;
-  border-radius: 11px;
-  display: grid;
-  place-items: center;
-}
-.cal-stat__icon.leave { background: var(--success-soft); color: var(--success); }
-.cal-stat__icon.pending { background: var(--warning-soft); color: var(--warning); }
-.cal-stat__icon.others { background: var(--accent-soft); color: #1d4ed8; }
+/* Month-at-a-glance stats reuse .stat, .tint-*, .stat__icon etc. verbatim
+   (see .stat-row in EmployeeDashboard.css) so they match the dashboard's
+   stat tiles exactly instead of a parallel, slightly-different look. */
+.cal-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
 
 /* ---- Grid ---- */
 .cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; padding: 0 2px; }
@@ -497,7 +740,7 @@
   font-weight: 700;
   color: var(--text-faint);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   padding-bottom: 2px;
 }
 .cal-weekday.weekend { color: var(--text-muted); }
@@ -591,7 +834,7 @@
   font-size: 0.56rem;
   font-weight: 800;
   color: #fff;
-  background: linear-gradient(135deg, var(--accent), #1d4ed8);
+  background: linear-gradient(135deg, var(--accent), var(--primary-600));
 }
 .cal-avatar.sm { width: 18px; height: 18px; font-size: 0.6rem; }
 
@@ -633,7 +876,7 @@
 .leave-detail__facts dt {
   font-size: 0.7rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   color: var(--text-faint);
   font-weight: 700;
 }
@@ -642,7 +885,7 @@
 .leave-detail__reason strong {
   font-size: 0.74rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   color: var(--text-faint);
   font-weight: 700;
 }
@@ -777,7 +1020,7 @@
   background: var(--surface-sunken);
   color: var(--text-faint);
 }
-.state__icon--error { background: var(--danger-soft, #fee2e2); font-size: 1.4rem; }
+.state__icon--error { background: var(--danger-soft, #fee2e2); color: var(--danger); }
 .state__title { font-size: 1rem; font-weight: 650; }
 .state__msg {
   font-size: 0.87rem;
@@ -905,7 +1148,7 @@
   border-radius: var(--r-xl);
   box-shadow: var(--elev-3);
 }
-.crash__icon { font-size: 2.2rem; }
+.crash__icon { display: inline-flex; color: var(--danger); }
 .crash__card h1 { font-size: 1.35rem; margin: 14px 0 8px; }
 .crash__card p { color: var(--text-muted); font-size: 0.92rem; line-height: 1.55; margin-bottom: 22px; }
 .crash__actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }

@@ -112,4 +112,31 @@ router.get('/history', async (req, res, next) => {
   }
 })
 
+/**
+ * GET /api/attendance/all?month=YYYY-MM — admin-only: every employee's
+ * attendance for the given month (defaults to the current month).
+ */
+router.get('/all', async (req, res, next) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admins only.' })
+    }
+    const month = /^\d{4}-\d{2}$/.test(req.query.month || '') ? req.query.month : dayKey().slice(0, 7)
+    await finalizeStaleSessions()
+    const sessions = await WorkSession.find({ date: { $gte: `${month}-01`, $lte: `${month}-31` } })
+      .populate('userId', 'name department')
+      .sort({ date: -1 })
+    res.json(
+      sessions.map((s) => ({
+        ...s.toLiveJSON(),
+        employeeId: s.userId?._id?.toString() ?? null,
+        employeeName: s.userId?.name ?? 'Unknown',
+        department: s.userId?.department ?? '',
+      })),
+    )
+  } catch (err) {
+    next(err)
+  }
+})
+
 export default router

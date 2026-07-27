@@ -69,7 +69,9 @@ export function EmptyState({ icon = 'leaf', title, message, action }) {
 export function ErrorState({ message, onRetry, retrying }) {
   return (
     <div className="state state--error" role="alert">
-      <span className="state__icon state__icon--error" aria-hidden="true">⚠️</span>
+      <span className="state__icon state__icon--error" aria-hidden="true">
+        <Icon name="alertTriangle" size={22} />
+      </span>
       <h3 className="state__title">Couldn&apos;t load this</h3>
       <p className="state__msg">{message || 'Something went wrong. Please try again.'}</p>
       {onRetry && (
@@ -86,7 +88,7 @@ export function InlineError({ children, onRetry }) {
   if (!children) return null
   return (
     <div className="inline-error" role="alert">
-      <span aria-hidden="true">⚠️</span>
+      <Icon name="alertTriangle" size={15} />
       <span>{children}</span>
       {onRetry && (
         <button type="button" className="inline-error__retry" onClick={onRetry}>

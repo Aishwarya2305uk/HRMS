@@ -1,4 +1,5 @@
 import { Component } from 'react'
+import Icon from './Icon'
 
 /**
  * Last line of defence: catches render-time crashes so a single broken
@@ -30,7 +31,9 @@ export default class ErrorBoundary extends Component {
     return (
       <div className="crash" role="alert">
         <div className="crash__card">
-          <span className="crash__icon" aria-hidden="true">⚠️</span>
+          <span className="crash__icon" aria-hidden="true">
+            <Icon name="alertTriangle" size={34} />
+          </span>
           <h1>Something went wrong</h1>
           <p>
             This part of the page didn&apos;t load correctly. It&apos;s not

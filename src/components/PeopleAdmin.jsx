@@ -31,7 +31,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  *    rejects them, so the table never shows a change that didn't persist.
  *
  * `searchQuery` filters only the roster table below — the manager-assignment
- * dropdowns always see the full, unfiltered `people` list.
+ * dropdowns always see the full list of manager/admin candidates, regardless
+ * of the search filter.
  */
 export default function PeopleAdmin({ people, setPeople, searchQuery = '' }) {
   const toast = useToast()
@@ -40,6 +41,12 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '' }) {
   const [submitError, setSubmitError] = useState('')
   const [saving, setSaving] = useState(false)
   const [busyManagerId, setBusyManagerId] = useState(null)
+
+  // Only managers/admins can be someone's "reports to" — an employee can't.
+  const managerCandidates = useMemo(
+    () => people.filter((p) => p.role === 'manager' || p.role === 'admin'),
+    [people],
+  )
 
   const errors = useMemo(() => {
     const e = {}
@@ -250,7 +257,7 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '' }) {
                 onChange={(e) => update('managerId', e.target.value)}
               >
                 <option value="">— No manager (top level) —</option>
-                {people.map((p) => (
+                {managerCandidates.map((p) => (
                   <option key={p.id} value={p.id}>{p.name} · {p.role}</option>
                 ))}
               </select>
@@ -322,7 +329,7 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '' }) {
                         onChange={(e) => changeManager(p.id, e.target.value)}
                       >
                         <option value="">— None —</option>
-                        {people.filter((m) => m.id !== p.id).map((m) => (
+                        {managerCandidates.filter((m) => m.id !== p.id).map((m) => (
                           <option key={m.id} value={m.id}>{m.name}</option>
                         ))}
                       </select>

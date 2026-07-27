@@ -14,12 +14,13 @@ function signToken(user) {
 
 /**
  * POST /api/auth/login
- * Body: { email, password, portal? }  portal is 'staff' | 'admin'
- * Portal separation is enforced HERE (backend), not just in the UI.
+ * Body: { email, password }
+ * One login endpoint for every role — the frontend routes to the right
+ * dashboard based on the role returned on `user`.
  */
 router.post('/login', async (req, res) => {
   try {
-    const { email, password, portal = 'staff' } = req.body || {}
+    const { email, password } = req.body || {}
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' })
     }
@@ -28,15 +29,6 @@ router.post('/login', async (req, res) => {
     // Same generic message whether the email or password is wrong.
     if (!user || !(await user.comparePassword(password))) {
       return res.status(401).json({ error: 'Invalid email or password.' })
-    }
-
-    if (portal === 'admin' && user.role !== 'admin') {
-      return res.status(403).json({ error: 'This portal is for administrators only.' })
-    }
-    if (portal === 'staff' && user.role === 'admin') {
-      return res
-        .status(403)
-        .json({ error: 'Admins must sign in from the admin portal (/admin).' })
     }
 
     return res.json({ token: signToken(user), user: user.toSafeJSON() })

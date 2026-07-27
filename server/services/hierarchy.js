@@ -27,3 +27,42 @@ export async function ancestorChain(userId) {
   }
   return chain
 }
+
+/**
+ * Every user id in `managerId`'s downward reporting subtree — their direct
+ * and transitive reports, NOT including managerId itself. This is the
+ * "who am I allowed to put in one of my own project teams" set (see
+ * server/routes/teams.js): a team can only ever be built from people
+ * already here, so it can never grant reach beyond the manager's existing
+ * whole-subtree broadcast authority.
+ *
+ * Loads the whole roster and walks down in memory (same scale assumption as
+ * the existing org-tree/audience-options endpoints — cheap at this
+ * company size) rather than repeatedly querying one level at a time.
+ */
+export async function descendantIds(managerId) {
+  const users = await User.find({}).select('_id managerId')
+  const childrenOf = new Map()
+  for (const u of users) {
+    if (!u.managerId) continue
+    const key = String(u.managerId)
+    if (!childrenOf.has(key)) childrenOf.set(key, [])
+    childrenOf.get(key).push(String(u._id))
+  }
+
+  const result = []
+  const seen = new Set([String(managerId)])
+  const queue = [...(childrenOf.get(String(managerId)) ?? [])]
+  for (const id of queue) seen.add(id)
+  while (queue.length) {
+    const id = queue.shift()
+    result.push(id)
+    for (const childId of childrenOf.get(id) ?? []) {
+      if (!seen.has(childId)) {
+        seen.add(childId)
+        queue.push(childId)
+      }
+    }
+  }
+  return result
+}

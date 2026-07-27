@@ -8,6 +8,7 @@ export const attendance = {
   today: () => apiFetch('/attendance/today'),
   action: (a) => apiFetch(`/attendance/${a}`, { method: 'POST' }),
   history: () => apiFetch('/attendance/history'),
+  all: (month) => apiFetch(`/attendance/all${month ? `?month=${month}` : ''}`),
 }
 
 export const leaves = {
@@ -32,8 +33,17 @@ export const employees = {
 
 export const announcements = {
   list: () => apiFetch('/announcements'),
+  sent: () => apiFetch('/announcements/sent'),
   markAllRead: () => apiFetch('/announcements/read-all', { method: 'POST' }),
   audienceOptions: () => apiFetch('/announcements/audience-options'),
   create: (body) => apiFetch('/announcements', { method: 'POST', body }),
   remove: (id) => apiFetch(`/announcements/${id}`, { method: 'DELETE' }),
+}
+
+export const teams = {
+  mine: () => apiFetch('/teams/mine'),
+  candidates: () => apiFetch('/teams/candidates'),
+  create: (body) => apiFetch('/teams', { method: 'POST', body }),
+  update: (id, body) => apiFetch(`/teams/${id}`, { method: 'PATCH', body }),
+  remove: (id) => apiFetch(`/teams/${id}`, { method: 'DELETE' }),
 }

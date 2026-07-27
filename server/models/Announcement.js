@@ -7,11 +7,15 @@ const { Schema, model } = mongoose
  * (see `type`); "pending work" (leave approvals/requests) is never stored
  * here, it's derived live from the Leave collection.
  *
- * Audience is one of three mutually exclusive scopes:
- *  - 'all'  — everyone (admin only)
- *  - 'role' — everyone with `audienceRole` (admin only)
- *  - 'team' — `audienceRootId` plus everyone who transitively reports to them
- *             (admin: any user; manager: only themselves)
+ * Audience is one of four mutually exclusive scopes:
+ *  - 'all'   — everyone (admin only)
+ *  - 'role'  — everyone with `audienceRole` (admin only)
+ *  - 'team'  — `audienceRootId` plus everyone who transitively reports to them
+ *              (admin: any user; manager: only themselves)
+ *  - 'group' — the explicit member list of `audienceGroupId`, a named
+ *              project Team the author created from their own reports —
+ *              finer-grained than 'team' when a manager runs several
+ *              projects and only wants to reach one of them
  * See server/services/hierarchy.js for how 'team' membership is resolved.
  */
 const announcementSchema = new Schema(
@@ -27,11 +31,13 @@ const announcementSchema = new Schema(
 
     authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
 
-    audienceScope: { type: String, enum: ['all', 'role', 'team'], required: true },
+    audienceScope: { type: String, enum: ['all', 'role', 'team', 'group'], required: true },
     // Set only when audienceScope === 'role'.
     audienceRole: { type: String, enum: ['employee', 'manager', 'admin'], default: null },
     // Set only when audienceScope === 'team'.
     audienceRootId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    // Set only when audienceScope === 'group'.
+    audienceGroupId: { type: Schema.Types.ObjectId, ref: 'Team', default: null },
 
     // Who has seen this — checked with $addToSet, never re-read wholesale by
     // the client (see toJSONSafe: a per-viewer `read` flag is computed by the
@@ -58,6 +64,10 @@ announcementSchema.methods.toJSONSafe = function toJSONSafe() {
       ? this.audienceRootId._id.toString()
       : this.audienceRootId?.toString() ?? null,
     audienceRootName: this.audienceRootId?.name ?? null,
+    audienceGroupId: this.audienceGroupId?._id
+      ? this.audienceGroupId._id.toString()
+      : this.audienceGroupId?.toString() ?? null,
+    audienceGroupName: this.audienceGroupId?.name ?? null,
     createdAt: this.createdAt,
   }
 }

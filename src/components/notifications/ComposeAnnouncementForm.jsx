@@ -13,10 +13,13 @@ const BODY_MAX = 2000
  * see that component for why two stacked dialogs would fight over Escape.
  *
  * "Send to" is a single select whose value encodes both the audience scope
- * and its detail ("all", "role:manager", "team:<userId>") so the UI doesn't
- * need conditional sub-pickers — it's split back apart on submit.
+ * and its detail ("all", "role:manager", "team:<userId>", "group:<teamId>")
+ * so the UI doesn't need conditional sub-pickers — it's split back apart on
+ * submit. "team" targets a manager's whole reporting subtree; "group"
+ * targets one of their own named project teams (see TeamsManager) — finer
+ * grained, for when a manager runs several projects and only wants one.
  */
-export default function ComposeAnnouncementForm({ onCancel, onCreated }) {
+export default function ComposeAnnouncementForm({ onCancel, onCreated, cancelLabel = 'Cancel' }) {
   const optionsQ = useAsyncData(useCallback(() => announcementsApi.audienceOptions(), []))
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -67,6 +70,7 @@ export default function ComposeAnnouncementForm({ onCancel, onCreated }) {
         audienceScope: scope,
         audienceRole: scope === 'role' ? detail : undefined,
         audienceRootId: scope === 'team' ? detail : undefined,
+        audienceGroupId: scope === 'group' ? detail : undefined,
       })
       haptic('success')
       onCreated(created)
@@ -80,7 +84,11 @@ export default function ComposeAnnouncementForm({ onCancel, onCreated }) {
   if (optionsQ.error && !optionsQ.data) {
     return <InlineError onRetry={optionsQ.reload}>{optionsQ.error.message}</InlineError>
   }
-  if (optionsQ.data && !optionsQ.data.canTargetAll && optionsQ.data.teams.length === 0) {
+  // `groups` defaults defensively — guards against a stale server response
+  // (e.g. an old deploy) that predates this field rather than assuming it.
+  const groups = optionsQ.data?.groups ?? []
+
+  if (optionsQ.data && !optionsQ.data.canTargetAll && optionsQ.data.teams.length === 0 && groups.length === 0) {
     return (
       <EmptyState
         icon="users"
@@ -165,13 +173,22 @@ export default function ComposeAnnouncementForm({ onCancel, onCreated }) {
               {t.label} ({t.size})
             </option>
           ))}
+          {groups.length > 0 && (
+            <optgroup label="My project teams">
+              {groups.map((g) => (
+                <option key={g.id} value={`group:${g.id}`}>
+                  {g.name} ({g.size})
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         {showError('audience') && <p className="field-error">{errors.audience}</p>}
       </div>
 
       <div className="modal__actions">
         <button type="button" className="btn-tactile ghost" onClick={onCancel} disabled={submitting}>
-          Cancel
+          {cancelLabel}
         </button>
         <button type="submit" className="btn-tactile primary" disabled={submitting}>
           {submitting ? 'Posting…' : 'Post'}

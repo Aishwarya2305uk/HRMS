@@ -90,7 +90,9 @@ export default function ApplyLeaveModal({ types, balances, onClose, onCreated })
     <Modal titleId="apply-leave-title" onClose={onClose}>
       <div className="modal__head">
         <h2 id="apply-leave-title">Apply for leave</h2>
-        <button className="icon-btn sm" onClick={onClose} aria-label="Close dialog">✕</button>
+        <button className="icon-btn sm" onClick={onClose} aria-label="Close dialog">
+          <Icon name="x" size={16} />
+        </button>
       </div>
 
       {submitError && <InlineError>{submitError}</InlineError>}

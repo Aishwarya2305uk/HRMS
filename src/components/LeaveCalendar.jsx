@@ -174,29 +174,29 @@ export default function LeaveCalendar({ typeLabels = {} }) {
 
       {error && <InlineError onRetry={load}>{error.message}</InlineError>}
 
-      <div className="cal-stats">
-        <div className="cal-stat">
-          <span className="cal-stat__icon leave"><Icon name="check" size={17} /></span>
-          <div>
-            <strong>{stats.approvedDays}</strong>
-            <span>Your approved leave days</span>
+      <section className="cal-stats">
+        <article className="stat tint-green" tabIndex={0} {...tactile('light')}>
+          <span className="stat__icon"><Icon name="check" size={20} /></span>
+          <div className="stat__meta">
+            <span className="stat__label">Your approved leave days</span>
+            <span className="stat__value">{stats.approvedDays}</span>
           </div>
-        </div>
-        <div className="cal-stat">
-          <span className="cal-stat__icon pending"><Icon name="clock" size={17} /></span>
-          <div>
-            <strong>{stats.pendingCount}</strong>
-            <span>Your pending requests</span>
+        </article>
+        <article className="stat tint-amber" tabIndex={0} {...tactile('light')}>
+          <span className="stat__icon"><Icon name="clock" size={20} /></span>
+          <div className="stat__meta">
+            <span className="stat__label">Your pending requests</span>
+            <span className="stat__value">{stats.pendingCount}</span>
           </div>
-        </div>
-        <div className="cal-stat">
-          <span className="cal-stat__icon others"><Icon name="users" size={17} /></span>
-          <div>
-            <strong>{stats.teammatesOnLeave}</strong>
-            <span>Teammates on leave</span>
+        </article>
+        <article className="stat tint-blue" tabIndex={0} {...tactile('light')}>
+          <span className="stat__icon"><Icon name="users" size={20} /></span>
+          <div className="stat__meta">
+            <span className="stat__label">Teammates on leave</span>
+            <span className="stat__value">{stats.teammatesOnLeave}</span>
           </div>
-        </div>
-      </div>
+        </article>
+      </section>
 
       <div className="cal-weekdays">
         {WEEKDAYS.map((w, i) => (
@@ -284,7 +284,7 @@ export default function LeaveCalendar({ typeLabels = {} }) {
           <div className="modal__head">
             <h2 id="cal-day-title">{dayLongLabel(dayModalKey)}</h2>
             <button className="icon-btn sm" onClick={() => setDayModalKey(null)} aria-label="Close dialog">
-              ✕
+              <Icon name="x" size={16} />
             </button>
           </div>
           {(days[dayModalKey] || []).length === 0 ? (
@@ -306,7 +306,7 @@ export default function LeaveCalendar({ typeLabels = {} }) {
           <div className="modal__head">
             <h2 id="cal-entry-title">{detailEntry.self ? 'Your leave' : `${detailEntry.name}'s leave`}</h2>
             <button className="icon-btn sm" onClick={() => setDetailEntry(null)} aria-label="Close dialog">
-              ✕
+              <Icon name="x" size={16} />
             </button>
           </div>
           <LeaveDetailBody entry={detailEntry} typeLabels={typeLabels} />

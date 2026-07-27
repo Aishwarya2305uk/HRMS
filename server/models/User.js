@@ -72,7 +72,10 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     designation: this.designation,
     department: this.department,
     joiningDate: this.joiningDate,
-    managerId: this.managerId ? this.managerId.toString() : null,
+    // `managerId` may be a populated User sub-document (callers that used
+    // .populate('managerId', ...)) or a plain ObjectId — always return the
+    // raw hex id either way, never a Mongoose debug string.
+    managerId: this.managerId ? (this.managerId._id ?? this.managerId).toString() : null,
     // Per-type remaining days plus a rolled-up total (for the balance ring).
     leaveBalances: balances,
     leaveBalance: total,

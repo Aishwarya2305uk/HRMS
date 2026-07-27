@@ -20,6 +20,9 @@ const PATHS = {
   x: <path d="M18 6 6 18M6 6l12 12" />,
   megaphone: <><path d="M3 11v2a2 2 0 0 0 2 2h2l10 4V5L7 9H5a2 2 0 0 0-2 2Z" /><path d="M17 8a3 3 0 0 1 0 8" /></>,
   alertTriangle: <><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" /><path d="M12 9v4M12 17h.01" /></>,
+  zoomIn: <><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /><path d="M11 8v6M8 11h6" /></>,
+  zoomOut: <><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /><path d="M8 11h6" /></>,
+  refreshCw: <><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></>,
 }
 
 export default function Icon({ name, size = 20, strokeWidth = 1.9, ...rest }) {

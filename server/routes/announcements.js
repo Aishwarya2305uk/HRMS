@@ -3,6 +3,7 @@ import mongoose from 'mongoose'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { Announcement } from '../models/Announcement.js'
 import { User } from '../models/User.js'
+import { Team } from '../models/Team.js'
 import { ancestorChain } from '../services/hierarchy.js'
 
 const router = Router()
@@ -13,10 +14,14 @@ const BODY_MAX = 2000
 const LIST_LIMIT = 100 // small internal user base — plenty of headroom, keeps the query bounded
 const ROLES = ['employee', 'manager', 'admin']
 
-/** Whether announcement `a` reaches a viewer with `viewerRole` whose upward chain is `chain`. */
-function matchesAudience(a, viewerRole, chain) {
+/** Whether announcement `a` reaches `viewer` (the full req.user), whose upward chain is `chain`. */
+function matchesAudience(a, viewer, chain) {
   if (a.audienceScope === 'all') return true
-  if (a.audienceScope === 'role') return a.audienceRole === viewerRole
+  if (a.audienceScope === 'role') return a.audienceRole === viewer.role
+  if (a.audienceScope === 'group') {
+    const memberIds = a.audienceGroupId?.memberIds ?? []
+    return memberIds.some((id) => id.toString() === viewer._id.toString())
+  }
   const rootId = a.audienceRootId?._id
     ? a.audienceRootId._id.toString()
     : a.audienceRootId?.toString()
@@ -33,11 +38,12 @@ router.get('/', async (req, res, next) => {
       Announcement.find({})
         .populate('authorId', 'name')
         .populate('audienceRootId', 'name')
+        .populate('audienceGroupId', 'name memberIds')
         .sort({ createdAt: -1 })
         .limit(LIST_LIMIT),
       ancestorChain(req.user._id),
     ])
-    const mine = all.filter((a) => matchesAudience(a, req.user.role, chain))
+    const mine = all.filter((a) => matchesAudience(a, req.user, chain))
     res.json(
       mine.map((a) => ({
         ...a.toJSONSafe(),
@@ -56,10 +62,10 @@ router.get('/', async (req, res, next) => {
 router.post('/read-all', async (req, res, next) => {
   try {
     const [unread, chain] = await Promise.all([
-      Announcement.find({ readBy: { $ne: req.user._id } }),
+      Announcement.find({ readBy: { $ne: req.user._id } }).populate('audienceGroupId', 'memberIds'),
       ancestorChain(req.user._id),
     ])
-    const ids = unread.filter((a) => matchesAudience(a, req.user.role, chain)).map((a) => a._id)
+    const ids = unread.filter((a) => matchesAudience(a, req.user, chain)).map((a) => a._id)
     if (ids.length) {
       await Announcement.updateMany({ _id: { $in: ids } }, { $addToSet: { readBy: req.user._id } })
     }
@@ -114,10 +120,18 @@ router.get('/audience-options', async (req, res, next) => {
       }))
       .sort((a, b) => a.label.localeCompare(b.label))
 
+    // The caller's own named project teams — a finer-grained alternative to
+    // broadcasting to the whole subtree above.
+    const ownTeams = await Team.find({ managerId: req.user._id }).select('name memberIds')
+    const groups = ownTeams
+      .map((t) => ({ id: t._id.toString(), name: t.name, size: t.memberIds.length }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+
     res.json({
       canTargetAll: req.user.role === 'admin',
       canTargetRole: req.user.role === 'admin',
       teams,
+      groups,
     })
   } catch (err) {
     next(err)
@@ -125,13 +139,41 @@ router.get('/audience-options', async (req, res, next) => {
 })
 
 /**
+ * GET /api/announcements/sent — full management view, unfiltered by audience:
+ * admins see every announcement ever posted company-wide; managers see only
+ * the ones they authored themselves (same authorship boundary DELETE below
+ * already enforces). This is what the dedicated Announcements page shows —
+ * the drawer's GET / only shows what's addressed to the viewer.
+ */
+router.get('/sent', async (req, res, next) => {
+  try {
+    const filter = req.user.role === 'admin' ? {} : { authorId: req.user._id }
+    const items = await Announcement.find(filter)
+      .populate('authorId', 'name')
+      .populate('audienceRootId', 'name')
+      .sort({ createdAt: -1 })
+      .limit(LIST_LIMIT)
+    res.json(items.map((a) => a.toJSONSafe()))
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
  * POST /api/announcements — compose.
- * Body: { title, body, type, audienceScope, audienceRole?, audienceRootId? }
+ * Body: { title, body, type, audienceScope, audienceRole?, audienceRootId?, audienceGroupId? }
  */
 router.post('/', async (req, res, next) => {
   try {
-    const { title, body, type = 'announcement', audienceScope, audienceRole, audienceRootId } =
-      req.body || {}
+    const {
+      title,
+      body,
+      type = 'announcement',
+      audienceScope,
+      audienceRole,
+      audienceRootId,
+      audienceGroupId,
+    } = req.body || {}
 
     const cleanTitle = String(title || '').trim()
     const cleanBody = String(body || '').trim()
@@ -144,12 +186,13 @@ router.post('/', async (req, res, next) => {
     if (!['announcement', 'urgent'].includes(type)) {
       return res.status(400).json({ error: 'Invalid message type.' })
     }
-    if (!['all', 'role', 'team'].includes(audienceScope)) {
+    if (!['all', 'role', 'team', 'group'].includes(audienceScope)) {
       return res.status(400).json({ error: 'Choose who this is for.' })
     }
 
     let finalAudienceRole = null
     let finalRootId = null
+    let finalGroupId = null
 
     if (audienceScope === 'all' || audienceScope === 'role') {
       if (req.user.role !== 'admin') {
@@ -161,8 +204,7 @@ router.post('/', async (req, res, next) => {
         }
         finalAudienceRole = audienceRole
       }
-    } else {
-      // audienceScope === 'team'
+    } else if (audienceScope === 'team') {
       if (!mongoose.Types.ObjectId.isValid(audienceRootId)) {
         return res.status(400).json({ error: 'Choose a valid team to target.' })
       }
@@ -176,6 +218,17 @@ router.post('/', async (req, res, next) => {
         }
       }
       finalRootId = audienceRootId
+    } else {
+      // audienceScope === 'group' — a named project team.
+      if (!mongoose.Types.ObjectId.isValid(audienceGroupId)) {
+        return res.status(400).json({ error: 'Choose a valid team to target.' })
+      }
+      const group = await Team.findById(audienceGroupId)
+      if (!group) return res.status(400).json({ error: 'Selected team no longer exists.' })
+      if (req.user.role !== 'admin' && group.managerId.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ error: 'You can only broadcast to teams you created.' })
+      }
+      finalGroupId = audienceGroupId
     }
 
     const announcement = await Announcement.create({
@@ -186,8 +239,10 @@ router.post('/', async (req, res, next) => {
       audienceScope,
       audienceRole: finalAudienceRole,
       audienceRootId: finalRootId,
+      audienceGroupId: finalGroupId,
       readBy: [req.user._id], // the author has implicitly seen their own post
     })
+    if (finalGroupId) await announcement.populate('audienceGroupId', 'name')
     console.log(`[announcements] ${req.user.email} posted "${cleanTitle}" (${audienceScope})`)
     res.status(201).json({ ...announcement.toJSONSafe(), authorName: req.user.name, read: true })
   } catch (err) {

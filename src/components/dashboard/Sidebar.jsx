@@ -22,7 +22,6 @@ export default function Sidebar({
   active,
   onSelect,
   role,
-  pendingCount,
   userName,
   userTitle,
   collapsed,
@@ -51,9 +50,9 @@ export default function Sidebar({
           >
             <Icon name={item.icon} size={19} />
             <span className="sidebar-label">{item.label}</span>
-            {item.key === 'approvals' && pendingCount > 0 && (
-              <span className="nav-badge" aria-label={`${pendingCount} pending`}>
-                {pendingCount}
+            {item.badge > 0 && (
+              <span className="nav-badge" aria-label={`${item.badge} ${item.badgeLabel ?? ''}`.trim()}>
+                {item.badge}
               </span>
             )}
           </button>

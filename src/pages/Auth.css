@@ -1,79 +1,30 @@
 /* ============================================================
-   Auth screens — layered depth login (staff + admin)
+   Auth screen — premium enterprise SaaS look (Workday/SAP-style):
+   Deep Navy / Royal Blue / Sky Blue, glass logo chip, 16px cards,
+   soft tinted shadows, blue gradients reserved for the CTA.
    ============================================================ */
 
 .auth {
-  position: relative;
+  --auth-navy: #0f172a;
+  --auth-royal: #2563eb;
+  --auth-sky: #3b82f6;
+  --auth-gray: #f8fafc;
+
   min-height: 100vh;
   display: grid;
   grid-template-columns: 1.05fr 1fr;
-  overflow: hidden;
-  background: var(--surface-0);
+  background: var(--auth-gray);
 }
 
-/* ---------- Ambient depth background ---------- */
-.auth__bg {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-.auth__blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(60px);
-  opacity: 0.55;
-}
-.auth__blob--1 {
-  width: 420px;
-  height: 420px;
-  top: -120px;
-  left: -80px;
-  background: radial-gradient(circle at 30% 30%, #6366f1, transparent 70%);
-}
-.auth__blob--2 {
-  width: 520px;
-  height: 520px;
-  bottom: -160px;
-  right: -120px;
-  background: radial-gradient(circle at 60% 40%, #3b82f6, transparent 70%);
-}
-.auth__blob--3 {
-  width: 300px;
-  height: 300px;
-  top: 40%;
-  left: 45%;
-  background: radial-gradient(circle at 50% 50%, #a5b4fc, transparent 70%);
-  opacity: 0.35;
-}
-
-/* ---------- Left brand / marketing panel ---------- */
+/* ---------- Left brand panel ---------- */
 .auth__brand {
-  position: relative;
-  z-index: 1;
-  padding: 56px 64px;
+  padding: 64px 72px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  gap: 40px;
   color: #fff;
-  background: linear-gradient(150deg, #4338ca 0%, #4f46e5 45%, #3b82f6 100%);
-  overflow: hidden;
-}
-.auth__brand::after {
-  /* faint stacked-card motif in the corner */
-  content: '';
-  position: absolute;
-  right: -80px;
-  bottom: -80px;
-  width: 320px;
-  height: 320px;
-  border-radius: var(--r-xl);
-  background: rgba(255, 255, 255, 0.06);
-  transform: rotate(18deg);
-  box-shadow:
-    -40px -40px 0 rgba(255, 255, 255, 0.05),
-    -80px -80px 0 rgba(255, 255, 255, 0.04);
+  background: linear-gradient(150deg, var(--auth-navy) 0%, var(--auth-royal) 62%, var(--auth-sky) 100%);
 }
 
 .brand__logo {
@@ -81,108 +32,76 @@
   align-items: center;
   gap: 12px;
   font-weight: 700;
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   letter-spacing: -0.01em;
 }
+/* glass chip — the one "navbar-style" element on this screen */
 .brand__logo .mark {
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   border-radius: var(--r-md);
   display: grid;
   place-items: center;
-  background: rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(6px);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
-}
-
-.brand__headline {
-  position: relative;
-  z-index: 1;
-  max-width: 26ch;
-}
-.brand__headline h1 {
-  color: #fff;
-  font-size: 2.6rem;
-  line-height: 1.1;
-  margin-bottom: 16px;
-}
-.brand__headline p {
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 1.05rem;
-  line-height: 1.55;
-}
-
-/* floating stat cards — the signature overlapping/elevation motif */
-.brand__cards {
-  position: relative;
-  z-index: 1;
-  height: 150px;
-}
-.float-card {
-  position: absolute;
-  padding: 16px 18px;
-  border-radius: var(--r-lg);
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.12);
   backdrop-filter: blur(12px);
-  box-shadow:
-    0 12px 30px rgba(0, 0, 0, 0.22),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+
+.brand__intro { max-width: 32ch; }
+.brand__intro h1 {
   color: #fff;
-}
-.float-card .fc-label {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  opacity: 0.8;
-}
-.float-card .fc-value {
-  font-size: 1.5rem;
+  font-size: 36px;
   font-weight: 700;
-  margin-top: 2px;
+  line-height: 44px;
+  letter-spacing: -0.02em;
+  margin-bottom: 12px;
 }
-.float-card--a { left: 0; top: 10px; z-index: 3; }
-.float-card--b { left: 130px; top: 52px; z-index: 2; }
-.float-card--c { left: 268px; top: 4px; z-index: 1; opacity: 0.92; }
+.brand__intro p {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+/* A quote, not a feature checklist — reads as trust, not a sales pitch. */
+.brand__quote {
+  margin: 0;
+  padding-left: 18px;
+  border-left: 3px solid rgba(255, 255, 255, 0.35);
+}
+.brand__quote p {
+  font-size: 1.1rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: #fff;
+  margin-bottom: 10px;
+}
+.brand__quote cite {
+  display: block;
+  font-style: normal;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.72);
+}
 
 /* ---------- Right form panel ---------- */
 .auth__panel {
-  position: relative;
-  z-index: 1;
   display: grid;
   place-items: center;
   padding: 40px 24px;
+  background: var(--auth-gray);
 }
 
 .auth-card {
-  position: relative;
-  z-index: 2;
   width: 100%;
   max-width: 400px;
-  padding: 36px 34px 30px;
-  border-radius: var(--r-xl);
-  background: var(--surface-2);
-  box-shadow: var(--elev-4);
-  border: 1px solid var(--border);
-}
-/* stacked "paper" behind the card to reinforce depth */
-.auth-card::before,
-.auth-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: var(--r-xl);
-  background: var(--surface-1);
-  z-index: -1;
-}
-.auth-card::before {
-  transform: translate(10px, 12px) scale(0.985);
-  box-shadow: var(--elev-2);
-  opacity: 0.9;
-}
-.auth-card::after {
-  transform: translate(20px, 24px) scale(0.97);
-  box-shadow: var(--elev-1);
-  opacity: 0.7;
+  padding: 40px 36px 34px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow:
+    0 20px 40px -16px rgba(15, 23, 42, 0.18),
+    0 4px 12px rgba(15, 23, 42, 0.05);
 }
 
 .auth-card__badge {
@@ -193,33 +112,34 @@
   font-weight: 600;
   padding: 6px 12px;
   border-radius: var(--r-pill);
-  background: var(--primary-soft);
-  color: var(--primary-700);
-  margin-bottom: 18px;
+  background: #eff6ff;
+  color: var(--auth-royal);
+  margin-bottom: 20px;
 }
-.auth-card__badge.is-admin {
-  background: #111827;
-  color: #fff;
-}
-
 .auth-card h2 {
-  font-size: 1.6rem;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--auth-navy);
   margin-bottom: 6px;
 }
 .auth-card__sub {
   color: var(--text-muted);
   font-size: 0.94rem;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 }
 
 .field {
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 .field label {
   display: block;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  color: var(--text);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--auth-navy);
   margin-bottom: 7px;
 }
 .field .control {
@@ -229,9 +149,9 @@
   width: 100%;
   padding: 12px 14px;
   border-radius: var(--r-md);
-  border: 1px solid var(--border-strong);
-  background: var(--surface-1);
-  color: var(--text);
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: var(--auth-navy);
   box-shadow: inset 0 1px 2px rgba(16, 24, 40, 0.04);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -240,10 +160,10 @@
 }
 .field input:focus {
   outline: none;
-  border-color: var(--primary);
+  border-color: var(--auth-royal);
   box-shadow:
     inset 0 1px 2px rgba(16, 24, 40, 0.04),
-    0 0 0 4px var(--primary-soft);
+    0 0 0 2px rgba(37, 99, 235, 0.16);
 }
 .field .toggle-pw {
   position: absolute;
@@ -276,7 +196,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 4px 0 22px;
+  margin: 4px 0 24px;
   font-size: 0.85rem;
 }
 .auth-row label {
@@ -286,56 +206,27 @@
   color: var(--text-muted);
   cursor: pointer;
 }
+.auth-row a { color: var(--auth-royal); }
 
 .btn-primary {
   width: 100%;
   padding: 13px 16px;
   border: none;
   border-radius: var(--r-md);
-  background: linear-gradient(180deg, var(--primary) 0%, var(--primary-600) 100%);
+  background: linear-gradient(135deg, var(--auth-royal) 0%, var(--auth-sky) 100%);
   color: #fff;
   font-size: 1rem;
   font-weight: 650;
   cursor: pointer;
-  box-shadow: var(--ring-primary);
+  box-shadow: 0 10px 24px -6px rgba(37, 99, 235, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
   transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s;
 }
 .btn-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 14px 34px rgba(99, 102, 241, 0.42);
-}
-.btn-primary:active {
-  transform: translateY(0);
+  box-shadow: 0 12px 28px -6px rgba(37, 99, 235, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 .btn-primary:disabled {
   filter: grayscale(0.3) opacity(0.7);
   cursor: default;
-  transform: none;
-}
-.btn-primary.is-admin {
-  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
-  box-shadow: 0 10px 30px rgba(17, 24, 39, 0.35);
-}
-.btn-primary.is-admin:hover {
-  box-shadow: 0 14px 34px rgba(17, 24, 39, 0.45);
-}
-
-.auth-foot {
-  margin-top: 22px;
-  text-align: center;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-/* ---------- Admin portal variant ---------- */
-.auth__brand--admin {
-  background: linear-gradient(155deg, #0f172a 0%, #1e293b 50%, #312e81 100%);
-}
-.auth--admin .auth__blob--1 {
-  background: radial-gradient(circle at 30% 30%, #818cf8, transparent 70%);
-}
-.auth--admin .auth__blob--2 {
-  background: radial-gradient(circle at 60% 40%, #1e293b, transparent 70%);
 }
 
 /* ---------- Responsive ---------- */

@@ -8,9 +8,10 @@ import { haptic } from '../../lib/haptics'
 import ComposeAnnouncementForm from './ComposeAnnouncementForm'
 
 /** How this announcement's audience reads in plain English. */
-function audienceLabel(item) {
+export function audienceLabel(item) {
   if (item.audienceScope === 'all') return 'Everyone'
   if (item.audienceScope === 'role') return `All ${item.audienceRole}s`
+  if (item.audienceScope === 'group') return item.audienceGroupName ? `${item.audienceGroupName} team` : 'A project team'
   return item.audienceRootName ? `${item.audienceRootName}'s team` : 'Team'
 }
 
@@ -32,7 +33,9 @@ function NotifSection({ title, icon, tone, action, children }) {
   )
 }
 
-function AnnouncementItem({ item, canRemove, onRemove }) {
+/** One announcement/urgent-message card — shared by the drawer and the
+ *  dedicated Announcements management page. */
+export function AnnouncementItem({ item, canRemove, onRemove }) {
   const [busy, setBusy] = useState(false)
 
   async function remove() {

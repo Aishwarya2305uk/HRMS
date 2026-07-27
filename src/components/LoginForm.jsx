@@ -1,17 +1,12 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import Icon from './Icon'
 
-/**
- * Reusable login card used by both the staff (/) and admin (/admin) portals.
- *
- * @param {object}  props
- * @param {'staff'|'admin'} props.portal
- * @param {string}  props.title
- * @param {string}  props.subtitle
- * @param {string}  props.badge
- */
-export default function LoginForm({ portal, title, subtitle, badge }) {
+/** Login card used by the single sign-in page, shared by every role. */
+const ROLE_HOME = { admin: '/admin/dashboard' }
+
+export default function LoginForm() {
   const { login, notice, clearNotice } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
@@ -21,10 +16,6 @@ export default function LoginForm({ portal, title, subtitle, badge }) {
   const [showPw, setShowPw] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-
-  const isAdmin = portal === 'admin'
-  const redirectTo =
-    location.state?.from?.pathname ?? (isAdmin ? '/admin/dashboard' : '/dashboard')
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -43,37 +34,37 @@ export default function LoginForm({ portal, title, subtitle, badge }) {
     setEmail(emailVal)
     setPassword(passwordVal)
 
-    const result = await login(emailVal, passwordVal, portal)
+    const result = await login(emailVal, passwordVal)
     setSubmitting(false)
 
     if (!result.ok) {
       setError(result.error)
       return
     }
-    navigate(redirectTo, { replace: true })
+    const home = ROLE_HOME[result.user.role] ?? '/dashboard'
+    navigate(location.state?.from?.pathname ?? home, { replace: true })
   }
 
   return (
-    <div className={`auth-card${isAdmin ? ' auth-card--admin' : ''}`}>
-      <span className={`auth-card__badge${isAdmin ? ' is-admin' : ''}`}>
-        {isAdmin ? '🔒' : '👋'} {badge}
-      </span>
+    <div className="auth-card">
+      <span className="auth-card__badge">Welcome back</span>
 
-      <h2>{title}</h2>
-      <p className="auth-card__sub">{subtitle}</p>
+      <h2>Sign in to Trula</h2>
+      <p className="auth-card__sub">
+        Use your work email to access your dashboard, leaves and team.
+      </p>
 
       {/* Explains why they were bounced back here (expired session), so the
           login screen doesn't feel like it appeared at random. */}
       {notice && !error && (
         <div className="auth-notice" role="status">
-          <span aria-hidden="true">🔒</span>
           {notice}
         </div>
       )}
 
       {error && (
         <div className="auth-error" role="alert">
-          <span aria-hidden="true">⚠️</span>
+          <Icon name="alertTriangle" size={15} />
           {error}
         </div>
       )}
@@ -126,22 +117,10 @@ export default function LoginForm({ portal, title, subtitle, badge }) {
           </a>
         </div>
 
-        <button
-          type="submit"
-          className={`btn-primary${isAdmin ? ' is-admin' : ''}`}
-          disabled={submitting}
-        >
-          {submitting ? 'Signing in…' : isAdmin ? 'Enter admin console' : 'Sign in'}
+        <button type="submit" className="btn-primary" disabled={submitting}>
+          {submitting ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
-
-      <p className="auth-foot">
-        {isAdmin ? (
-          <>Not an admin? <a href="/">Go to staff sign in</a></>
-        ) : (
-          <>Administrator? <a href="/admin">Admin sign in</a></>
-        )}
-      </p>
     </div>
   )
 }

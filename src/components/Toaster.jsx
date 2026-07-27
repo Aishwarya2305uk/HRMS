@@ -1,6 +1,5 @@
 import { useToast } from '../context/ToastContext'
-
-const ICON = { success: '✓', error: '!', info: 'i' }
+import Icon from './Icon'
 
 /**
  * Renders the toast stack.
@@ -25,7 +24,7 @@ export default function Toaster() {
           role={t.tone === 'error' ? 'alert' : 'status'}
         >
           <span className={`toast__icon toast__icon--${t.tone}`} aria-hidden="true">
-            {ICON[t.tone] ?? ICON.info}
+            <Icon name={t.tone === 'error' ? 'alertTriangle' : 'check'} size={14} />
           </span>
           <p className="toast__msg">{t.message}</p>
           {t.action && (
@@ -46,7 +45,7 @@ export default function Toaster() {
             onClick={() => dismiss(t.id)}
             aria-label="Dismiss notification"
           >
-            ✕
+            <Icon name="x" size={13} />
           </button>
         </div>
       ))}

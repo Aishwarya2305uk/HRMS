@@ -1,15 +1,13 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
-import AdminLogin from './pages/AdminLogin'
 import Portal from './pages/Portal'
 import ProtectedRoute from './components/ProtectedRoute'
 
 function App() {
   return (
     <Routes>
-      {/* Public auth routes */}
+      {/* Public auth route — single sign-in page for every role */}
       <Route path="/" element={<Login />} />
-      <Route path="/admin" element={<AdminLogin />} />
 
       {/* Staff area (employees + managers) — one role-aware portal */}
       <Route
@@ -31,7 +29,7 @@ function App() {
         }
       />
 
-      {/* Fallback */}
+      {/* Fallback — also catches the old /admin login bookmark */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

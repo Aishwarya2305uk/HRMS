@@ -26,9 +26,7 @@ export default function ProtectedRoute({ roles, children }) {
   }
 
   if (!isAuthenticated) {
-    // Send admins-only routes to the admin login, everything else to staff.
-    const loginPath = location.pathname.startsWith('/admin') ? '/admin' : '/'
-    return <Navigate to={loginPath} state={{ from: location }} replace />
+    return <Navigate to="/" state={{ from: location }} replace />
   }
 
   if (roles && !roles.includes(role)) {

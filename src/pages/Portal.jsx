@@ -23,6 +23,8 @@ import OrgTree from '../components/OrgTree'
 import LeaveCalendar from '../components/LeaveCalendar'
 import PeopleAdmin from '../components/PeopleAdmin'
 import AllLeaves from '../components/AllLeaves'
+import AllAttendance from '../components/AllAttendance'
+import AllAnnouncements from '../components/AllAnnouncements'
 import { SkeletonCard, ErrorState, InlineError } from '../components/States'
 import Sidebar from '../components/dashboard/Sidebar'
 import TopBar from '../components/dashboard/TopBar'
@@ -38,25 +40,59 @@ const SEARCHABLE_TABS = {
   org: 'Search the organization…',
   people: 'Search people…',
   allleaves: 'Search by employee…',
+  allattendance: 'Search by employee…',
+  announcements: 'Search announcements…',
 }
 
-/** Sidebar items available to each role (order matters). */
-function navFor(role) {
-  const base = [
-    { key: 'dashboard', label: 'Dashboard', icon: 'grid' },
-    { key: 'attendance', label: 'Attendance', icon: 'clock' },
-    { key: 'leaves', label: 'Leaves', icon: 'leaf' },
-  ]
-  if (role === 'manager' || role === 'admin') {
-    base.push({ key: 'approvals', label: 'Approvals', icon: 'check' })
-  }
-  if (role === 'admin') {
-    base.push({ key: 'people', label: 'People', icon: 'users' })
-    base.push({ key: 'allleaves', label: 'All leaves', icon: 'calendarDays' })
-  }
-  base.push({ key: 'org', label: 'Organization', icon: 'tree' })
-  base.push({ key: 'calendar', label: 'Calendar', icon: 'calendar' })
-  return base
+/** Every section Portal can show, independent of role — just "what it looks
+ *  like in the sidebar" (label, icon, which live count feeds its badge).
+ *  Who gets it is decided separately, by ROLE_SECTIONS below. */
+const NAV_ITEMS = {
+  dashboard: { label: 'Dashboard', icon: 'grid' },
+  notifications: { label: 'Notifications', icon: 'bell', badgeKey: 'notifications', badgeLabel: 'unread' },
+  attendance: { label: 'Attendance', icon: 'clock' },
+  leaves: { label: 'Leaves', icon: 'leaf' },
+  approvals: { label: 'Approvals', icon: 'check', badgeKey: 'approvals', badgeLabel: 'pending' },
+  announcements: { label: 'Announcements', icon: 'megaphone' },
+  people: { label: 'People', icon: 'users' },
+  allleaves: { label: 'All leaves', icon: 'calendarDays' },
+  allattendance: { label: 'All attendance', icon: 'list' },
+  org: { label: 'Organization', icon: 'tree' },
+  calendar: { label: 'Calendar', icon: 'calendar' },
+}
+
+/**
+ * Portal is the ONE dashboard shell for every role (see App.jsx — both
+ * /dashboard and /admin/dashboard render it). This table is the single place
+ * that specifies which components each role gets: it drives the sidebar nav,
+ * the dashboard's quick-access tiles, and (via `canAccess`/`isManager`
+ * below) which content blocks render for a given tab. Order here is sidebar
+ * order.
+ */
+const ROLE_SECTIONS = {
+  employee: ['dashboard', 'notifications', 'attendance', 'leaves', 'org', 'calendar'],
+  manager: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'org', 'calendar'],
+  admin: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'people', 'allleaves', 'allattendance', 'org', 'calendar'],
+}
+
+function canAccess(role, key) {
+  return (ROLE_SECTIONS[role] ?? ROLE_SECTIONS.employee).includes(key)
+}
+
+/** Sidebar items available to `role`, in order. `badges` supplies live
+ *  counts for the items that carry a nav-badge (unread notifications,
+ *  pending approvals). */
+function navFor(role, badges = {}) {
+  return (ROLE_SECTIONS[role] ?? ROLE_SECTIONS.employee).map((key) => {
+    const item = NAV_ITEMS[key]
+    return {
+      key,
+      label: item.label,
+      icon: item.icon,
+      badge: item.badgeKey ? badges[item.badgeKey] : undefined,
+      badgeLabel: item.badgeLabel,
+    }
+  })
 }
 
 const thisMonthKey = () => new Date().toISOString().slice(0, 7)
@@ -93,11 +129,17 @@ export default function Portal() {
   }
 
   function selectTab(key) {
+    // Notifications is a transient drawer, not a page — open it in place
+    // rather than navigating, so there's nothing behind it to return to.
+    if (key === 'notifications') {
+      setShowNotifications(true)
+      return
+    }
     setActive(key)
     setSearchQuery('') // a filter from one section shouldn't silently apply to the next
   }
 
-  const isManager = role === 'manager' || role === 'admin'
+  const isManager = canAccess(role, 'approvals')
 
   // ---- Shared data (loaded up front, with visible failure states) ----
   const configQ = useAsyncData(useCallback(() => leavesApi.config(), []))
@@ -113,10 +155,16 @@ export default function Portal() {
     enabled: active === 'org',
   })
   const peopleQ = useAsyncData(useCallback(() => employeesApi.list(), []), {
-    enabled: active === 'people',
+    enabled: active === 'people' && canAccess(role, 'people'),
   })
   const allLeavesQ = useAsyncData(useCallback(() => leavesApi.all(), []), {
-    enabled: active === 'allleaves',
+    enabled: active === 'allleaves' && canAccess(role, 'allleaves'),
+  })
+  const allAttendanceQ = useAsyncData(useCallback(() => attendance.all(), []), {
+    enabled: active === 'allattendance' && canAccess(role, 'allattendance'),
+  })
+  const sentAnnouncementsQ = useAsyncData(useCallback(() => announcementsApi.sent(), []), {
+    enabled: active === 'announcements' && canAccess(role, 'announcements'),
   })
 
   const types = configQ.data?.types ?? EMPTY
@@ -171,7 +219,7 @@ export default function Portal() {
   function handleLogout() {
     haptic('medium')
     logout()
-    navigate(role === 'admin' ? '/admin' : '/', { replace: true })
+    navigate('/', { replace: true })
   }
 
   function onLeaveCreated(leave) {
@@ -186,11 +234,18 @@ export default function Portal() {
 
   function onAnnouncementCreated(item) {
     announcementsQ.setData((prev) => [item, ...(prev ?? [])])
+    // Keep the dedicated Announcements page in sync too, if it's already loaded.
+    if (sentAnnouncementsQ.data !== null) {
+      sentAnnouncementsQ.setData((prev) => [item, ...(prev ?? [])])
+    }
     toast.success(item.type === 'urgent' ? 'Urgent message posted.' : 'Announcement posted.')
   }
 
   function onAnnouncementRemoved(id) {
     announcementsQ.setData((prev) => (prev ?? []).filter((a) => a.id !== id))
+    if (sentAnnouncementsQ.data !== null) {
+      sentAnnouncementsQ.setData((prev) => (prev ?? []).filter((a) => a.id !== id))
+    }
     toast.success('Announcement removed.')
   }
 
@@ -237,7 +292,7 @@ export default function Portal() {
     day: 'numeric',
     month: 'long',
   })
-  const nav = navFor(role)
+  const nav = navFor(role, { notifications: unreadCount, approvals: pending.length })
   const activeLabel = nav.find((n) => n.key === active)?.label ?? 'Dashboard'
   const isSearchable = active in SEARCHABLE_TABS
 
@@ -252,7 +307,6 @@ export default function Portal() {
         active={active}
         onSelect={selectTab}
         role={role}
-        pendingCount={pending.length}
         userName={user?.name}
         userTitle={user?.designation}
         collapsed={collapsed}
@@ -264,9 +318,7 @@ export default function Portal() {
         <TopBar
           dateLabel={dateLabel}
           title={activeLabel}
-          greeting={active === 'dashboard' ? (
-            <>Good to see you, {firstName} <span className="wave">👋</span></>
-          ) : undefined}
+          greeting={active === 'dashboard' ? `Good to see you, ${firstName}` : undefined}
           searchable={isSearchable}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -388,15 +440,34 @@ export default function Portal() {
 
           {active === 'calendar' && <LeaveCalendar typeLabels={typeLabels} />}
 
-          {active === 'people' && (
+          {active === 'people' && canAccess(role, 'people') && (
             <Section query={peopleQ} skeletonRows={5}>
               <PeopleAdmin people={peopleQ.data ?? []} setPeople={peopleQ.setData} searchQuery={searchQuery} />
             </Section>
           )}
 
-          {active === 'allleaves' && (
+          {active === 'allleaves' && canAccess(role, 'allleaves') && (
             <Section query={allLeavesQ} skeletonRows={5}>
               <AllLeaves leaves={allLeavesQ.data ?? []} typeLabels={typeLabels} searchQuery={searchQuery} />
+            </Section>
+          )}
+
+          {active === 'allattendance' && canAccess(role, 'allattendance') && (
+            <Section query={allAttendanceQ} skeletonRows={5}>
+              <AllAttendance rows={allAttendanceQ.data ?? []} searchQuery={searchQuery} />
+            </Section>
+          )}
+
+          {active === 'announcements' && canAccess(role, 'announcements') && (
+            <Section query={sentAnnouncementsQ} skeletonRows={5}>
+              <AllAnnouncements
+                items={sentAnnouncementsQ.data ?? []}
+                onCreated={onAnnouncementCreated}
+                onRemoved={onAnnouncementRemoved}
+                currentUserId={user?.id}
+                role={role}
+                searchQuery={searchQuery}
+              />
             </Section>
           )}
         </div>

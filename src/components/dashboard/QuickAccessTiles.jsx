@@ -2,6 +2,7 @@ import Icon from '../Icon'
 import { haptic, tactile } from '../../lib/haptics'
 
 const TINT = {
+  notifications: 'amber',
   attendance: 'blue',
   leaves: 'green',
   approvals: 'amber',
