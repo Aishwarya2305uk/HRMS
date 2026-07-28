@@ -75,14 +75,15 @@ export function AnnouncementItem({ item, canRemove, onRemove }) {
 }
 
 function PendingLeaveRow({ leave, typeLabels, showName }) {
+  const label = leave.kind === 'wfh' ? 'Work from home' : typeLabels[leave.type] ?? leave.type
   return (
     <li className="notif-item notif-item--pending">
       <div className="notif-item__head">
-        <strong>{showName ? leave.employeeName : typeLabels[leave.type] ?? leave.type}</strong>
+        <strong>{showName ? leave.employeeName : label}</strong>
         <span className="status pending">Pending</span>
       </div>
       <p className="notif-item__body">
-        {showName && <>{typeLabels[leave.type] ?? leave.type} · </>}
+        {showName && <>{label} · </>}
         {formatRange(leave.startDate, leave.endDate)} · {leave.days} {leave.days > 1 ? 'days' : 'day'}
       </p>
     </li>

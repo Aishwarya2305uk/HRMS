@@ -6,8 +6,10 @@ import { formatRange } from '../lib/format'
 import { Skeleton, EmptyState, InlineError } from './States'
 
 /**
- * Manager approval queue — pending leaves from DIRECT REPORTS only (the server
- * enforces this; the UI just renders what it returns).
+ * Manager approval queue — pending leaves AND work-from-home requests from
+ * DIRECT REPORTS only (the server enforces this; the UI just renders what it
+ * returns, mixed together and sorted oldest-first, so there's one queue to
+ * check rather than two).
  *
  * UX notes:
  *  - Approve/reject are per-row, and only the row being acted on shows a busy
@@ -38,7 +40,7 @@ export default function Approvals({
       else await leavesApi.reject(leave.id, comment)
       setRejecting(null)
       setComment('')
-      onDecided(leave.id, outcome, leave.employeeName)
+      onDecided(leave.id, outcome, leave.employeeName, leave.kind)
     } catch (err) {
       setRowError({ id: leave.id, message: err.message })
     } finally {
@@ -77,7 +79,7 @@ export default function Approvals({
                     <div>
                       <strong>{l.employeeName}</strong>
                       <em>
-                        {typeLabels[l.type] ?? l.type} ·{' '}
+                        {l.kind === 'wfh' ? 'Work from home' : typeLabels[l.type] ?? l.type} ·{' '}
                         {formatRange(l.startDate, l.endDate)} · {l.days}{' '}
                         {l.days > 1 ? 'days' : 'day'}
                       </em>

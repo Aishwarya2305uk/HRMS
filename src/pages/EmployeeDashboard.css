@@ -152,6 +152,17 @@
   background: var(--sb-hover);
   border: 1px solid var(--sb-border);
 }
+/* It's rendered as a <button> (opens your profile) — reset the button-isms
+   the class above doesn't already cover. */
+button.mini-profile {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: background 0.18s;
+}
+button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
 .avatar {
   width: 38px;
   height: 38px;
@@ -163,6 +174,7 @@
   background: linear-gradient(135deg, var(--primary), var(--accent));
   box-shadow: var(--elev-1);
   flex-shrink: 0;
+  object-fit: cover; /* keeps a photo <img> from stretching (no-op on the initial-letter span) */
 }
 .mini-profile__text {
   display: flex;
@@ -563,6 +575,10 @@
   margin-bottom: 16px;
 }
 .attendance__head h2 { font-size: 1.15rem; }
+/* Groups a count pill with a header action button (see WfhRequests) so the
+   pair sits together at the row's end, instead of the button alone stretching
+   the justify-content: space-between gap. */
+.attendance__head-actions { display: flex; align-items: center; gap: 10px; }
 .link-btn {
   border: none;
   background: transparent;
@@ -735,6 +751,14 @@
 .req__type > span { display: flex; flex-direction: column; min-width: 0; }
 .req__type strong { color: var(--text); font-size: 0.92rem; }
 .req__type em { font-style: normal; font-size: 0.78rem; color: var(--text-muted); }
+/* WFH's reason is required at apply time, so (unlike leave's optional one)
+   it's always shown, not just surfaced on rejection. */
+.req__reason {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-style: italic;
+}
 .req__note {
   margin: -2px 0 0;
   font-size: 0.8rem;

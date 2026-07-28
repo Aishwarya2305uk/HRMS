@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import mongoose from 'mongoose'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { User } from '../models/User.js'
 import { WorkSession, isRunning } from '../models/WorkSession.js'
@@ -7,6 +8,12 @@ import { defaultLeaveBalances } from '../config.js'
 
 const router = Router()
 router.use(requireAuth)
+
+const PHONE_RE = /^[0-9+\-\s()]{7,20}$/
+const AADHAR_RE = /^\d{12}$/
+// Base64 inflates size ~4/3 — this caps the decoded image around ~1MB.
+const MAX_PHOTO_DATA_URL_LENGTH = 1_400_000
+const PHOTO_DATA_URL_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i
 
 /**
  * Coarse presence for everyone, derived from today's work sessions — there is no
@@ -64,6 +71,116 @@ router.get('/org-tree', async (_req, res, next) => {
       else roots.push(node)
     }
     res.json({ roots })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/employees/:id/profile — full personal profile (DOB, address,
+ * phone, education, Aadhar) that org-tree/list endpoints deliberately omit.
+ * Only the person themselves or an admin may view it.
+ */
+router.get('/:id/profile', async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid employee id.' })
+    }
+    const isSelf = req.params.id === req.user._id.toString()
+    if (!isSelf && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You do not have access to this resource.' })
+    }
+
+    const target = await User.findById(req.params.id).populate('managerId', 'name')
+    if (!target) return res.status(404).json({ error: 'Employee not found.' })
+
+    res.json({ ...target.toProfileJSON(), managerName: target.managerId?.name ?? null })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * PATCH /api/employees/:id/profile — update personal details. Self may edit
+ * their own; admin may edit anyone's. Deliberately whitelists only the
+ * personal fields below — role, manager and email changes go through their
+ * own, separately-audited endpoints, never this one.
+ */
+router.patch('/:id/profile', async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid employee id.' })
+    }
+    const isSelf = req.params.id === req.user._id.toString()
+    if (!isSelf && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You do not have access to this resource.' })
+    }
+
+    const target = await User.findById(req.params.id).populate('managerId', 'name')
+    if (!target) return res.status(404).json({ error: 'Employee not found.' })
+    const managerName = target.managerId?.name ?? null
+
+    const { dob, address, phone, education, aadharNumber, photoUrl } = req.body || {}
+
+    if (dob !== undefined) {
+      if (dob) {
+        const parsed = new Date(dob)
+        if (Number.isNaN(parsed.getTime()) || parsed > new Date()) {
+          return res.status(400).json({ error: 'Enter a valid date of birth.' })
+        }
+        target.dob = parsed
+      } else {
+        target.dob = undefined
+      }
+    }
+
+    if (address !== undefined) {
+      const trimmed = String(address).trim()
+      if (trimmed.length > 300) {
+        return res.status(400).json({ error: 'Address must be under 300 characters.' })
+      }
+      target.address = trimmed
+    }
+
+    if (phone !== undefined) {
+      const trimmed = String(phone).trim()
+      if (trimmed && !PHONE_RE.test(trimmed)) {
+        return res.status(400).json({ error: 'Enter a valid phone number.' })
+      }
+      target.phone = trimmed
+    }
+
+    if (education !== undefined) {
+      const trimmed = String(education).trim()
+      if (trimmed.length > 500) {
+        return res.status(400).json({ error: 'Education must be under 500 characters.' })
+      }
+      target.education = trimmed
+    }
+
+    if (aadharNumber !== undefined) {
+      const digits = String(aadharNumber).replace(/\D/g, '')
+      if (digits && !AADHAR_RE.test(digits)) {
+        return res.status(400).json({ error: 'Aadhar number must be exactly 12 digits.' })
+      }
+      target.aadharNumber = digits
+    }
+
+    if (photoUrl !== undefined) {
+      const trimmed = String(photoUrl).trim()
+      if (trimmed) {
+        if (trimmed.length > MAX_PHOTO_DATA_URL_LENGTH) {
+          return res.status(400).json({ error: 'That image is too large. Please use one under ~1MB.' })
+        }
+        if (!PHOTO_DATA_URL_RE.test(trimmed)) {
+          return res.status(400).json({ error: 'Unsupported image format.' })
+        }
+      }
+      target.photoUrl = trimmed
+    }
+
+    await target.save()
+    res.json({ ...target.toProfileJSON(), managerName })
   } catch (err) {
     next(err)
   }

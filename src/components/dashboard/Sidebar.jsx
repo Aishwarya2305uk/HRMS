@@ -1,4 +1,5 @@
 import Icon from '../Icon'
+import Avatar from '../Avatar'
 import { haptic, tactile } from '../../lib/haptics'
 
 const CONSOLE_LABEL = {
@@ -24,8 +25,10 @@ export default function Sidebar({
   role,
   userName,
   userTitle,
+  userPhotoUrl,
   collapsed,
   onToggleCollapse,
+  onOpenProfile,
 }) {
   return (
     <aside className="emp__sidebar">
@@ -60,13 +63,18 @@ export default function Sidebar({
       </nav>
 
       <div className="emp__side-foot">
-        <div className="mini-profile">
-          <div className="avatar" aria-hidden="true">{userName?.[0] ?? '?'}</div>
+        <button
+          type="button"
+          className="mini-profile"
+          onClick={() => { haptic('light'); onOpenProfile?.() }}
+          aria-label="Open your profile"
+        >
+          <Avatar name={userName} photoUrl={userPhotoUrl} />
           <div className="mini-profile__text sidebar-label">
             <strong>{userName}</strong>
             <span>{userTitle || role}</span>
           </div>
-        </div>
+        </button>
 
         <button
           type="button"

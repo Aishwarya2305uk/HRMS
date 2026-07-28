@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import Icon from './Icon'
+import Avatar from './Avatar'
 import { employees as employeesApi } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
 import { formatDate } from '../lib/format'
@@ -34,7 +35,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  * dropdowns always see the full list of manager/admin candidates, regardless
  * of the search filter.
  */
-export default function PeopleAdmin({ people, setPeople, searchQuery = '' }) {
+export default function PeopleAdmin({ people, setPeople, searchQuery = '', onViewProfile }) {
   const toast = useToast()
   const [form, setForm] = useState(BLANK)
   const [touched, setTouched] = useState({})
@@ -306,13 +307,18 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '' }) {
                 {filteredPeople.map((p) => (
                   <tr key={p.id}>
                     <td>
-                      <div className="cell-name">
-                        <span className="avatar sm" aria-hidden="true">{p.name?.[0]}</span>
+                      <button
+                        type="button"
+                        className="cell-name cell-name--btn"
+                        onClick={() => onViewProfile?.(p.id)}
+                        title={`View ${p.name}'s profile`}
+                      >
+                        <Avatar name={p.name} photoUrl={p.photoUrl} size="sm" />
                         <div>
                           <strong>{p.name}</strong>
                           <em>{p.designation || '—'}</em>
                         </div>
-                      </div>
+                      </button>
                     </td>
                     <td><span className={`role-pill ${p.role}`}>{p.role}</span></td>
                     <td>{p.department || '—'}</td>

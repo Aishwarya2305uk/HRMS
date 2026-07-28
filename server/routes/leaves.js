@@ -61,6 +61,46 @@ router.post('/', async (req, res, next) => {
   }
 })
 
+/**
+ * POST /api/leaves/wfh — request to work from home for a date range.
+ * Unlike leave, this never touches any balance and always requires a reason
+ * (there's no quota to fall back on, so the approving manager needs context).
+ */
+router.post('/wfh', async (req, res, next) => {
+  try {
+    const { startDate, endDate, reason = '' } = req.body || {}
+    const trimmedReason = String(reason).trim()
+    if (!trimmedReason) {
+      return res.status(400).json({ error: 'Please add a reason for working from home.' })
+    }
+    if (trimmedReason.length > 500) {
+      return res.status(400).json({ error: 'Reason must be under 500 characters.' })
+    }
+
+    const startKey = String(startDate || '').slice(0, 10)
+    const endKey = String(endDate || '').slice(0, 10)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startKey) || !/^\d{4}-\d{2}-\d{2}$/.test(endKey)) {
+      return res.status(400).json({ error: 'Start and end dates are required.' })
+    }
+    if (endKey < startKey) {
+      return res.status(400).json({ error: 'End date cannot be before the start date.' })
+    }
+
+    const wfh = await Leave.create({
+      userId: req.user._id,
+      kind: 'wfh',
+      startDate: startOfDay(startKey),
+      endDate: startOfDay(endKey),
+      days: inclusiveDays(startKey, endKey),
+      reason: trimmedReason,
+      status: 'pending',
+    })
+    res.status(201).json(wfh.toJSONSafe())
+  } catch (err) {
+    next(err)
+  }
+})
+
 /** GET /api/leaves/mine — the current user's own applications (newest first). */
 router.get('/mine', async (req, res, next) => {
   try {
@@ -134,21 +174,28 @@ async function loadDecidableLeave(req) {
   return leave
 }
 
-/** POST /api/leaves/:id/approve — approve + deduct balance from the employee. */
+/**
+ * POST /api/leaves/:id/approve — approve. For kind: 'leave' this also deducts
+ * the balance; kind: 'wfh' skips that entirely (a location change, not time
+ * off — there's no balance to deduct from).
+ */
 router.post('/:id/approve', async (req, res, next) => {
   try {
     const leave = await loadDecidableLeave(req)
-    const employee = await User.findById(leave.userId._id)
-    employee.ensureLeaveBalances()
-    const remaining = Number(employee.leaveBalances[leave.type]) || 0
-    if (leave.days > remaining) {
-      return res.status(400).json({
-        error: `Cannot approve — employee only has ${remaining} day(s) of that leave left.`,
-      })
+
+    if (leave.kind === 'leave') {
+      const employee = await User.findById(leave.userId._id)
+      employee.ensureLeaveBalances()
+      const remaining = Number(employee.leaveBalances[leave.type]) || 0
+      if (leave.days > remaining) {
+        return res.status(400).json({
+          error: `Cannot approve — employee only has ${remaining} day(s) of that leave left.`,
+        })
+      }
+      employee.leaveBalances[leave.type] = remaining - leave.days
+      employee.markModified('leaveBalances')
+      await employee.save()
     }
-    employee.leaveBalances[leave.type] = remaining - leave.days
-    employee.markModified('leaveBalances')
-    await employee.save()
 
     leave.status = 'approved'
     leave.approverId = req.user._id
@@ -207,8 +254,11 @@ router.get('/calendar', async (req, res, next) => {
     const monthEnd = new Date(monthStart)
     monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1)
 
-    // Approved leaves overlapping the month (company-wide).
+    // Approved leaves overlapping the month (company-wide). Deliberately
+    // excludes kind: 'wfh' — working from home isn't an absence, so it stays
+    // off the "who's out" calendar entirely (this endpoint's whole purpose).
     const approved = await Leave.find({
+      kind: 'leave',
       status: 'approved',
       startDate: { $lt: monthEnd },
       endDate: { $gte: monthStart },
@@ -247,7 +297,10 @@ router.get('/calendar', async (req, res, next) => {
     }
 
     // The user's own pending/rejected leaves (so they show on their calendar).
+    // Same kind: 'leave' exclusion as above — WFH requests live on the
+    // Leaves page's own list, not this calendar.
     const own = await Leave.find({
+      kind: 'leave',
       userId: req.user._id,
       status: { $in: ['pending', 'rejected'] },
       startDate: { $lt: monthEnd },

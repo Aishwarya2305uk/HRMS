@@ -75,7 +75,7 @@ export default function AllLeaves({ leaves, typeLabels, searchQuery = '' }) {
                       <strong>{l.employeeName}</strong>
                     </div>
                   </td>
-                  <td>{typeLabels[l.type] ?? l.type}</td>
+                  <td>{l.kind === 'wfh' ? 'Work from home' : typeLabels[l.type] ?? l.type}</td>
                   <td>{formatRange(l.startDate, l.endDate)}</td>
                   <td>{l.days}</td>
                   <td>{formatDate(l.createdAt, true)}</td>

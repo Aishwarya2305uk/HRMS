@@ -17,9 +17,12 @@ import teamRoutes from './routes/teams.js'
  * would read an empty, already-consumed stream and clobber req.body with {} —
  * making every POST look like it has no data. So: only run express.json() when
  * the body hasn't been parsed yet (i.e. the classic long-running server path).
+ *
+ * Limit raised from Express's 100kb default to fit a compressed profile-photo
+ * data URL (server/routes/employees.js caps the image itself at ~1MB decoded).
  */
 function smartJson() {
-  const parser = express.json()
+  const parser = express.json({ limit: '2mb' })
   return (req, res, next) => {
     if (req.body !== undefined && req.body !== null) return next()
     parser(req, res, next)

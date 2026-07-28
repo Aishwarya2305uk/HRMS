@@ -352,6 +352,18 @@
 .cell-name { display: flex; align-items: center; gap: 10px; }
 .cell-name strong { font-size: 0.9rem; }
 .cell-name em { display: block; font-style: normal; font-size: 0.76rem; color: var(--text-muted); }
+/* Rendered as a <button> in the roster table — opens that person's profile. */
+button.cell-name--btn {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration: underline; }
 .mini-select {
   padding: 6px 8px;
   border: 1px solid var(--border);
@@ -361,11 +373,17 @@
   max-width: 160px;
 }
 
-/* ---- Avatars (small + tinted) ---- */
+/* ---- Avatars (small/large + tinted) ---- */
 .avatar.sm {
   width: 32px;
   height: 32px;
   font-size: 0.85rem;
+  border-radius: 50%;
+}
+.avatar.xl {
+  width: 96px;
+  height: 96px;
+  font-size: 2.1rem;
   border-radius: 50%;
 }
 .avatar.tint-indigo { background: linear-gradient(135deg, var(--primary), var(--primary-700)); }
@@ -416,6 +434,71 @@
 
 /* ---- People (admin) ---- */
 .people { display: flex; flex-direction: column; gap: 22px; }
+
+/* ---- Profile page ---- */
+.profile-page { display: flex; flex-direction: column; gap: 22px; max-width: 860px; }
+.profile-back { align-self: flex-start; }
+
+.profile-hero { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.profile-hero__photo { position: relative; flex-shrink: 0; }
+.profile-hero__photo-btn {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 30px;
+  height: 30px;
+}
+.profile-hero__text { flex: 1 1 auto; min-width: 0; }
+.profile-hero__text h2 { font-size: 1.3rem; margin-bottom: 6px; }
+.profile-hero__tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.86rem;
+  color: var(--text-muted);
+}
+.profile-hero__edit { flex-shrink: 0; }
+
+.profile-details h3 { font-size: 1rem; margin-bottom: 14px; }
+.profile-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 18px 20px;
+  margin: 0;
+}
+.profile-facts dt {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  font-weight: 700;
+}
+.profile-facts dd {
+  margin: 4px 0 0;
+  font-size: 0.92rem;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.profile-facts__wide { grid-column: 1 / -1; }
+
+.profile-aadhar { display: flex; align-items: center; gap: 8px; }
+.profile-aadhar__toggle {
+  border: none;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.profile-aadhar__toggle:hover { background: var(--surface-muted); color: var(--text); }
+
+.profile-form { display: flex; flex-direction: column; }
 
 /* ---- Org outline (indented collapsible list — the "List" view) ---- */
 .org-outline, .org-outline-children { list-style: none; margin: 0; padding: 0; }

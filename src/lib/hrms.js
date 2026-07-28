@@ -14,6 +14,7 @@ export const attendance = {
 export const leaves = {
   config: () => apiFetch('/leaves/config'),
   apply: (body) => apiFetch('/leaves', { method: 'POST', body }),
+  applyWfh: (body) => apiFetch('/leaves/wfh', { method: 'POST', body }),
   mine: () => apiFetch('/leaves/mine'),
   pending: () => apiFetch('/leaves/pending'),
   cancel: (id) => apiFetch(`/leaves/${id}`, { method: 'DELETE' }),
@@ -29,6 +30,8 @@ export const employees = {
   add: (body) => apiFetch('/employees', { method: 'POST', body }),
   setManager: (id, managerId) =>
     apiFetch(`/employees/${id}/manager`, { method: 'PATCH', body: { managerId } }),
+  profile: (id) => apiFetch(`/employees/${id}/profile`),
+  updateProfile: (id, body) => apiFetch(`/employees/${id}/profile`, { method: 'PATCH', body }),
 }
 
 export const announcements = {

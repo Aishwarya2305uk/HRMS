@@ -17,6 +17,8 @@ import AttendanceCard from '../components/AttendanceCard'
 import LeaveBalanceCard from '../components/LeaveBalanceCard'
 import RecentLeaves from '../components/RecentLeaves'
 import ApplyLeaveModal from '../components/ApplyLeaveModal'
+import WfhRequests from '../components/WfhRequests'
+import ApplyWfhModal from '../components/ApplyWfhModal'
 import Approvals from '../components/Approvals'
 import AttendanceHistory from '../components/AttendanceHistory'
 import OrgTree from '../components/OrgTree'
@@ -25,6 +27,7 @@ import PeopleAdmin from '../components/PeopleAdmin'
 import AllLeaves from '../components/AllLeaves'
 import AllAttendance from '../components/AllAttendance'
 import AllAnnouncements from '../components/AllAnnouncements'
+import Profile from '../components/Profile'
 import { SkeletonCard, ErrorState, InlineError } from '../components/States'
 import Sidebar from '../components/dashboard/Sidebar'
 import TopBar from '../components/dashboard/TopBar'
@@ -69,10 +72,15 @@ const NAV_ITEMS = {
  * below) which content blocks render for a given tab. Order here is sidebar
  * order.
  */
+// Manager and admin get a dedicated "Announcements" section (compose + manage
+// sent messages), which makes a separate "Notifications" sidebar entry
+// redundant for them — so it's dropped for those two roles. Employees have no
+// Announcements section, so they keep Notifications as their only way in.
+// (The topbar bell still opens the same drawer for everyone, regardless.)
 const ROLE_SECTIONS = {
   employee: ['dashboard', 'notifications', 'attendance', 'leaves', 'org', 'calendar'],
-  manager: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'org', 'calendar'],
-  admin: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'people', 'allleaves', 'allattendance', 'org', 'calendar'],
+  manager: ['dashboard', 'attendance', 'leaves', 'approvals', 'announcements', 'org', 'calendar'],
+  admin: ['dashboard', 'attendance', 'leaves', 'approvals', 'announcements', 'people', 'allleaves', 'allattendance', 'org', 'calendar'],
 }
 
 function canAccess(role, key) {
@@ -115,8 +123,12 @@ export default function Portal() {
   const navigate = useNavigate()
   const [active, setActive] = useState('dashboard')
   const [showApply, setShowApply] = useState(false)
+  const [showApplyWfh, setShowApplyWfh] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  // null = viewing your own profile; an id = an admin viewing someone else's
+  // (opened from the People roster).
+  const [profileTarget, setProfileTarget] = useState(null)
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('hrms.sidebarCollapsed') === '1',
   )
@@ -166,15 +178,28 @@ export default function Portal() {
   const sentAnnouncementsQ = useAsyncData(useCallback(() => announcementsApi.sent(), []), {
     enabled: active === 'announcements' && canAccess(role, 'announcements'),
   })
+  // Own profile when profileTarget is null, otherwise whichever employee an
+  // admin opened from the People roster — the API enforces that only an
+  // admin may ever actually receive someone else's record.
+  const isSelfProfile = !profileTarget || profileTarget === user?.id
+  const profileQ = useAsyncData(
+    useCallback(() => employeesApi.profile(profileTarget ?? user?.id), [profileTarget, user?.id]),
+    { enabled: active === 'profile' && Boolean(profileTarget ?? user?.id) },
+  )
 
   const types = configQ.data?.types ?? EMPTY
-  const myLeaves = myLeavesQ.data ?? EMPTY
+  // /leaves/mine returns both kinds mixed (kind: 'leave' | 'wfh') — split them
+  // for the two dedicated lists below, but keep counts like "pending requests"
+  // computed from the unsplit set, so a pending WFH request counts too.
+  const allMine = myLeavesQ.data ?? EMPTY
+  const myLeaves = useMemo(() => allMine.filter((l) => l.kind !== 'wfh'), [allMine])
+  const myWfh = useMemo(() => allMine.filter((l) => l.kind === 'wfh'), [allMine])
   const history = historyQ.data ?? EMPTY
   const pending = pendingQ.data ?? EMPTY
   const announcementsList = announcementsQ.data ?? EMPTY
   const myPendingLeaves = useMemo(
-    () => myLeaves.filter((l) => l.status === 'pending'),
-    [myLeaves],
+    () => allMine.filter((l) => l.status === 'pending'),
+    [allMine],
   )
   const unreadCount = useMemo(
     () => announcementsList.filter((a) => !a.read).length,
@@ -232,6 +257,18 @@ export default function Portal() {
     toast.success('Leave request cancelled.')
   }
 
+  // Same underlying list as leave (myLeavesQ) — /leaves/mine returns both
+  // kinds — so creating/cancelling a WFH request only differs in the toast copy.
+  function onWfhCreated(wfh) {
+    myLeavesQ.setData((prev) => [wfh, ...(prev ?? [])])
+    toast.success('Work-from-home request submitted — your manager has been notified.')
+  }
+
+  function onWfhCancelled(id) {
+    myLeavesQ.setData((prev) => (prev ?? []).filter((l) => l.id !== id))
+    toast.success('Work-from-home request cancelled.')
+  }
+
   function onAnnouncementCreated(item) {
     announcementsQ.setData((prev) => [item, ...(prev ?? [])])
     // Keep the dedicated Announcements page in sync too, if it's already loaded.
@@ -250,12 +287,13 @@ export default function Portal() {
   }
 
   const onApprovalDecided = useCallback(
-    (id, outcome, employeeName) => {
+    (id, outcome, employeeName, kind) => {
       pendingQ.setData((prev) => (prev ?? []).filter((l) => l.id !== id))
+      const noun = kind === 'wfh' ? 'work-from-home request' : 'leave'
       toast.success(
         outcome === 'approved'
-          ? `Approved ${employeeName}'s leave. Their balance has been updated.`
-          : `Rejected ${employeeName}'s leave.`,
+          ? `Approved ${employeeName}'s ${noun}.${kind === 'wfh' ? '' : ' Their balance has been updated.'}`
+          : `Rejected ${employeeName}'s ${noun}.`,
       )
       // A decision changes company-wide data; refresh anything already on screen.
       if (allLeavesQ.data !== null) allLeavesQ.reload()
@@ -263,6 +301,25 @@ export default function Portal() {
     },
     [pendingQ, allLeavesQ, toast, refreshUser],
   )
+
+  /** Opens the profile page — your own (id omitted) or, for an admin, anyone else's. */
+  function openProfile(id = null) {
+    setProfileTarget(id)
+    setActive('profile')
+  }
+
+  function onProfileSaved(updated) {
+    profileQ.setData(updated)
+    // Your own header/sidebar avatar and name come from AuthContext's user,
+    // which this PATCH never touches directly — refresh it so a new photo or
+    // detail shows up immediately instead of only after the next reload.
+    if (isSelfProfile) refreshUser()
+    // Keep the admin roster in step if it's already loaded, same as the
+    // manager-reassignment flow in PeopleAdmin does for its own edits.
+    if (peopleQ.data !== null) {
+      peopleQ.setData((prev) => (prev ?? []).map((p) => (p.id === updated.id ? { ...p, ...updated } : p)))
+    }
+  }
 
   // ---- Stats for the dashboard header ----
   const stats = useMemo(() => {
@@ -293,7 +350,17 @@ export default function Portal() {
     month: 'long',
   })
   const nav = navFor(role, { notifications: unreadCount, approvals: pending.length })
-  const activeLabel = nav.find((n) => n.key === active)?.label ?? 'Dashboard'
+  // 'profile' is deliberately not part of `nav` (see ROLE_SECTIONS) — it's
+  // reached via the account menu or a People row, not a sidebar item — so it
+  // needs its own title here instead of falling back to "Dashboard".
+  const activeLabel =
+    active === 'profile'
+      ? isSelfProfile
+        ? 'My profile'
+        : profileQ.data?.name
+          ? `${profileQ.data.name}'s profile`
+          : 'Profile'
+      : nav.find((n) => n.key === active)?.label ?? 'Dashboard'
   const isSearchable = active in SEARCHABLE_TABS
 
   function openNotifications() {
@@ -309,8 +376,10 @@ export default function Portal() {
         role={role}
         userName={user?.name}
         userTitle={user?.designation}
+        userPhotoUrl={user?.photoUrl}
         collapsed={collapsed}
         onToggleCollapse={toggleCollapsed}
+        onOpenProfile={() => openProfile(null)}
       />
 
       {/* ---------------- Main ---------------- */}
@@ -328,6 +397,7 @@ export default function Portal() {
           user={user}
           role={role}
           onLogout={handleLogout}
+          onOpenProfile={() => openProfile(null)}
         />
 
         <div className="emp__content">
@@ -401,22 +471,33 @@ export default function Portal() {
           )}
 
           {active === 'leaves' && (
-            <div className="leaves-grid">
-              <LeaveBalanceCard
-                user={user}
-                types={types}
-                loading={configQ.loading}
-                onApply={() => setShowApply(true)}
-                canApply={types.length > 0}
-              />
-              <RecentLeaves
-                leaves={myLeaves}
-                typeLabels={typeLabels}
+            <div className="single-col">
+              <div className="leaves-grid">
+                <LeaveBalanceCard
+                  user={user}
+                  types={types}
+                  loading={configQ.loading}
+                  onApply={() => setShowApply(true)}
+                  canApply={types.length > 0}
+                />
+                <RecentLeaves
+                  leaves={myLeaves}
+                  typeLabels={typeLabels}
+                  loading={myLeavesQ.loading && myLeavesQ.data === null}
+                  error={myLeavesQ.error}
+                  onRetry={myLeavesQ.reload}
+                  onApply={() => setShowApply(true)}
+                  onCancel={onLeaveCancelled}
+                />
+              </div>
+
+              <WfhRequests
+                requests={myWfh}
                 loading={myLeavesQ.loading && myLeavesQ.data === null}
                 error={myLeavesQ.error}
                 onRetry={myLeavesQ.reload}
-                onApply={() => setShowApply(true)}
-                onCancel={onLeaveCancelled}
+                onApply={() => setShowApplyWfh(true)}
+                onCancel={onWfhCancelled}
               />
             </div>
           )}
@@ -442,7 +523,24 @@ export default function Portal() {
 
           {active === 'people' && canAccess(role, 'people') && (
             <Section query={peopleQ} skeletonRows={5}>
-              <PeopleAdmin people={peopleQ.data ?? []} setPeople={peopleQ.setData} searchQuery={searchQuery} />
+              <PeopleAdmin
+                people={peopleQ.data ?? []}
+                setPeople={peopleQ.setData}
+                searchQuery={searchQuery}
+                onViewProfile={openProfile}
+              />
+            </Section>
+          )}
+
+          {active === 'profile' && (
+            <Section query={profileQ} skeletonRows={6}>
+              <Profile
+                profile={profileQ.data}
+                isSelf={isSelfProfile}
+                canEdit={isSelfProfile || role === 'admin'}
+                onSaved={onProfileSaved}
+                onBack={!isSelfProfile ? () => setActive('people') : undefined}
+              />
             </Section>
           )}
 
@@ -479,6 +577,13 @@ export default function Portal() {
           balances={user?.leaveBalances}
           onClose={() => setShowApply(false)}
           onCreated={onLeaveCreated}
+        />
+      )}
+
+      {showApplyWfh && (
+        <ApplyWfhModal
+          onClose={() => setShowApplyWfh(false)}
+          onCreated={onWfhCreated}
         />
       )}
 

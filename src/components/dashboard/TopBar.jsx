@@ -1,5 +1,6 @@
 import Icon from '../Icon'
 import Menu from '../Menu'
+import Avatar from '../Avatar'
 import { haptic, tactile } from '../../lib/haptics'
 
 /**
@@ -21,6 +22,7 @@ export default function TopBar({
   user,
   role,
   onLogout,
+  onOpenProfile,
 }) {
   return (
     <header className="emp__topbar">
@@ -57,7 +59,7 @@ export default function TopBar({
           label="Account menu"
           trigger={({ toggle, ref, ...aria }) => (
             <button className="user-trigger" onClick={toggle} ref={ref} {...aria} {...tactile('light')}>
-              <span className="avatar sm" aria-hidden="true">{user?.name?.[0] ?? '?'}</span>
+              <Avatar name={user?.name} photoUrl={user?.photoUrl} size="sm" />
               <span className={`role-pill ${role}`}>{role}</span>
               <Icon name="chevronDown" size={14} />
             </button>
@@ -67,6 +69,10 @@ export default function TopBar({
             <strong>{user?.name}</strong>
             <span>{user?.email}</span>
           </div>
+          <button role="menuitem" className="user-menu__item" onClick={onOpenProfile}>
+            <Icon name="user" size={16} />
+            My profile
+          </button>
           <button role="menuitem" className="user-menu__item user-menu__item--danger" onClick={onLogout}>
             <Icon name="logout" size={16} />
             Log out
