@@ -3,17 +3,23 @@ import mongoose from 'mongoose'
 import { requireAuth } from '../middleware/auth.js'
 import { User } from '../models/User.js'
 import { Leave } from '../models/Leave.js'
+import { LeaveType } from '../models/LeaveType.js'
 import { WorkSession } from '../models/WorkSession.js'
-import { LEAVE_TYPE_BY_KEY, LEAVE_TYPE_KEYS } from '../config.js'
 import { finalizeStaleSessions } from '../services/attendance.js'
 import { dayKey, inclusiveDays, startOfDay, dateKeysInRange } from '../utils/time.js'
 
 const router = Router()
 router.use(requireAuth)
 
-/** GET /api/leaves/config — leave types + quotas (so the UI stays in sync). */
-router.get('/config', (_req, res) => {
-  res.json({ types: Object.values(LEAVE_TYPE_BY_KEY) })
+/** GET /api/leaves/config — active leave types (so the UI stays in sync with
+ *  whatever admin currently has configured — see routes/leaveTypes.js). */
+router.get('/config', async (_req, res, next) => {
+  try {
+    const types = await LeaveType.find({ active: true }).sort({ createdAt: 1 })
+    res.json({ types: types.map((t) => t.toJSONSafe()) })
+  } catch (err) {
+    next(err)
+  }
 })
 
 /**
@@ -24,7 +30,8 @@ router.get('/config', (_req, res) => {
 router.post('/', async (req, res, next) => {
   try {
     const { type, startDate, endDate, reason = '' } = req.body || {}
-    if (!LEAVE_TYPE_KEYS.includes(type)) {
+    const leaveType = type ? await LeaveType.findOne({ key: type, active: true }) : null
+    if (!leaveType) {
       return res.status(400).json({ error: 'Please choose a valid leave type.' })
     }
     const startKey = String(startDate || '').slice(0, 10)
@@ -37,12 +44,11 @@ router.post('/', async (req, res, next) => {
     }
 
     const days = inclusiveDays(startKey, endKey)
-    req.user.ensureLeaveBalances()
+    await req.user.ensureLeaveBalances()
     const remaining = Number(req.user.leaveBalances[type]) || 0
     if (days > remaining) {
-      const label = LEAVE_TYPE_BY_KEY[type].label
       return res.status(400).json({
-        error: `Insufficient ${label} balance — you have ${remaining} day(s) left but requested ${days}.`,
+        error: `Insufficient ${leaveType.label} balance — you have ${remaining} day(s) left but requested ${days}.`,
       })
     }
 
@@ -185,7 +191,7 @@ router.post('/:id/approve', async (req, res, next) => {
 
     if (leave.kind === 'leave') {
       const employee = await User.findById(leave.userId._id)
-      employee.ensureLeaveBalances()
+      await employee.ensureLeaveBalances()
       const remaining = Number(employee.leaveBalances[leave.type]) || 0
       if (leave.days > remaining) {
         return res.status(400).json({

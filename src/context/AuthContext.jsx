@@ -56,12 +56,12 @@ export function AuthProvider({ children }) {
   /**
    * @returns {Promise<{ok:true,user}|{ok:false,error:string}>}
    */
-  const login = useCallback(async (email, password) => {
+  const login = useCallback(async (email, password, captchaToken) => {
     try {
       const { token, user } = await apiFetch('/auth/login', {
         method: 'POST',
         auth: false,
-        body: { email, password },
+        body: { email, password, captchaToken },
       })
       setToken(token)
       setUser(user)

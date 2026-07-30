@@ -2,6 +2,7 @@ import dns from 'node:dns'
 import mongoose from 'mongoose'
 import { MONGODB_URL } from './env.js'
 import { bootstrapAdmin } from './bootstrapAdmin.js'
+import { bootstrapLeavePolicy } from './bootstrapLeavePolicy.js'
 
 // Some routers/VPNs proxy DNS in a way that answers plain lookups (nslookup)
 // but refuses the raw SRV query Node's resolver sends for mongodb+srv://
@@ -47,6 +48,9 @@ export async function connectDB() {
         // Runs exactly once per connection (this .then() only fires on the
         // first successful connect — later calls reuse cache.conn), so this
         // is safe for both the long-running server and serverless cold starts.
+        // Leave policy first: bootstrapAdmin assigns the admin a default
+        // employment type, so that type must already exist.
+        await bootstrapLeavePolicy()
         await bootstrapAdmin()
         return m
       })

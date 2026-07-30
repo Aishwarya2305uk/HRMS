@@ -3,7 +3,8 @@
 This is the living design record for the HRMS project. It captures **why the
 system is built the way it is** — architecture, data model, roles, and key
 decisions — as a companion to [HRMS_v1_Requirements.md](HRMS_v1_Requirements.md)
-(the "what") and [README.md](README.md) (the "how to run it").
+(the "what"), [README.md](README.md) (the "how to run it"), and
+[TECHNICAL.md](TECHNICAL.md) (the exact API/data-model contract).
 
 **How to use this file:** when a new feature is added, don't rewrite this
 document — append to it. Each feature gets its own dated entry under
@@ -180,7 +181,7 @@ route files for full request/response shapes.
 | Area       | Routes                                                                                   | Guard                         |
 | ---------- | ----------------------------------------------------------------------------------------- | ------------------------------ |
 | Auth       | `POST /auth/login`, `GET /auth/me`                                                        | public / `requireAuth`         |
-| Attendance | `GET /attendance/today`, `POST /attendance/{check-in,pause,resume,check-out}`, `GET /attendance/history` | `requireAuth`            |
+| Attendance | `GET /attendance/today`, `POST /attendance/{check-in,pause,resume,check-out}`, `GET /attendance/history`, `GET /attendance/analytics` | `requireAuth`            |
 | Leaves     | `POST /leaves`, `GET /leaves/mine`, `GET /leaves/pending`, `POST /leaves/:id/{approve,reject}`, `GET /leaves/all`, `GET /leaves/calendar?month=YYYY-MM` | `requireAuth`; pending/approve/reject also check direct-report ownership; `all` is admin-only |
 | Employees  | `GET /employees/org-tree`, `GET|POST /employees`, `PATCH /employees/:id/manager`           | org-tree: any role; create/list/manager-edit: admin only |
 | Announcements | `GET /announcements`, `POST /announcements/read-all`, `GET /announcements/audience-options`, `POST /announcements`, `DELETE /announcements/:id` | `requireAuth`; audience-options/create/delete require admin or manager, with hierarchy-checked authorization on `team`-scoped targets |
@@ -198,6 +199,7 @@ src/
   pages/Portal.jsx        # role-aware dashboard shell — the one real "page"
   components/
     AttendanceCard.jsx     # timer widget, left of sidebar per spec
+    AttendanceAnalytics.jsx # own KPIs, weekly trend chart, day heatmap
     LeaveCalendar.jsx      # own leaves + company-wide view
     OrgTree.jsx            # reporting structure, built from managerId
     Approvals.jsx          # manager-only: direct reports' pending leaves
@@ -244,6 +246,23 @@ calls an endpoint that independently re-checks the role server-side.
 
 Append one entry per feature/change, newest first. Each entry: date, what
 changed, why, and which sections above were touched.
+
+### 2026-07-28 — Attendance analytics
+Added a dedicated analytics view to the existing "Attendance" tab (below the
+check-in timer, above the raw history table) so each employee can see their
+own attendance trends, not just a flat log. New `GET /api/attendance/analytics`
+returns a fixed 90-day rolling window for the signed-in user only (no params,
+no cross-user access): summary KPIs (present days, avg/total hours, current +
+longest streak — computed server-side from the same `toLiveJSON()`/8h-rule
+logic `/history` already uses), a per-day series, and a Monday-start weekly
+bucket for a trend chart. Frontend renders this with a hand-rolled SVG bar
+chart and a GitHub-style day heatmap (`AttendanceAnalytics.jsx`) — no new
+charting dependency, matching this codebase's existing "plain CSS/SVG, no
+extra libraries" posture (`OrgTree`, `LeaveCalendar`). "Streak" counts
+consecutive *logged* present days, not consecutive calendar dates, since v1
+has no working-day/weekend calendar concept — a day with no session at all
+(weekend, day off) isn't treated as a break. Touched: §6 (API surface), §7
+(new component).
 
 ### 2026-07-24 — In-app notifications drawer
 Added a right-side notifications drawer (opened from the top bar's bell,

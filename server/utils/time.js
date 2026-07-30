@@ -37,3 +37,12 @@ export function dateKeysInRange(startKey, endKey) {
   }
   return keys
 }
+
+/** 'YYYY-MM-DD' of the Monday (UTC) that starts the week containing this day key. */
+export function weekStartOf(dateKey) {
+  const d = startOfDay(dateKey)
+  const dow = d.getUTCDay() // 0=Sun..6=Sat
+  const diffToMonday = dow === 0 ? -6 : 1 - dow
+  d.setUTCDate(d.getUTCDate() + diffToMonday)
+  return dayKey(d)
+}

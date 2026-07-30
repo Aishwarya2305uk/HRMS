@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Icon from './Icon'
 import Avatar from './Avatar'
+import Modal from './Modal'
 import { InlineError } from './States'
 import { useToast } from '../context/ToastContext'
+import { useAsyncData } from '../lib/useAsyncData'
 import { haptic } from '../lib/haptics'
 import { formatDate } from '../lib/format'
-import { employees as employeesApi } from '../lib/hrms'
+import { employees as employeesApi, employmentTypes as employmentTypesApi } from '../lib/hrms'
 
 const PHONE_RE = /^[0-9+\-\s()]{7,20}$/
 const AADHAR_RE = /^\d{12}$/
@@ -57,13 +59,14 @@ function fileToCompressedDataUrl(file) {
  * loaded and authorized; this component only ever renders, validates, and
  * PATCHes `/employees/:id/profile`.
  *
- * @param {object}   props.profile   result of employees.profile(id) (toProfileJSON() + managerName)
- * @param {boolean}  props.isSelf    true when viewing your own profile
- * @param {boolean}  props.canEdit   true for self, or an admin viewing someone else
- * @param {Function} props.onSaved   (updatedProfile) => void
- * @param {Function} [props.onBack]  present only when viewing someone else's profile
+ * @param {object}   props.profile               result of employees.profile(id) (toProfileJSON() + managerName + employmentTypeName)
+ * @param {boolean}  props.isSelf                true when viewing your own profile
+ * @param {boolean}  props.canEdit               true for self, or an admin viewing someone else — gates the personal-details fields
+ * @param {boolean}  props.canEditEmploymentType admin-only, even on your own profile — employment type is HR classification, not a personal detail
+ * @param {Function} props.onSaved               (updatedProfile) => void
+ * @param {Function} [props.onBack]               present only when viewing someone else's profile
  */
-export default function Profile({ profile, isSelf, canEdit, onSaved, onBack }) {
+export default function Profile({ profile, isSelf, canEdit, canEditEmploymentType, onSaved, onBack }) {
   const toast = useToast()
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState(null)
@@ -74,6 +77,18 @@ export default function Profile({ profile, isSelf, canEdit, onSaved, onBack }) {
   const [saving, setSaving] = useState(false)
   const fileInputRef = useRef(null)
 
+  // Employment type is a separate, admin-only edit affordance — the
+  // Employment block is otherwise pure display, so this gets its own tiny
+  // bit of state rather than folding into the personal-details form above.
+  const employmentTypesQ = useAsyncData(useCallback(() => employmentTypesApi.list(), []), {
+    enabled: canEditEmploymentType,
+  })
+  const employmentTypeOptions = employmentTypesQ.data ?? []
+  const [editingEmploymentType, setEditingEmploymentType] = useState(false)
+  const [employmentTypeDraft, setEmploymentTypeDraft] = useState('')
+  const [confirmingEmploymentType, setConfirmingEmploymentType] = useState(false)
+  const [savingEmploymentType, setSavingEmploymentType] = useState(false)
+
   // Switching to a different person (admin browsing People) should never
   // leave a stale edit form or a revealed Aadhar number on screen.
   useEffect(() => {
@@ -82,6 +97,8 @@ export default function Profile({ profile, isSelf, canEdit, onSaved, onBack }) {
     setRevealAadhar(false)
     setSubmitError('')
     setTouched({})
+    setEditingEmploymentType(false)
+    setConfirmingEmploymentType(false)
   }, [profile?.id])
 
   function startEdit() {
@@ -191,6 +208,46 @@ export default function Profile({ profile, isSelf, canEdit, onSaved, onBack }) {
       setSubmitError(err.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  function startEditEmploymentType() {
+    setEmploymentTypeDraft(profile.employmentType || '')
+    setEditingEmploymentType(true)
+    haptic('light')
+  }
+
+  function cancelEditEmploymentType() {
+    setEditingEmploymentType(false)
+    setConfirmingEmploymentType(false)
+  }
+
+  /** Nothing to confirm if it didn't actually change — just close. */
+  function requestSaveEmploymentType(e) {
+    e.preventDefault()
+    if ((employmentTypeDraft || null) === (profile.employmentType || null)) {
+      setEditingEmploymentType(false)
+      return
+    }
+    setConfirmingEmploymentType(true)
+  }
+
+  async function confirmSaveEmploymentType() {
+    setSavingEmploymentType(true)
+    haptic('medium')
+    try {
+      const updated = await employeesApi.updateProfile(profile.id, {
+        employmentType: employmentTypeDraft || null,
+      })
+      haptic('success')
+      toast.success('Employment type updated — leave balance reset to the new policy.')
+      setEditingEmploymentType(false)
+      setConfirmingEmploymentType(false)
+      onSaved?.(updated)
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSavingEmploymentType(false)
     }
   }
 
@@ -385,11 +442,57 @@ export default function Profile({ profile, isSelf, canEdit, onSaved, onBack }) {
       )}
 
       <section className="card pop profile-details" style={{ '--d': '180ms' }}>
-        <h3>Employment</h3>
+        <div className="profile-details__head">
+          <h3>Employment</h3>
+          {canEditEmploymentType && !editingEmploymentType && (
+            <button
+              type="button"
+              className="icon-btn sm"
+              onClick={startEditEmploymentType}
+              aria-label="Edit employment type"
+              title="Edit employment type"
+            >
+              <Icon name="edit" size={14} />
+            </button>
+          )}
+        </div>
         <dl className="profile-facts">
           <div>
             <dt>Role</dt>
             <dd><span className={`role-pill ${profile.role}`}>{profile.role}</span></dd>
+          </div>
+          <div>
+            <dt>Employment type</dt>
+            <dd>
+              {editingEmploymentType ? (
+                <form className="profile-inline-edit" onSubmit={requestSaveEmploymentType}>
+                  <select
+                    value={employmentTypeDraft}
+                    onChange={(e) => setEmploymentTypeDraft(e.target.value)}
+                    disabled={savingEmploymentType}
+                    aria-label="Employment type"
+                  >
+                    <option value="">— None —</option>
+                    {employmentTypeOptions.map((et) => (
+                      <option key={et.id} value={et.id}>{et.name}</option>
+                    ))}
+                  </select>
+                  <button type="submit" className="btn-tactile primary sm" disabled={savingEmploymentType}>
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-tactile ghost sm"
+                    onClick={cancelEditEmploymentType}
+                    disabled={savingEmploymentType}
+                  >
+                    Cancel
+                  </button>
+                </form>
+              ) : (
+                profile.employmentTypeName || '—'
+              )}
+            </dd>
           </div>
           <div>
             <dt>Designation</dt>
@@ -409,6 +512,37 @@ export default function Profile({ profile, isSelf, canEdit, onSaved, onBack }) {
           </div>
         </dl>
       </section>
+
+      {confirmingEmploymentType && (
+        <Modal titleId="confirm-employment-type-title" onClose={cancelEditEmploymentType}>
+          <div className="modal__head">
+            <h2 id="confirm-employment-type-title">Change employment type?</h2>
+          </div>
+          <p>
+            Changing {isSelf ? 'your' : `${profile.name}'s`} employment type resets{' '}
+            {isSelf ? 'your' : 'their'} leave balance to the new policy's quotas — any unused
+            balance under the current type is lost.
+          </p>
+          <div className="modal__actions">
+            <button
+              type="button"
+              className="btn-tactile ghost"
+              onClick={cancelEditEmploymentType}
+              disabled={savingEmploymentType}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-tactile danger"
+              onClick={confirmSaveEmploymentType}
+              disabled={savingEmploymentType}
+            >
+              {savingEmploymentType ? 'Saving…' : 'Yes, change it'}
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

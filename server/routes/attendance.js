@@ -1,8 +1,17 @@
 import { Router } from 'express'
 import { requireAuth } from '../middleware/auth.js'
 import { WorkSession, computeWorkedSeconds, isRunning } from '../models/WorkSession.js'
-import { finalizeStaleSessions, verdictFor } from '../services/attendance.js'
+import {
+  finalizeStaleSessions,
+  verdictFor,
+  summarizeAttendance,
+  bucketWeekly,
+} from '../services/attendance.js'
 import { dayKey } from '../utils/time.js'
+
+/** Rolling window for the analytics endpoint — long enough for a meaningful
+ *  trend/streak view, short enough to keep the query and payload small. */
+const ANALYTICS_WINDOW_DAYS = 90
 
 const router = Router()
 router.use(requireAuth)
@@ -107,6 +116,33 @@ router.get('/history', async (req, res, next) => {
       .sort({ date: -1 })
       .limit(60)
     res.json(sessions.map((s) => s.toLiveJSON()))
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/attendance/analytics — the current user's own attendance
+ * analytics over a fixed rolling window: summary KPIs (worked hours,
+ * present/short days, streaks), a per-day series, and a weekly total for a
+ * trend chart. Always scoped to req.user — there is no way to request
+ * another employee's analytics through this endpoint.
+ */
+router.get('/analytics', async (req, res, next) => {
+  try {
+    await finalizeStaleSessions(req.user._id)
+    const to = dayKey()
+    const from = dayKey(new Date(Date.now() - (ANALYTICS_WINDOW_DAYS - 1) * 86400000))
+    const sessions = await WorkSession.find({
+      userId: req.user._id,
+      date: { $gte: from, $lte: to },
+    }).sort({ date: 1 })
+
+    const daily = sessions.map((s) => s.toLiveJSON())
+    const summary = summarizeAttendance(daily, { monthKey: to.slice(0, 7) })
+    const weekly = bucketWeekly(daily)
+
+    res.json({ range: { from, to }, summary, daily, weekly })
   } catch (err) {
     next(err)
   }

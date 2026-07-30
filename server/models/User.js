@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import bcrypt from 'bcryptjs'
-import { LEAVE_TYPES, defaultLeaveBalances, TOTAL_ANNUAL_QUOTA } from '../config.js'
+import { LeaveType } from './LeaveType.js'
+import { EmploymentType } from './EmploymentType.js'
 
 const { Schema, model } = mongoose
 
@@ -28,6 +29,9 @@ const userSchema = new Schema(
     joiningDate: { type: Date },
     // The reporting relationship that builds the org tree.
     managerId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    // Employment classification (Intern/Full-time/Part-time/custom) — decides
+    // which leave policy this person is granted. See EmploymentType.js.
+    employmentType: { type: Schema.Types.ObjectId, ref: 'EmploymentType', default: null },
 
     // ---- Personal profile (server/routes/employees.js :id/profile) ----
     // A compressed JPEG data URL, capped client- and server-side around ~1MB
@@ -49,20 +53,44 @@ const userSchema = new Schema(
       },
     },
     // Remaining days per leave type, e.g. { casual: 12, sick: 8, earned: 15 }.
-    // Seeded from config quotas; deducted only when a manager approves a leave.
+    // Seeded from the assigned employmentType's quotas at creation/reassignment
+    // time (see routes/employees.js); deducted only when a leave is approved.
     leaveBalances: {
       type: Schema.Types.Mixed,
-      default: defaultLeaveBalances,
+      default: {},
+    },
+    // Frozen snapshot of what this person was GRANTED — set once whenever
+    // employmentType is assigned/changed, deliberately never touched by
+    // approvals (which only mutate leaveBalances above). This is what makes
+    // "editing a policy's quotas later doesn't retroactively change people
+    // already hired under it" possible: querying the EmploymentType live
+    // would give the CURRENT quota, not the one this person actually got.
+    leaveQuotas: {
+      type: Schema.Types.Mixed,
+      default: {},
     },
   },
   { timestamps: true },
 )
 
-/** Ensure a full set of balances exists (fills gaps for any newly-added type). */
-userSchema.methods.ensureLeaveBalances = function ensureLeaveBalances() {
-  const defaults = defaultLeaveBalances()
-  const current = this.leaveBalances || {}
-  const merged = { ...defaults, ...current }
+/**
+ * Fills gaps in leaveBalances for any currently-active LeaveType this user
+ * doesn't yet have an entry for (e.g. an admin added a new leave type after
+ * this person was hired) — pulling the gap-fill amount from their CURRENT
+ * employmentType's quota, or 0 if unassigned/not found there. Async because
+ * it needs to read both collections; its two call sites (leaves.js's apply
+ * and approve handlers) are already inside async route handlers.
+ */
+userSchema.methods.ensureLeaveBalances = async function ensureLeaveBalances() {
+  const [activeTypes, employmentType] = await Promise.all([
+    LeaveType.find({ active: true }).select('key'),
+    this.employmentType ? EmploymentType.findById(this.employmentType).select('quotas') : null,
+  ])
+  const quotas = employmentType?.quotas || {}
+  const merged = { ...(this.leaveBalances || {}) }
+  for (const t of activeTypes) {
+    if (merged[t.key] === undefined) merged[t.key] = Number(quotas[t.key]) || 0
+  }
   this.leaveBalances = merged
   this.markModified('leaveBalances')
   return merged
@@ -82,8 +110,9 @@ userSchema.methods.comparePassword = function comparePassword(plain) {
 
 /** Shape sent to the client — never includes the hash. */
 userSchema.methods.toSafeJSON = function toSafeJSON() {
-  const balances = { ...defaultLeaveBalances(), ...(this.leaveBalances || {}) }
-  const total = LEAVE_TYPES.reduce((sum, t) => sum + (Number(balances[t.key]) || 0), 0)
+  const balances = this.leaveBalances || {}
+  const quotas = this.leaveQuotas || {}
+  const sum = (obj) => Object.values(obj).reduce((s, v) => s + (Number(v) || 0), 0)
   return {
     id: this._id.toString(),
     name: this.name,
@@ -97,14 +126,21 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     // broad endpoint (login, org tree, employee list) and is only ever
     // returned by toProfileJSON() to a viewer the route has already authorized.
     photoUrl: this.photoUrl || '',
-    // `managerId` may be a populated User sub-document (callers that used
-    // .populate('managerId', ...)) or a plain ObjectId — always return the
-    // raw hex id either way, never a Mongoose debug string.
+    // `managerId`/`employmentType` may be populated sub-documents (callers
+    // that used .populate(...)) or plain ObjectIds — always return the raw
+    // hex id either way, never a Mongoose debug string. Resolved display
+    // names (managerName, employmentTypeName) are attached by routes that
+    // populate, same pattern for both.
     managerId: this.managerId ? (this.managerId._id ?? this.managerId).toString() : null,
+    employmentType: this.employmentType ? (this.employmentType._id ?? this.employmentType).toString() : null,
     // Per-type remaining days plus a rolled-up total (for the balance ring).
+    // Both computed straight from stored fields — no policy lookup here, so
+    // this stays synchronous. leaveQuotaTotal is what THIS person was
+    // actually granted (leaveQuotas), not the employment type's current
+    // policy, which may have changed since.
     leaveBalances: balances,
-    leaveBalance: total,
-    leaveQuotaTotal: TOTAL_ANNUAL_QUOTA,
+    leaveBalance: sum(balances),
+    leaveQuotaTotal: sum(quotas),
   }
 }
 

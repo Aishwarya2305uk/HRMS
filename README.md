@@ -13,7 +13,9 @@ JWT auth with backend-enforced RBAC.
   out. Elapsed time is computed on the **server** from an event log, so the
   timer survives refresh and re-login. A full day is 8h; days under that
   auto-finalize as *Leave*, days at/over as *Present*. Forgotten check-outs are
-  auto-closed at end of day.
+  auto-closed at end of day. Each employee also gets their own **attendance
+  analytics** — present-day KPIs, a weekly hours trend chart, and a 90-day
+  heatmap, all derived server-side from the same event log.
 - **Leave management** — apply (with balance + date validation), manager
   approval queue for **direct reports only**, balance deducted on approval,
   per-type balances (Casual/Sick/Earned) from a single config.
@@ -113,9 +115,12 @@ src/
 ## API (all under `/api`, JWT via `Authorization: Bearer`)
 
 - `POST /auth/login`, `GET /auth/me`
-- `GET /attendance/today` · `POST /attendance/{check-in|pause|resume|check-out}` · `GET /attendance/history`
+- `GET /attendance/today` · `POST /attendance/{check-in|pause|resume|check-out}` · `GET /attendance/history` · `GET /attendance/analytics`
 - `POST /leaves` · `GET /leaves/mine` · `GET /leaves/pending` · `POST /leaves/:id/{approve|reject}` · `GET /leaves/all` · `GET /leaves/calendar?month=YYYY-MM`
 - `GET /employees/org-tree` (all roles) · `GET|POST /employees` · `PATCH /employees/:id/manager` (admin)
 
 Every protected route verifies role server-side — an employee cannot reach
 manager/admin data by calling the API directly.
+
+See [TECHNICAL.md](TECHNICAL.md) for the full request/response contract of
+every endpoint, data model field reference, and the algorithms behind them.

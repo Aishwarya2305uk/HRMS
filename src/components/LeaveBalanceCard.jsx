@@ -3,17 +3,22 @@ import { tactile } from '../lib/haptics'
 import { Skeleton } from './States'
 
 const TINTS = { casual: 'blue', sick: 'green', earned: 'indigo' }
+/** Cycled by index for any type key not in the map above — e.g. a custom
+ *  leave type an admin added (see components/LeaveTypesManager.jsx). */
+const TINT_PALETTE = ['blue', 'green', 'indigo', 'amber']
+const tintFor = (key, index) => TINTS[key] || TINT_PALETTE[index % TINT_PALETTE.length]
 
 /**
  * Leave balance summary: a ring for the total remaining plus a per-type legend.
- * Types/quotas come from the server config so this never drifts from policy.
+ * Types come from the server config (admin-managed — see LeaveTypesManager);
+ * quotas are per-user, from their assigned employment type's policy.
  *
  * When a type is fully used we say so explicitly rather than showing a bare 0 —
  * "0 left" is easy to misread as "not loaded".
  */
 export default function LeaveBalanceCard({ user, types, onApply, loading, canApply = true }) {
   const balances = user?.leaveBalances ?? {}
-  const quotaTotal = user?.leaveQuotaTotal ?? types.reduce((s, t) => s + t.quota, 0)
+  const quotaTotal = user?.leaveQuotaTotal ?? 0
   const remaining = types.reduce((s, t) => s + (Number(balances[t.key]) || 0), 0)
   const pct = quotaTotal ? Math.min(100, (remaining / quotaTotal) * 100) : 0
   const noneLeft = types.length > 0 && remaining === 0
@@ -36,11 +41,11 @@ export default function LeaveBalanceCard({ user, types, onApply, loading, canApp
               </div>
             </div>
             <ul className="leave-legend">
-              {types.map((t) => {
+              {types.map((t, i) => {
                 const left = Number(balances[t.key]) || 0
                 return (
                   <li key={t.key}>
-                    <span className={`lg ${TINTS[t.key] || 'indigo'}`} /> {t.label}
+                    <span className={`lg ${tintFor(t.key, i)}`} /> {t.label}
                     <b className={left === 0 ? 'is-spent' : undefined}>
                       {left === 0 ? 'none left' : left}
                     </b>

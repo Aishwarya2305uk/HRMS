@@ -1,19 +1,27 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Icon from './Icon'
+import Recaptcha from './Recaptcha'
 
 /** Login card used by the single sign-in page, shared by every role. */
 const ROLE_HOME = { admin: '/admin/dashboard' }
+
+// Mirrors the backend's "unconfigured -> skip" policy (see
+// server/routes/auth.js's verifyCaptcha): with no site key built in, the
+// widget never renders and the form never blocks on it.
+const REQUIRE_CAPTCHA = Boolean(import.meta.env.VITE_RECAPTCHA_SITE_KEY)
 
 export default function LoginForm() {
   const { login, notice, clearNotice } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const captchaRef = useRef(null)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState(null)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -21,6 +29,12 @@ export default function LoginForm() {
     e.preventDefault()
     setError('')
     clearNotice() // they're acting on it now — the explanation has done its job
+
+    if (REQUIRE_CAPTCHA && !captchaToken) {
+      setError('Please complete the CAPTCHA verification.')
+      return
+    }
+
     setSubmitting(true)
 
     // Read straight from the form fields so browser password-manager autofill
@@ -34,10 +48,14 @@ export default function LoginForm() {
     setEmail(emailVal)
     setPassword(passwordVal)
 
-    const result = await login(emailVal, passwordVal)
+    const result = await login(emailVal, passwordVal, captchaToken)
     setSubmitting(false)
 
     if (!result.ok) {
+      // A reCAPTCHA token is single-use — whatever failed, the widget needs
+      // to be completed again before the next attempt.
+      captchaRef.current?.reset()
+      setCaptchaToken(null)
       setError(result.error)
       return
     }
@@ -117,7 +135,15 @@ export default function LoginForm() {
           </a>
         </div>
 
-        <button type="submit" className="btn-primary" disabled={submitting}>
+        {REQUIRE_CAPTCHA && (
+          <Recaptcha ref={captchaRef} onChange={setCaptchaToken} onError={setError} />
+        )}
+
+        <button
+          type="submit"
+          className="btn-primary"
+          disabled={submitting || (REQUIRE_CAPTCHA && !captchaToken)}
+        >
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
       </form>

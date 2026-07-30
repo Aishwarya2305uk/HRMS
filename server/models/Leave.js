@@ -1,5 +1,4 @@
 import mongoose from 'mongoose'
-import { LEAVE_TYPE_KEYS } from '../config.js'
 
 const { Schema, model } = mongoose
 
@@ -15,10 +14,12 @@ const leaveSchema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     kind: { type: String, enum: ['leave', 'wfh'], default: 'leave', required: true, index: true },
-    // Only meaningful (and required) for kind: 'leave' — a WFH request has no quota-based type.
+    // Only meaningful (and required) for kind: 'leave' — a WFH request has no
+    // quota-based type. References a LeaveType.key — no compile-time enum
+    // since types are now admin-managed DB records; routes/leaves.js
+    // validates the submitted key against currently-active LeaveType docs.
     type: {
       type: String,
-      enum: LEAVE_TYPE_KEYS,
       required: function isLeaveType() {
         return this.kind === 'leave'
       },

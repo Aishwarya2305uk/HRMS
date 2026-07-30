@@ -8,6 +8,7 @@ export const attendance = {
   today: () => apiFetch('/attendance/today'),
   action: (a) => apiFetch(`/attendance/${a}`, { method: 'POST' }),
   history: () => apiFetch('/attendance/history'),
+  analytics: () => apiFetch('/attendance/analytics'),
   all: (month) => apiFetch(`/attendance/all${month ? `?month=${month}` : ''}`),
 }
 
@@ -49,4 +50,24 @@ export const teams = {
   create: (body) => apiFetch('/teams', { method: 'POST', body }),
   update: (id, body) => apiFetch(`/teams/${id}`, { method: 'PATCH', body }),
   remove: (id) => apiFetch(`/teams/${id}`, { method: 'DELETE' }),
+}
+
+/** Fired whenever LeaveTypesManager creates/retires a type, so the sibling
+ *  EmploymentTypesManager (a separate fetch, no shared cache) knows to
+ *  refresh its quota-matrix columns — both render on the same admin page. */
+export const LEAVE_TYPES_CHANGED_EVENT = 'hrms:leave-types-changed'
+
+/** Admin-only: manage the leave types employees can apply for (see leaves.config for the active-only list everyone else uses). */
+export const leaveTypes = {
+  list: () => apiFetch('/leave-types'),
+  create: (body) => apiFetch('/leave-types', { method: 'POST', body }),
+  update: (id, body) => apiFetch(`/leave-types/${id}`, { method: 'PATCH', body }),
+}
+
+/** Admin-only: manage employment classifications (Intern/Full-time/Part-time/custom) and their per-leave-type quotas. */
+export const employmentTypes = {
+  list: () => apiFetch('/employment-types'),
+  create: (body) => apiFetch('/employment-types', { method: 'POST', body }),
+  update: (id, body) => apiFetch(`/employment-types/${id}`, { method: 'PATCH', body }),
+  remove: (id) => apiFetch(`/employment-types/${id}`, { method: 'DELETE' }),
 }

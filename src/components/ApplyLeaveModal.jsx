@@ -26,7 +26,7 @@ const todayStr = () => new Date().toISOString().slice(0, 10)
  *  - The server stays the source of truth; these checks only save a round trip.
  */
 export default function ApplyLeaveModal({ types, balances, onClose, onCreated }) {
-  const [type, setType] = useState(types[0]?.key ?? 'casual')
+  const [type, setType] = useState(types[0]?.key ?? '')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')

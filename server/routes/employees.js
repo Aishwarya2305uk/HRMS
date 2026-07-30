@@ -2,9 +2,9 @@ import { Router } from 'express'
 import mongoose from 'mongoose'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { User } from '../models/User.js'
+import { EmploymentType } from '../models/EmploymentType.js'
 import { WorkSession, isRunning } from '../models/WorkSession.js'
 import { dayKey } from '../utils/time.js'
-import { defaultLeaveBalances } from '../config.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -91,10 +91,16 @@ router.get('/:id/profile', async (req, res, next) => {
       return res.status(403).json({ error: 'You do not have access to this resource.' })
     }
 
-    const target = await User.findById(req.params.id).populate('managerId', 'name')
+    const target = await User.findById(req.params.id)
+      .populate('managerId', 'name')
+      .populate('employmentType', 'name')
     if (!target) return res.status(404).json({ error: 'Employee not found.' })
 
-    res.json({ ...target.toProfileJSON(), managerName: target.managerId?.name ?? null })
+    res.json({
+      ...target.toProfileJSON(),
+      managerName: target.managerId?.name ?? null,
+      employmentTypeName: target.employmentType?.name ?? null,
+    })
   } catch (err) {
     next(err)
   }
@@ -116,11 +122,15 @@ router.patch('/:id/profile', async (req, res, next) => {
       return res.status(403).json({ error: 'You do not have access to this resource.' })
     }
 
-    const target = await User.findById(req.params.id).populate('managerId', 'name')
+    const target = await User.findById(req.params.id)
+      .populate('managerId', 'name')
+      .populate('employmentType', 'name')
     if (!target) return res.status(404).json({ error: 'Employee not found.' })
     const managerName = target.managerId?.name ?? null
+    // May be overwritten below if employmentType actually changes.
+    let employmentTypeName = target.employmentType?.name ?? null
 
-    const { dob, address, phone, education, aadharNumber, photoUrl } = req.body || {}
+    const { dob, address, phone, education, aadharNumber, photoUrl, employmentType } = req.body || {}
 
     if (dob !== undefined) {
       if (dob) {
@@ -179,8 +189,40 @@ router.patch('/:id/profile', async (req, res, next) => {
       target.photoUrl = trimmed
     }
 
+    // Employment classification — HR data, not a personal detail, so unlike
+    // every field above this is admin-only even when editing your own
+    // profile. Only reseeds leaveQuotas/leaveBalances when the value
+    // actually CHANGES (never on "field present but same as today"), so an
+    // unrelated profile save can never silently reset someone's balance —
+    // the frontend is expected to confirm this with the admin first, since
+    // it discards any unused balance under the previous policy.
+    if (employmentType !== undefined) {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Only an admin can change employment type.' })
+      }
+      const currentId = target.employmentType?._id ? target.employmentType._id.toString() : null
+      const nextId = employmentType || null
+      if (nextId && !mongoose.Types.ObjectId.isValid(nextId)) {
+        return res.status(400).json({ error: 'Invalid employment type id.' })
+      }
+      if (nextId !== currentId) {
+        let nextDoc = null
+        if (nextId) {
+          nextDoc = await EmploymentType.findById(nextId)
+          if (!nextDoc) return res.status(400).json({ error: 'Selected employment type does not exist.' })
+        }
+        const quotas = nextDoc?.quotas || {}
+        target.employmentType = nextId
+        target.leaveQuotas = { ...quotas }
+        target.leaveBalances = { ...quotas }
+        target.markModified('leaveQuotas')
+        target.markModified('leaveBalances')
+        employmentTypeName = nextDoc?.name ?? null
+      }
+    }
+
     await target.save()
-    res.json({ ...target.toProfileJSON(), managerName })
+    res.json({ ...target.toProfileJSON(), managerName, employmentTypeName })
   } catch (err) {
     next(err)
   }
@@ -192,11 +234,15 @@ router.use(requireRole('admin'))
 /** GET /api/employees — list everyone (admin view), with manager names. */
 router.get('/', async (_req, res, next) => {
   try {
-    const users = await User.find({}).populate('managerId', 'name').sort({ createdAt: 1 })
+    const users = await User.find({})
+      .populate('managerId', 'name')
+      .populate('employmentType', 'name')
+      .sort({ createdAt: 1 })
     res.json(
       users.map((u) => ({
         ...u.toSafeJSON(),
         managerName: u.managerId?.name ?? null,
+        employmentTypeName: u.employmentType?.name ?? null,
       })),
     )
   } catch (err) {
@@ -206,8 +252,11 @@ router.get('/', async (_req, res, next) => {
 
 /**
  * POST /api/employees — add a new employee.
- * Body: { name, email, password, role, designation, department, joiningDate, managerId }
- * The managerId is what wires this person into the org tree.
+ * Body: { name, email, password, role, designation, department, joiningDate, managerId, employmentType }
+ * The managerId is what wires this person into the org tree. employmentType
+ * (optional) seeds leaveQuotas/leaveBalances from that policy's quotas —
+ * left unassigned, the new hire starts with a zeroed leave balance until an
+ * admin assigns one via their profile.
  */
 router.post('/', async (req, res, next) => {
   try {
@@ -220,6 +269,7 @@ router.post('/', async (req, res, next) => {
       department = '',
       joiningDate,
       managerId = null,
+      employmentType = null,
     } = req.body || {}
 
     if (!name || !email || !password) {
@@ -235,6 +285,15 @@ router.post('/', async (req, res, next) => {
     if (managerId && !(await User.findById(managerId))) {
       return res.status(400).json({ error: 'Selected manager does not exist.' })
     }
+    let employmentTypeDoc = null
+    if (employmentType) {
+      if (!mongoose.Types.ObjectId.isValid(employmentType)) {
+        return res.status(400).json({ error: 'Invalid employment type.' })
+      }
+      employmentTypeDoc = await EmploymentType.findById(employmentType)
+      if (!employmentTypeDoc) return res.status(400).json({ error: 'Selected employment type does not exist.' })
+    }
+    const quotas = employmentTypeDoc?.quotas || {}
 
     const user = new User({
       name: String(name).trim(),
@@ -244,11 +303,17 @@ router.post('/', async (req, res, next) => {
       department: String(department).trim(),
       joiningDate: joiningDate ? new Date(joiningDate) : undefined,
       managerId: managerId || null,
-      leaveBalances: defaultLeaveBalances(),
+      employmentType: employmentTypeDoc?._id ?? null,
+      leaveQuotas: { ...quotas },
+      leaveBalances: { ...quotas },
     })
     await user.setPassword(String(password))
     await user.save()
-    res.status(201).json({ ...user.toSafeJSON(), managerName: null })
+    res.status(201).json({
+      ...user.toSafeJSON(),
+      managerName: null,
+      employmentTypeName: employmentTypeDoc?.name ?? null,
+    })
   } catch (err) {
     next(err)
   }

@@ -1,5 +1,5 @@
 import { User } from './models/User.js'
-import { defaultLeaveBalances } from './config.js'
+import { EmploymentType } from './models/EmploymentType.js'
 import { ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_NAME } from './env.js'
 
 const MIN_PASSWORD = 8
@@ -42,11 +42,19 @@ export async function bootstrapAdmin() {
   const existing = await User.findOne({ email: ADMIN_EMAIL })
   if (existing) return
 
+  // The admin already gets a leave balance and can already apply for leave
+  // today (no role gate on POST /leaves) — assign a default employment type
+  // so that keeps working instead of silently landing on a zeroed policy.
+  const fullTime = await EmploymentType.findOne({ name: 'Full-time' })
+  const quotas = fullTime?.quotas || {}
+
   const admin = new User({
     name: ADMIN_NAME,
     email: ADMIN_EMAIL,
     role: 'admin',
-    leaveBalances: defaultLeaveBalances(),
+    employmentType: fullTime?._id ?? null,
+    leaveQuotas: quotas,
+    leaveBalances: { ...quotas },
   })
   await admin.setPassword(ADMIN_PASSWORD)
   try {

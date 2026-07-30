@@ -12,7 +12,7 @@
  */
 import { WorkSession, computeWorkedSeconds } from '../models/WorkSession.js'
 import { FULL_WORKDAY_SECONDS } from '../config.js'
-import { dayKey, endOfDay } from '../utils/time.js'
+import { dayKey, endOfDay, weekStartOf } from '../utils/time.js'
 
 /** Apply the 8h rule to a finalized worked-seconds total. */
 export function verdictFor(workedSeconds) {
@@ -50,4 +50,85 @@ export async function finalizeStaleSessions(userId = null) {
   const stale = await WorkSession.find(query)
   for (const session of stale) await finalizeSession(session)
   return stale.length
+}
+
+/**
+ * Summary KPIs for the attendance analytics page, derived from a list of
+ * live-view sessions (`toLiveJSON()` shape, any order). Only *finalized* days
+ * (status !== 'active') count toward totals/streaks — today's still-running
+ * session has no verdict yet, so including it would make "present days" or a
+ * streak flicker based on the time of day the page happens to load.
+ *
+ * "Streak" counts consecutive PRESENT entries in the list itself, not
+ * consecutive calendar dates — there's no concept of a company working-day
+ * calendar in v1 (no weekends/holidays config), so a day with no session at
+ * all (weekend, day off) simply isn't part of the sequence rather than being
+ * treated as a break.
+ */
+export function summarizeAttendance(daily, { monthKey }) {
+  const finalized = daily.filter((d) => d.status !== 'active')
+  const chronological = [...finalized].sort((a, b) => (a.date < b.date ? -1 : 1))
+
+  const presentDays = finalized.filter((d) => d.dayStatus === 'present').length
+  const shortDays = finalized.filter((d) => d.dayStatus === 'leave').length
+  const totalWorkedSeconds = finalized.reduce((sum, d) => sum + (d.workedSeconds || 0), 0)
+  const avgWorkedSecondsPerDay = finalized.length
+    ? Math.round(totalWorkedSeconds / finalized.length)
+    : 0
+  const bestDayWorkedSeconds = finalized.reduce((max, d) => Math.max(max, d.workedSeconds || 0), 0)
+  const presentRate = finalized.length ? Math.round((presentDays / finalized.length) * 100) : null
+
+  let longestStreak = 0
+  let run = 0
+  for (const d of chronological) {
+    run = d.dayStatus === 'present' ? run + 1 : 0
+    longestStreak = Math.max(longestStreak, run)
+  }
+  let currentStreak = 0
+  for (let i = chronological.length - 1; i >= 0; i--) {
+    if (chronological[i].dayStatus !== 'present') break
+    currentStreak++
+  }
+
+  const thisMonthDays = finalized.filter((d) => d.date.startsWith(monthKey))
+  const thisMonthTotal = thisMonthDays.reduce((sum, d) => sum + (d.workedSeconds || 0), 0)
+
+  return {
+    loggedDays: finalized.length,
+    presentDays,
+    shortDays,
+    totalWorkedSeconds,
+    avgWorkedSecondsPerDay,
+    bestDayWorkedSeconds,
+    presentRate,
+    currentStreak,
+    longestStreak,
+    thisMonth: {
+      presentDays: thisMonthDays.filter((d) => d.dayStatus === 'present').length,
+      totalWorkedSeconds: thisMonthTotal,
+      avgWorkedSecondsPerDay: thisMonthDays.length
+        ? Math.round(thisMonthTotal / thisMonthDays.length)
+        : 0,
+    },
+  }
+}
+
+/** Buckets finalized days into Monday-start weeks for a "hours per week" trend chart. */
+export function bucketWeekly(daily) {
+  const buckets = new Map()
+  for (const d of daily) {
+    if (d.status === 'active') continue
+    const start = weekStartOf(d.date)
+    const bucket = buckets.get(start) ?? {
+      weekStart: start,
+      totalWorkedSeconds: 0,
+      presentDays: 0,
+      loggedDays: 0,
+    }
+    bucket.totalWorkedSeconds += d.workedSeconds || 0
+    bucket.loggedDays += 1
+    if (d.dayStatus === 'present') bucket.presentDays += 1
+    buckets.set(start, bucket)
+  }
+  return [...buckets.values()].sort((a, b) => (a.weekStart < b.weekStart ? -1 : 1))
 }

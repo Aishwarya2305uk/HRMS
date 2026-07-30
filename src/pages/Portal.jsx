@@ -21,12 +21,15 @@ import WfhRequests from '../components/WfhRequests'
 import ApplyWfhModal from '../components/ApplyWfhModal'
 import Approvals from '../components/Approvals'
 import AttendanceHistory from '../components/AttendanceHistory'
+import AttendanceAnalytics from '../components/AttendanceAnalytics'
 import OrgTree from '../components/OrgTree'
 import LeaveCalendar from '../components/LeaveCalendar'
 import PeopleAdmin from '../components/PeopleAdmin'
 import AllLeaves from '../components/AllLeaves'
 import AllAttendance from '../components/AllAttendance'
 import AllAnnouncements from '../components/AllAnnouncements'
+import LeaveTypesManager from '../components/LeaveTypesManager'
+import EmploymentTypesManager from '../components/EmploymentTypesManager'
 import Profile from '../components/Profile'
 import { SkeletonCard, ErrorState, InlineError } from '../components/States'
 import Sidebar from '../components/dashboard/Sidebar'
@@ -60,6 +63,7 @@ const NAV_ITEMS = {
   people: { label: 'People', icon: 'users' },
   allleaves: { label: 'All leaves', icon: 'calendarDays' },
   allattendance: { label: 'All attendance', icon: 'list' },
+  leavepolicies: { label: 'Leave Policies', icon: 'sliders' },
   org: { label: 'Organization', icon: 'tree' },
   calendar: { label: 'Calendar', icon: 'calendar' },
 }
@@ -80,7 +84,7 @@ const NAV_ITEMS = {
 const ROLE_SECTIONS = {
   employee: ['dashboard', 'notifications', 'attendance', 'leaves', 'org', 'calendar'],
   manager: ['dashboard', 'attendance', 'leaves', 'approvals', 'announcements', 'org', 'calendar'],
-  admin: ['dashboard', 'attendance', 'leaves', 'approvals', 'announcements', 'people', 'allleaves', 'allattendance', 'org', 'calendar'],
+  admin: ['dashboard', 'attendance', 'leaves', 'approvals', 'announcements', 'people', 'allleaves', 'allattendance', 'leavepolicies', 'org', 'calendar'],
 }
 
 function canAccess(role, key) {
@@ -126,6 +130,8 @@ export default function Portal() {
   const [showApplyWfh, setShowApplyWfh] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  // 'YYYY-MM' — which month the admin All Attendance view is browsing.
+  const [attendanceMonth, setAttendanceMonth] = useState(() => new Date().toISOString().slice(0, 7))
   // null = viewing your own profile; an id = an admin viewing someone else's
   // (opened from the People roster).
   const [profileTarget, setProfileTarget] = useState(null)
@@ -172,8 +178,24 @@ export default function Portal() {
   const allLeavesQ = useAsyncData(useCallback(() => leavesApi.all(), []), {
     enabled: active === 'allleaves' && canAccess(role, 'allleaves'),
   })
-  const allAttendanceQ = useAsyncData(useCallback(() => attendance.all(), []), {
-    enabled: active === 'allattendance' && canAccess(role, 'allattendance'),
+  const allAttendanceQ = useAsyncData(
+    useCallback(() => attendance.all(attendanceMonth), [attendanceMonth]),
+    { enabled: active === 'allattendance' && canAccess(role, 'allattendance') },
+  )
+  // useAsyncData only auto-fetches when `enabled` flips false->true, not when
+  // the fetcher's own closure changes — so navigating months while already on
+  // this tab (enabled stays true throughout) needs an explicit reload. Reads
+  // `active` via a ref (same trick useAsyncData itself uses for `fetcher`)
+  // so switching tabs doesn't ALSO retrigger this — only an actual month
+  // change should, since the enabled-flip case is already handled above.
+  const activeRef = useRef(active)
+  activeRef.current = active
+  const reloadAttendance = allAttendanceQ.reload
+  useEffect(() => {
+    if (activeRef.current === 'allattendance') reloadAttendance()
+  }, [attendanceMonth, reloadAttendance])
+  const analyticsQ = useAsyncData(useCallback(() => attendance.analytics(), []), {
+    enabled: active === 'attendance',
   })
   const sentAnnouncementsQ = useAsyncData(useCallback(() => announcementsApi.sent(), []), {
     enabled: active === 'announcements' && canAccess(role, 'announcements'),
@@ -230,7 +252,10 @@ export default function Portal() {
   const reloadHistory = historyQ.reload
   const refreshAfterAttendance = useCallback(() => {
     reloadHistory()
-  }, [reloadHistory])
+    // Analytics is lazy-loaded (only once the Attendance tab has been
+    // opened) — only refresh it if it's actually been fetched already.
+    if (analyticsQ.data !== null) analyticsQ.reload()
+  }, [reloadHistory, analyticsQ])
 
   // Same rationale as above: NotificationsPanel keys an effect off this
   // callback's identity, so it must stay stable even though calling it
@@ -464,6 +489,9 @@ export default function Portal() {
           {active === 'attendance' && (
             <div className="single-col">
               <AttendanceCard onChange={refreshAfterAttendance} />
+              <Section query={analyticsQ} skeletonRows={4}>
+                {analyticsQ.data && <AttendanceAnalytics data={analyticsQ.data} />}
+              </Section>
               <Section query={historyQ} skeletonRows={5}>
                 <AttendanceHistory rows={history} />
               </Section>
@@ -538,6 +566,7 @@ export default function Portal() {
                 profile={profileQ.data}
                 isSelf={isSelfProfile}
                 canEdit={isSelfProfile || role === 'admin'}
+                canEditEmploymentType={role === 'admin'}
                 onSaved={onProfileSaved}
                 onBack={!isSelfProfile ? () => setActive('people') : undefined}
               />
@@ -552,8 +581,20 @@ export default function Portal() {
 
           {active === 'allattendance' && canAccess(role, 'allattendance') && (
             <Section query={allAttendanceQ} skeletonRows={5}>
-              <AllAttendance rows={allAttendanceQ.data ?? []} searchQuery={searchQuery} />
+              <AllAttendance
+                rows={allAttendanceQ.data ?? []}
+                searchQuery={searchQuery}
+                month={attendanceMonth}
+                onMonthChange={setAttendanceMonth}
+              />
             </Section>
+          )}
+
+          {active === 'leavepolicies' && canAccess(role, 'leavepolicies') && (
+            <div className="single-col">
+              <LeaveTypesManager />
+              <EmploymentTypesManager />
+            </div>
           )}
 
           {active === 'announcements' && canAccess(role, 'announcements') && (

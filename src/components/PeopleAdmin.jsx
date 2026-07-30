@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import Icon from './Icon'
 import Avatar from './Avatar'
-import { employees as employeesApi } from '../lib/hrms'
+import { employees as employeesApi, employmentTypes as employmentTypesApi } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
 import { formatDate } from '../lib/format'
+import { useAsyncData } from '../lib/useAsyncData'
 import { useToast } from '../context/ToastContext'
 import { EmptyState, InlineError } from './States'
 
@@ -16,6 +17,7 @@ const BLANK = {
   department: '',
   joiningDate: '',
   managerId: '',
+  employmentType: '',
 }
 
 /** Mirrors the server's policy so the user finds out before submitting. */
@@ -37,6 +39,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  */
 export default function PeopleAdmin({ people, setPeople, searchQuery = '', onViewProfile }) {
   const toast = useToast()
+  const employmentTypesQ = useAsyncData(useCallback(() => employmentTypesApi.list(), []))
+  const employmentTypeOptions = employmentTypesQ.data ?? []
   const [form, setForm] = useState(BLANK)
   const [touched, setTouched] = useState({})
   const [submitError, setSubmitError] = useState('')
@@ -95,7 +99,11 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
     setSaving(true)
     haptic('medium')
     try {
-      const created = await employeesApi.add({ ...form, managerId: form.managerId || null })
+      const created = await employeesApi.add({
+        ...form,
+        managerId: form.managerId || null,
+        employmentType: form.employmentType || null,
+      })
       const managerName = people.find((p) => p.id === form.managerId)?.name ?? null
       setPeople([...people, { ...created, managerName }])
       setForm(BLANK)
@@ -251,19 +259,38 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
               />
             </div>
             <div className="field">
-              <label htmlFor="emp-manager">Reports to</label>
+              <label htmlFor="emp-employmentType">
+                Employment type <span className="field-optional">(optional)</span>
+              </label>
               <select
-                id="emp-manager"
-                value={form.managerId}
-                onChange={(e) => update('managerId', e.target.value)}
+                id="emp-employmentType"
+                value={form.employmentType}
+                onChange={(e) => update('employmentType', e.target.value)}
               >
-                <option value="">— No manager (top level) —</option>
-                {managerCandidates.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name} · {p.role}</option>
+                <option value="">— None —</option>
+                {employmentTypeOptions.map((et) => (
+                  <option key={et.id} value={et.id}>{et.name}</option>
                 ))}
               </select>
-              <p className="field-hint">This is what builds the organization tree.</p>
+              <p className="field-hint">
+                Sets their leave policy — manage these under Leave Policies.
+              </p>
             </div>
+          </div>
+
+          <div className="field">
+            <label htmlFor="emp-manager">Reports to</label>
+            <select
+              id="emp-manager"
+              value={form.managerId}
+              onChange={(e) => update('managerId', e.target.value)}
+            >
+              <option value="">— No manager (top level) —</option>
+              {managerCandidates.map((p) => (
+                <option key={p.id} value={p.id}>{p.name} · {p.role}</option>
+              ))}
+            </select>
+            <p className="field-hint">This is what builds the organization tree.</p>
           </div>
 
           <button type="submit" className="btn-tactile primary" disabled={saving}>
@@ -298,6 +325,7 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
                 <tr>
                   <th>Name</th>
                   <th>Role</th>
+                  <th>Employment type</th>
                   <th>Department</th>
                   <th>Joined</th>
                   <th>Reports to</th>
@@ -321,6 +349,7 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
                       </button>
                     </td>
                     <td><span className={`role-pill ${p.role}`}>{p.role}</span></td>
+                    <td>{p.employmentTypeName || '—'}</td>
                     <td>{p.department || '—'}</td>
                     <td>{p.joiningDate ? formatDate(p.joiningDate, true) : '—'}</td>
                     <td>

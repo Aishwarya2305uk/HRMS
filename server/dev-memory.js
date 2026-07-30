@@ -14,6 +14,7 @@
 import mongoose from 'mongoose'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import { bootstrapAdmin } from './bootstrapAdmin.js'
+import { bootstrapLeavePolicy } from './bootstrapLeavePolicy.js'
 import { createApp } from './app.js'
 
 // The Vite dev proxy targets port 4000 (see vite.config.js), so the in-memory
@@ -27,6 +28,9 @@ async function start() {
   await mongoose.connect(mem.getUri(), { dbName: 'hrms' })
   console.log('[dev:mem] in-memory MongoDB ready (data is not persisted)')
 
+  // Leave policy first: bootstrapAdmin assigns the admin a default
+  // employment type, so that type must already exist.
+  await bootstrapLeavePolicy()
   await bootstrapAdmin()
 
   createApp().listen(PORT, () => {
