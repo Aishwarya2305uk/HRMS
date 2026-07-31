@@ -31,6 +31,7 @@ export const employees = {
   add: (body) => apiFetch('/employees', { method: 'POST', body }),
   setManager: (id, managerId) =>
     apiFetch(`/employees/${id}/manager`, { method: 'PATCH', body: { managerId } }),
+  setRole: (id, role) => apiFetch(`/employees/${id}/role`, { method: 'PATCH', body: { role } }),
   profile: (id) => apiFetch(`/employees/${id}/profile`),
   updateProfile: (id, body) => apiFetch(`/employees/${id}/profile`, { method: 'PATCH', body }),
 }

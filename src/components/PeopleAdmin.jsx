@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import Icon from './Icon'
 import Avatar from './Avatar'
+import { useAuth } from '../context/AuthContext'
 import { employees as employeesApi, employmentTypes as employmentTypesApi } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
 import { formatDate } from '../lib/format'
@@ -39,6 +40,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  */
 export default function PeopleAdmin({ people, setPeople, searchQuery = '', onViewProfile }) {
   const toast = useToast()
+  const { user: currentUser } = useAuth()
   const employmentTypesQ = useAsyncData(useCallback(() => employmentTypesApi.list(), []))
   const employmentTypeOptions = employmentTypesQ.data ?? []
   const [form, setForm] = useState(BLANK)
@@ -46,6 +48,7 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
   const [submitError, setSubmitError] = useState('')
   const [saving, setSaving] = useState(false)
   const [busyManagerId, setBusyManagerId] = useState(null)
+  const [busyRoleId, setBusyRoleId] = useState(null)
 
   // Only managers/admins can be someone's "reports to" — an employee can't.
   const managerCandidates = useMemo(
@@ -117,6 +120,30 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
       toast.error(err.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  /**
+   * Promote/demote in place — optimistic like changeManager, with a visible
+   * rollback. The server enforces the real rules (no self-change; demotion
+   * blocked while the person still has direct reports) and its 409 message
+   * tells the admin exactly what to fix, so we just surface it.
+   */
+  async function changeRole(id, role) {
+    const previous = people
+    const person = people.find((p) => p.id === id)
+    const article = role === 'admin' ? 'an admin' : role === 'manager' ? 'a manager' : 'an employee'
+    setBusyRoleId(id)
+    haptic('light')
+    setPeople(people.map((p) => (p.id === id ? { ...p, role } : p)))
+    try {
+      await employeesApi.setRole(id, role)
+      toast.success(`${person?.name} is now ${article}.`)
+    } catch (err) {
+      setPeople(previous) // visible rollback — never show unsaved state as saved
+      toast.error(`Couldn't change role — ${err.message}`)
+    } finally {
+      setBusyRoleId(null)
     }
   }
 
@@ -348,7 +375,32 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
                         </div>
                       </button>
                     </td>
-                    <td><span className={`role-pill ${p.role}`}>{p.role}</span></td>
+                    <td>
+                      {p.id === currentUser?.id ? (
+                        // Your own row stays read-only — the server refuses
+                        // self-role-changes, so don't offer a dead control.
+                        <span className={`role-pill ${p.role}`} title="You can't change your own role">
+                          {p.role}
+                        </span>
+                      ) : (
+                        <>
+                          <label className="sr-only" htmlFor={`role-${p.id}`}>
+                            Role for {p.name}
+                          </label>
+                          <select
+                            id={`role-${p.id}`}
+                            className="mini-select"
+                            value={p.role}
+                            disabled={busyRoleId === p.id}
+                            onChange={(e) => changeRole(p.id, e.target.value)}
+                          >
+                            <option value="employee">Employee</option>
+                            <option value="manager">Manager</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                        </>
+                      )}
+                    </td>
                     <td>{p.employmentTypeName || '—'}</td>
                     <td>{p.department || '—'}</td>
                     <td>{p.joiningDate ? formatDate(p.joiningDate, true) : '—'}</td>

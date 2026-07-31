@@ -320,6 +320,54 @@ router.post('/', async (req, res, next) => {
 })
 
 /**
+ * PATCH /api/employees/:id/role — promote or demote someone (admin-only, like
+ * everything below the requireRole gate above). Supports the "player-coach"
+ * lifecycle: an employee is promoted to manager while new hires report to
+ * them, then demoted back once the project wraps.
+ *
+ * Guards:
+ *  - Admins can't change their OWN role — prevents the last admin from
+ *    locking themselves out of this very screen.
+ *  - Demotion to employee is refused while the person still has direct
+ *    reports: approvals are strictly direct-manager-only (see leaves.js),
+ *    so an employee "manager" would strand their team's pending requests
+ *    with nobody — not even an admin — able to decide them.
+ */
+router.patch('/:id/role', async (req, res, next) => {
+  try {
+    const { role } = req.body || {}
+    if (!['employee', 'manager', 'admin'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role.' })
+    }
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid employee id.' })
+    }
+    if (req.params.id === req.user._id.toString()) {
+      return res.status(400).json({ error: 'You cannot change your own role.' })
+    }
+
+    const user = await User.findById(req.params.id)
+    if (!user) return res.status(404).json({ error: 'Employee not found.' })
+    if (user.role === role) return res.json(user.toSafeJSON())
+
+    if (role === 'employee') {
+      const reports = await User.countDocuments({ managerId: user._id })
+      if (reports > 0) {
+        return res.status(409).json({
+          error: `${user.name} still manages ${reports} ${reports === 1 ? 'person' : 'people'} — reassign them to another manager first.`,
+        })
+      }
+    }
+
+    user.role = role
+    await user.save()
+    res.json(user.toSafeJSON())
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
  * PATCH /api/employees/:id/manager — reassign someone's manager (fix/restructure).
  * Rejects self-management and simple cycles so the tree stays valid.
  */
