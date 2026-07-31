@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Icon from './Icon'
 import { leaves as leavesApi } from '../lib/hrms'
 import { tactile, haptic } from '../lib/haptics'
-import { formatRange, formatDate } from '../lib/format'
+import { formatRequestWindow, formatDate } from '../lib/format'
 import { Skeleton, EmptyState, InlineError } from './States'
 
 /** Plain-language explanation of what each status means for the user. */
@@ -92,16 +92,19 @@ export default function RecentLeaves({
                     <Icon name="leaf" size={16} />
                     <span>
                       <strong>{typeLabels[l.type] ?? l.type}</strong>
-                      <em>
-                        {formatRange(l.startDate, l.endDate)} · {l.days}{' '}
-                        {l.days > 1 ? 'days' : 'day'}
-                      </em>
+                      <em>{formatRequestWindow(l)}</em>
                     </span>
                   </span>
                   <span className={`status ${l.status}`} title={STATUS_HINT[l.status]}>
                     {l.status}
                   </span>
                 </div>
+
+                {(l.employeeId || l.employeeEmail) && (
+                  <p className="req__ident">
+                    {[l.employeeId, l.employeeEmail].filter(Boolean).join(' · ')}
+                  </p>
+                )}
 
                 {/* Rejections without a reason feel arbitrary — surface it. */}
                 {l.status === 'rejected' && l.decisionComment && (

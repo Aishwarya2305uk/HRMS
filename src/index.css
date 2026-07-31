@@ -100,8 +100,24 @@ body,
   height: 100%;
 }
 
+/* The page itself must never pan or bounce sideways/vertically past its
+   content — dragging (touch, trackpad, overscroll) was shifting the whole
+   site and exposing blank space at the edges.
+   - overflow-x: clip kills any horizontal page scroll without creating a
+     scroll container (overflow: hidden would break the sticky sidebar and
+     topbar). Wide content (tables, org chart, heatmap) still scrolls inside
+     its own overflow-x: auto wrapper.
+   - overscroll-behavior: none stops the rubber-band/bounce and pull-to-
+     refresh chaining when a scroll or drag reaches the edge. */
+html {
+  overflow-x: clip;
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
+  overflow-x: clip;
+  overscroll-behavior: none;
   background: var(--surface-0);
   color: var(--text);
 }

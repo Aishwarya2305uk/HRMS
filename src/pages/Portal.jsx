@@ -33,11 +33,13 @@ import AllAnnouncements from '../components/AllAnnouncements'
 import LeaveTypesManager from '../components/LeaveTypesManager'
 import EmploymentTypesManager from '../components/EmploymentTypesManager'
 import Profile from '../components/Profile'
+import DocumentsCard from '../components/DocumentsCard'
 import { SkeletonCard, ErrorState, InlineError } from '../components/States'
 import Sidebar from '../components/dashboard/Sidebar'
 import TopBar from '../components/dashboard/TopBar'
 import QuickAccessTiles from '../components/dashboard/QuickAccessTiles'
 import NotificationsPanel from '../components/notifications/NotificationsPanel'
+import NotificationsPage from '../components/notifications/NotificationsPage'
 
 import './EmployeeDashboard.css'
 import './Portal.css'
@@ -78,15 +80,14 @@ const NAV_ITEMS = {
  * below) which content blocks render for a given tab. Order here is sidebar
  * order.
  */
-// Manager and admin get a dedicated "Announcements" section (compose + manage
-// sent messages), which makes a separate "Notifications" sidebar entry
-// redundant for them — so it's dropped for those two roles. Employees have no
-// Announcements section, so they keep Notifications as their only way in.
-// (The topbar bell still opens the same drawer for everyone, regardless.)
+// Every role gets the dedicated Notifications page in the sidebar (the
+// topbar bell still opens the quick-glance drawer). Manager/admin ALSO keep
+// their "Announcements" section — that one is for composing and managing
+// SENT messages, while Notifications is the received feed plus pending work.
 const ROLE_SECTIONS = {
   employee: ['dashboard', 'notifications', 'attendance', 'leaves', 'org', 'calendar'],
-  manager: ['dashboard', 'attendance', 'leaves', 'approvals', 'announcements', 'org', 'calendar'],
-  admin: ['dashboard', 'attendance', 'leaves', 'approvals', 'announcements', 'people', 'allleaves', 'allattendance', 'leavepolicies', 'org', 'calendar'],
+  manager: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'org', 'calendar'],
+  admin: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'people', 'allleaves', 'allattendance', 'leavepolicies', 'org', 'calendar'],
 }
 
 function canAccess(role, key) {
@@ -162,12 +163,6 @@ export default function Portal() {
   }
 
   function selectTab(key) {
-    // Notifications is a transient drawer, not a page — open it in place
-    // rather than navigating, so there's nothing behind it to return to.
-    if (key === 'notifications') {
-      setShowNotifications(true)
-      return
-    }
     setActive(key)
     setSearchQuery('') // a filter from one section shouldn't silently apply to the next
   }
@@ -287,9 +282,16 @@ export default function Portal() {
     navigate('/', { replace: true })
   }
 
-  function onLeaveCreated(leave) {
-    myLeavesQ.setData((prev) => [leave, ...(prev ?? [])])
-    toast.success('Leave request submitted — your manager has been notified.')
+  // Custom-dates submissions return one request per consecutive block, so
+  // both created-handlers accept a single item OR an array.
+  function onLeaveCreated(leaveOrBatch) {
+    const items = Array.isArray(leaveOrBatch) ? leaveOrBatch : [leaveOrBatch]
+    myLeavesQ.setData((prev) => [...items, ...(prev ?? [])])
+    toast.success(
+      items.length > 1
+        ? `${items.length} leave requests submitted (one per consecutive block) — your manager has been notified.`
+        : 'Leave request submitted — your manager has been notified.',
+    )
   }
 
   function onLeaveCancelled(id) {
@@ -299,9 +301,14 @@ export default function Portal() {
 
   // Same underlying list as leave (myLeavesQ) — /leaves/mine returns both
   // kinds — so creating/cancelling a WFH request only differs in the toast copy.
-  function onWfhCreated(wfh) {
-    myLeavesQ.setData((prev) => [wfh, ...(prev ?? [])])
-    toast.success('Work-from-home request submitted — your manager has been notified.')
+  function onWfhCreated(wfhOrBatch) {
+    const items = Array.isArray(wfhOrBatch) ? wfhOrBatch : [wfhOrBatch]
+    myLeavesQ.setData((prev) => [...items, ...(prev ?? [])])
+    toast.success(
+      items.length > 1
+        ? `${items.length} work-from-home requests submitted (one per consecutive block) — your manager has been notified.`
+        : 'Work-from-home request submitted — your manager has been notified.',
+    )
   }
 
   function onWfhCancelled(id) {
@@ -490,17 +497,46 @@ export default function Portal() {
                 />
               </div>
 
-              {isManager && (
-                <Approvals
-                  pending={pending}
-                  typeLabels={typeLabels}
-                  onDecided={onApprovalDecided}
-                  loading={pendingQ.loading && pendingQ.data === null}
-                  error={pendingQ.error}
-                  onRetry={pendingQ.reload}
+              {/* Pending approvals (left) and documents (right) share one
+                  row; employees have no approvals card, so theirs renders
+                  full-width via the .dash-duo--single variant. */}
+              <div className={`dash-duo${isManager ? '' : ' dash-duo--single'}`}>
+                {isManager && (
+                  <Approvals
+                    pending={pending}
+                    typeLabels={typeLabels}
+                    onDecided={onApprovalDecided}
+                    loading={pendingQ.loading && pendingQ.data === null}
+                    error={pendingQ.error}
+                    onRetry={pendingQ.reload}
+                  />
+                )}
+
+                <DocumentsCard
+                  userId={user?.id}
+                  canUpload
+                  canDelete={role === 'admin'}
+                  title="My documents"
                 />
-              )}
+              </div>
             </>
+          )}
+
+          {active === 'notifications' && (
+            <NotificationsPage
+              query={announcementsQ}
+              onMarkedRead={onAnnouncementsRead}
+              canCompose={isManager}
+              onCreated={onAnnouncementCreated}
+              onRemoved={onAnnouncementRemoved}
+              approvalsPending={pending}
+              myPendingLeaves={myPendingLeaves}
+              typeLabels={typeLabels}
+              currentUserId={user?.id}
+              role={role}
+              onViewApprovals={() => selectTab('approvals')}
+              onViewLeaves={() => selectTab('leaves')}
+            />
           )}
 
           {active === 'attendance' && (

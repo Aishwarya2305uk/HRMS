@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Icon from './Icon'
 import { leaves as leavesApi } from '../lib/hrms'
 import { tactile, haptic } from '../lib/haptics'
-import { formatRange, formatDate } from '../lib/format'
+import { formatRequestWindow, formatDate } from '../lib/format'
 import { Skeleton, EmptyState, InlineError } from './States'
 
 /** Plain-language explanation of what each status means for the user. */
@@ -99,16 +99,19 @@ export default function WfhRequests({
                     <Icon name="home" size={16} />
                     <span>
                       <strong>Work from home</strong>
-                      <em>
-                        {formatRange(r.startDate, r.endDate)} · {r.days}{' '}
-                        {r.days > 1 ? 'days' : 'day'}
-                      </em>
+                      <em>{formatRequestWindow(r)}</em>
                     </span>
                   </span>
                   <span className={`status ${r.status}`} title={STATUS_HINT[r.status]}>
                     {r.status}
                   </span>
                 </div>
+
+                {(r.employeeId || r.employeeEmail) && (
+                  <p className="req__ident">
+                    {[r.employeeId, r.employeeEmail].filter(Boolean).join(' · ')}
+                  </p>
+                )}
 
                 {r.reason && <p className="req__reason">“{r.reason}”</p>}
 

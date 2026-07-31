@@ -36,6 +36,16 @@ export const employees = {
   updateProfile: (id, body) => apiFetch(`/employees/${id}/profile`, { method: 'PATCH', body }),
 }
 
+/** Documents on an employee's HR file. Visibility (self / direct manager /
+ *  admin), upload rights (self / admin) and deletion (admin only) are all
+ *  enforced server-side — see server/routes/documents.js. */
+export const documents = {
+  list: (userId) => apiFetch(`/documents/user/${userId}`),
+  upload: (userId, body) => apiFetch(`/documents/user/${userId}`, { method: 'POST', body }),
+  file: (id) => apiFetch(`/documents/${id}/file`),
+  remove: (id) => apiFetch(`/documents/${id}`, { method: 'DELETE' }),
+}
+
 export const announcements = {
   list: () => apiFetch('/announcements'),
   sent: () => apiFetch('/announcements/sent'),

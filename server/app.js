@@ -9,6 +9,7 @@ import announcementRoutes from './routes/announcements.js'
 import teamRoutes from './routes/teams.js'
 import leaveTypeRoutes from './routes/leaveTypes.js'
 import employmentTypeRoutes from './routes/employmentTypes.js'
+import documentRoutes from './routes/documents.js'
 
 /**
  * JSON body parsing that works BOTH as a standalone server and inside a Vercel
@@ -20,11 +21,12 @@ import employmentTypeRoutes from './routes/employmentTypes.js'
  * making every POST look like it has no data. So: only run express.json() when
  * the body hasn't been parsed yet (i.e. the classic long-running server path).
  *
- * Limit raised from Express's 100kb default to fit a compressed profile-photo
- * data URL (server/routes/employees.js caps the image itself at ~1MB decoded).
+ * Limit raised from Express's 100kb default to fit the largest inline upload:
+ * employee documents (routes/documents.js caps them at ~3MB decoded, ~4.2MB
+ * as a base64 data URL); profile photos are far smaller (~1MB decoded).
  */
 function smartJson() {
-  const parser = express.json({ limit: '2mb' })
+  const parser = express.json({ limit: '6mb' })
   return (req, res, next) => {
     if (req.body !== undefined && req.body !== null) return next()
     parser(req, res, next)
@@ -47,6 +49,7 @@ export function createApp() {
   app.use('/api/teams', teamRoutes)
   app.use('/api/leave-types', leaveTypeRoutes)
   app.use('/api/employment-types', employmentTypeRoutes)
+  app.use('/api/documents', documentRoutes)
 
   // Unknown /api route -> JSON 404. The method/path are logged server-side for
   // debugging but NOT reflected back in the response: echoing raw request input

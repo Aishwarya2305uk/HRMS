@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Icon from './Icon'
 import { leaves as leavesApi } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
-import { formatRange } from '../lib/format'
+import { formatRequestWindow } from '../lib/format'
 import { Skeleton, EmptyState, InlineError } from './States'
 
 /**
@@ -78,10 +78,14 @@ export default function Approvals({
                     </span>
                     <div>
                       <strong>{l.employeeName}</strong>
+                      {(l.employeeId || l.employeeEmail) && (
+                        <em className="approval__ident">
+                          {[l.employeeId, l.employeeEmail].filter(Boolean).join(' · ')}
+                        </em>
+                      )}
                       <em>
                         {l.kind === 'wfh' ? 'Work from home' : typeLabels[l.type] ?? l.type} ·{' '}
-                        {formatRange(l.startDate, l.endDate)} · {l.days}{' '}
-                        {l.days > 1 ? 'days' : 'day'}
+                        {formatRequestWindow(l)}
                       </em>
                     </div>
                   </div>

@@ -11,6 +11,102 @@ import { dayKey, inclusiveDays, startOfDay, dateKeysInRange } from '../utils/tim
 const router = Router()
 router.use(requireAuth)
 
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/
+
+/**
+ * Shared "when" validation for leave and WFH applications: dates, the
+ * day-part (full / first half / second half) and the working-hours window.
+ * Returns { error } on the first problem, otherwise the normalized fields
+ * with `days` already computed (0.5 for a half day).
+ */
+function parseWhen(body) {
+  const { startDate, endDate, dayPart = 'full', startTime = '', endTime = '' } = body || {}
+  if (!['full', 'first', 'second'].includes(dayPart)) {
+    return { error: 'Invalid day selection.' }
+  }
+  const startKey = String(startDate || '').slice(0, 10)
+  const endKey = String(endDate || '').slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startKey) || !/^\d{4}-\d{2}-\d{2}$/.test(endKey)) {
+    return { error: 'Start and end dates are required.' }
+  }
+  if (endKey < startKey) {
+    return { error: 'End date cannot be before the start date.' }
+  }
+  if (dayPart !== 'full' && startKey !== endKey) {
+    return { error: 'Half-day requests must start and end on the same day.' }
+  }
+  const start = String(startTime).trim()
+  const end = String(endTime).trim()
+  if ((start && !TIME_RE.test(start)) || (end && !TIME_RE.test(end))) {
+    return { error: 'Times must be in HH:MM format.' }
+  }
+  if (start && end && startKey === endKey && end <= start) {
+    return { error: 'End time must be after the start time.' }
+  }
+  return {
+    startKey,
+    endKey,
+    dayPart,
+    startTime: start,
+    endTime: end,
+    days: dayPart === 'full' ? inclusiveDays(startKey, endKey) : 0.5,
+  }
+}
+
+/** Sorted, deduped 'YYYY-MM-DD' keys grouped into contiguous runs, e.g.
+ *  [4th, 5th, 12th] -> [{start: 4th, end: 5th}, {start: 12th, end: 12th}]. */
+function groupContiguous(keys) {
+  const ranges = []
+  for (const k of [...new Set(keys)].sort()) {
+    const last = ranges[ranges.length - 1]
+    if (last && inclusiveDays(last.end, k) === 2) last.end = k
+    else ranges.push({ start: k, end: k })
+  }
+  return ranges
+}
+
+const MAX_CUSTOM_DATES = 31
+
+/**
+ * Custom-dates variant of parseWhen: the client sends `dates` (individual
+ * 'YYYY-MM-DD' picks, not necessarily consecutive) instead of a start/end
+ * range. Returns { error } or { ranges, dayPart, startTime, endTime,
+ * totalDays } — one request doc is created per contiguous run so the
+ * existing single-range model, calendar and approval flow stay untouched.
+ */
+function parseCustomWhen(body) {
+  const { dates, dayPart = 'full', startTime = '', endTime = '' } = body || {}
+  if (!['full', 'first', 'second'].includes(dayPart)) {
+    return { error: 'Invalid day selection.' }
+  }
+  const keys = (Array.isArray(dates) ? dates : []).map((d) => String(d || '').slice(0, 10))
+  if (keys.length === 0 || keys.some((k) => !/^\d{4}-\d{2}-\d{2}$/.test(k))) {
+    return { error: 'Pick at least one valid date.' }
+  }
+  const unique = [...new Set(keys)]
+  if (unique.length > MAX_CUSTOM_DATES) {
+    return { error: `Pick at most ${MAX_CUSTOM_DATES} dates per request.` }
+  }
+  if (dayPart !== 'full' && unique.length > 1) {
+    return { error: 'Half days can only cover a single date.' }
+  }
+  const start = String(startTime).trim()
+  const end = String(endTime).trim()
+  if ((start && !TIME_RE.test(start)) || (end && !TIME_RE.test(end))) {
+    return { error: 'Times must be in HH:MM format.' }
+  }
+  if (start && end && end <= start) {
+    return { error: 'End time must be after the start time.' }
+  }
+  return {
+    ranges: groupContiguous(unique),
+    dayPart,
+    startTime: start,
+    endTime: end,
+    totalDays: dayPart === 'full' ? unique.length : 0.5,
+  }
+}
+
 /** GET /api/leaves/config — active leave types (so the UI stays in sync with
  *  whatever admin currently has configured — see routes/leaveTypes.js). */
 router.get('/config', async (_req, res, next) => {
@@ -29,39 +125,52 @@ router.get('/config', async (_req, res, next) => {
  */
 router.post('/', async (req, res, next) => {
   try {
-    const { type, startDate, endDate, reason = '' } = req.body || {}
+    const { type, reason = '' } = req.body || {}
     const leaveType = type ? await LeaveType.findOne({ key: type, active: true }) : null
     if (!leaveType) {
       return res.status(400).json({ error: 'Please choose a valid leave type.' })
     }
-    const startKey = String(startDate || '').slice(0, 10)
-    const endKey = String(endDate || '').slice(0, 10)
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(startKey) || !/^\d{4}-\d{2}-\d{2}$/.test(endKey)) {
-      return res.status(400).json({ error: 'Start and end dates are required.' })
-    }
-    if (endKey < startKey) {
-      return res.status(400).json({ error: 'End date cannot be before the start date.' })
-    }
 
-    const days = inclusiveDays(startKey, endKey)
+    // Custom-dates mode: individual (possibly scattered) dates instead of a
+    // range. Each contiguous run becomes its own request; the balance is
+    // checked against the TOTAL up front so a batch can never half-succeed
+    // into an over-drawn balance.
+    const custom = Array.isArray(req.body?.dates) && req.body.dates.length > 0
+    const when = custom ? parseCustomWhen(req.body) : parseWhen(req.body)
+    if (when.error) return res.status(400).json({ error: when.error })
+    const totalDays = custom ? when.totalDays : when.days
+
     await req.user.ensureLeaveBalances()
     const remaining = Number(req.user.leaveBalances[type]) || 0
-    if (days > remaining) {
+    if (totalDays > remaining) {
       return res.status(400).json({
-        error: `Insufficient ${leaveType.label} balance — you have ${remaining} day(s) left but requested ${days}.`,
+        error: `Insufficient ${leaveType.label} balance — you have ${remaining} day(s) left but requested ${totalDays}.`,
       })
     }
 
-    const leave = await Leave.create({
-      userId: req.user._id,
-      type,
-      startDate: startOfDay(startKey),
-      endDate: startOfDay(endKey),
-      days,
-      reason: String(reason).trim(),
-      status: 'pending',
-    })
-    res.status(201).json(leave.toJSONSafe())
+    const ranges = custom
+      ? when.ranges
+      : [{ start: when.startKey, end: when.endKey }]
+    const created = []
+    for (const r of ranges) {
+      const leave = await Leave.create({
+        userId: req.user._id,
+        type,
+        startDate: startOfDay(r.start),
+        endDate: startOfDay(r.end),
+        dayPart: when.dayPart,
+        startTime: when.startTime,
+        endTime: when.endTime,
+        days: when.dayPart === 'full' ? inclusiveDays(r.start, r.end) : 0.5,
+        reason: String(reason).trim(),
+        status: 'pending',
+      })
+      leave.userId = req.user // so the response carries name/email/employeeId
+      created.push(leave.toJSONSafe())
+    }
+    // Range mode keeps its original single-object shape; custom mode returns
+    // the whole batch (one entry per contiguous run).
+    res.status(201).json(custom ? created : created[0])
   } catch (err) {
     next(err)
   }
@@ -74,7 +183,7 @@ router.post('/', async (req, res, next) => {
  */
 router.post('/wfh', async (req, res, next) => {
   try {
-    const { startDate, endDate, reason = '' } = req.body || {}
+    const { reason = '' } = req.body || {}
     const trimmedReason = String(reason).trim()
     if (!trimmedReason) {
       return res.status(400).json({ error: 'Please add a reason for working from home.' })
@@ -83,25 +192,32 @@ router.post('/wfh', async (req, res, next) => {
       return res.status(400).json({ error: 'Reason must be under 500 characters.' })
     }
 
-    const startKey = String(startDate || '').slice(0, 10)
-    const endKey = String(endDate || '').slice(0, 10)
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(startKey) || !/^\d{4}-\d{2}-\d{2}$/.test(endKey)) {
-      return res.status(400).json({ error: 'Start and end dates are required.' })
-    }
-    if (endKey < startKey) {
-      return res.status(400).json({ error: 'End date cannot be before the start date.' })
-    }
+    // Same custom-dates handling as leave above — WFH just skips balances.
+    const custom = Array.isArray(req.body?.dates) && req.body.dates.length > 0
+    const when = custom ? parseCustomWhen(req.body) : parseWhen(req.body)
+    if (when.error) return res.status(400).json({ error: when.error })
 
-    const wfh = await Leave.create({
-      userId: req.user._id,
-      kind: 'wfh',
-      startDate: startOfDay(startKey),
-      endDate: startOfDay(endKey),
-      days: inclusiveDays(startKey, endKey),
-      reason: trimmedReason,
-      status: 'pending',
-    })
-    res.status(201).json(wfh.toJSONSafe())
+    const ranges = custom
+      ? when.ranges
+      : [{ start: when.startKey, end: when.endKey }]
+    const created = []
+    for (const r of ranges) {
+      const wfh = await Leave.create({
+        userId: req.user._id,
+        kind: 'wfh',
+        startDate: startOfDay(r.start),
+        endDate: startOfDay(r.end),
+        dayPart: when.dayPart,
+        startTime: when.startTime,
+        endTime: when.endTime,
+        days: when.dayPart === 'full' ? inclusiveDays(r.start, r.end) : 0.5,
+        reason: trimmedReason,
+        status: 'pending',
+      })
+      wfh.userId = req.user // so the response carries name/email/employeeId
+      created.push(wfh.toJSONSafe())
+    }
+    res.status(201).json(custom ? created : created[0])
   } catch (err) {
     next(err)
   }
@@ -110,7 +226,9 @@ router.post('/wfh', async (req, res, next) => {
 /** GET /api/leaves/mine — the current user's own applications (newest first). */
 router.get('/mine', async (req, res, next) => {
   try {
-    const leaves = await Leave.find({ userId: req.user._id }).sort({ createdAt: -1 })
+    const leaves = await Leave.find({ userId: req.user._id })
+      .populate('userId', 'name email employeeId')
+      .sort({ createdAt: -1 })
     res.json(leaves.map((l) => l.toJSONSafe()))
   } catch (err) {
     next(err)
@@ -154,7 +272,7 @@ router.get('/pending', async (req, res, next) => {
     const reports = await User.find({ managerId: req.user._id }).select('_id')
     const ids = reports.map((r) => r._id)
     const leaves = await Leave.find({ userId: { $in: ids }, status: 'pending' })
-      .populate('userId', 'name')
+      .populate('userId', 'name email employeeId')
       .sort({ createdAt: 1 })
     res.json(leaves.map((l) => l.toJSONSafe()))
   } catch (err) {
@@ -164,7 +282,7 @@ router.get('/pending', async (req, res, next) => {
 
 /** Shared guard: the acting user must be the leave owner's direct manager. */
 async function loadDecidableLeave(req) {
-  const leave = await Leave.findById(req.params.id).populate('userId', 'name managerId')
+  const leave = await Leave.findById(req.params.id).populate('userId', 'name email employeeId managerId')
   if (!leave) throw Object.assign(new Error('Leave not found.'), { status: 404 })
   if (leave.status !== 'pending') {
     throw Object.assign(new Error('This leave has already been decided.'), { status: 409 })
@@ -237,7 +355,7 @@ router.get('/all', async (req, res, next) => {
       return res.status(403).json({ error: 'Admins only.' })
     }
     const leaves = await Leave.find({})
-      .populate('userId', 'name')
+      .populate('userId', 'name email employeeId')
       .sort({ createdAt: -1 })
     res.json(leaves.map((l) => l.toJSONSafe()))
   } catch (err) {

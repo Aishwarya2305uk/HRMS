@@ -16,6 +16,11 @@ const userSchema = new Schema(
       trim: true,
       index: true,
     },
+    // Human-readable staff code ("EMP001") shown on profiles and request
+    // cards. Auto-assigned by the pre-save hook below (and backfilled for
+    // pre-existing users by bootstrapEmployeeIds.js) — never user-supplied.
+    // `sparse` so docs from before the backfill don't collide on null.
+    employeeId: { type: String, trim: true, unique: true, sparse: true, index: true },
     // Never stored in plaintext — hashed via the pre-save hook below.
     passwordHash: { type: String, required: true },
     role: {
@@ -97,6 +102,23 @@ userSchema.methods.ensureLeaveBalances = async function ensureLeaveBalances() {
 }
 
 /**
+ * Next unused "EMP###" code. Scans existing codes for the highest numeric
+ * suffix rather than keeping a counter document — user creation is rare and
+ * admin-only, so a scan is simpler than another collection to bootstrap.
+ * Pads to 3 digits but keeps growing past EMP999 (EMP1000, ...).
+ */
+userSchema.statics.nextEmployeeId = async function nextEmployeeId() {
+  const codes = await this.find({ employeeId: /^EMP\d+$/ }).select('employeeId')
+  const max = codes.reduce((m, u) => Math.max(m, Number(u.employeeId.slice(3))), 0)
+  return `EMP${String(max + 1).padStart(3, '0')}`
+}
+
+// Assign a code to any user saved without one (new hires, the bootstrap admin).
+userSchema.pre('save', async function assignEmployeeId() {
+  if (!this.employeeId) this.employeeId = await this.constructor.nextEmployeeId()
+})
+
+/**
  * Convenience virtual/statics for setting a plaintext password. We hash on
  * save whenever a `password` field is assigned to the doc.
  */
@@ -115,6 +137,7 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
   const sum = (obj) => Object.values(obj).reduce((s, v) => s + (Number(v) || 0), 0)
   return {
     id: this._id.toString(),
+    employeeId: this.employeeId || null,
     name: this.name,
     email: this.email,
     role: this.role,

@@ -15,6 +15,7 @@ import mongoose from 'mongoose'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import { bootstrapAdmin } from './bootstrapAdmin.js'
 import { bootstrapLeavePolicy } from './bootstrapLeavePolicy.js'
+import { bootstrapEmployeeIds } from './bootstrapEmployeeIds.js'
 import { createApp } from './app.js'
 
 // The Vite dev proxy targets port 4000 (see vite.config.js), so the in-memory
@@ -32,6 +33,7 @@ async function start() {
   // employment type, so that type must already exist.
   await bootstrapLeavePolicy()
   await bootstrapAdmin()
+  await bootstrapEmployeeIds()
 
   createApp().listen(PORT, () => {
     console.log(`[dev:mem] API listening on http://localhost:${PORT}`)

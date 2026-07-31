@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Icon from './Icon'
 import Avatar from './Avatar'
 import Modal from './Modal'
+import DocumentsCard from './DocumentsCard'
 import { InlineError } from './States'
 import { useToast } from '../context/ToastContext'
 import { useAsyncData } from '../lib/useAsyncData'
@@ -295,6 +296,18 @@ export default function Profile({ profile, isSelf, canEdit, canEditEmploymentTyp
             {profile.designation && <span>{profile.designation}</span>}
             {profile.department && <span>· {profile.department}</span>}
           </div>
+          <div className="profile-hero__ident">
+            {profile.employeeId && (
+              <span className="profile-hero__ident-item">
+                <Icon name="idCard" size={13} />
+                {profile.employeeId}
+              </span>
+            )}
+            <span className="profile-hero__ident-item">
+              <Icon name="mail" size={13} />
+              {profile.email}
+            </span>
+          </div>
         </div>
 
         {canEdit && !editing && (
@@ -458,6 +471,14 @@ export default function Profile({ profile, isSelf, canEdit, canEditEmploymentTyp
         </div>
         <dl className="profile-facts">
           <div>
+            <dt>Employee ID</dt>
+            <dd>{profile.employeeId || '—'}</dd>
+          </div>
+          <div>
+            <dt>Email</dt>
+            <dd>{profile.email}</dd>
+          </div>
+          <div>
             <dt>Role</dt>
             <dd><span className={`role-pill ${profile.role}`}>{profile.role}</span></dd>
           </div>
@@ -512,6 +533,17 @@ export default function Profile({ profile, isSelf, canEdit, canEditEmploymentTyp
           </div>
         </dl>
       </section>
+
+      {/* Documents on this person's HR file. canEdit already captures "self
+          or an admin viewing someone else" — exactly who may upload here;
+          canEditEmploymentType is the existing admin-only flag, reused for
+          the admin-only delete right. */}
+      <DocumentsCard
+        userId={profile.id}
+        canUpload={canEdit}
+        canDelete={canEditEmploymentType}
+        title={isSelf ? 'My documents' : 'Documents'}
+      />
 
       {confirmingEmploymentType && (
         <Modal titleId="confirm-employment-type-title" onClose={cancelEditEmploymentType}>

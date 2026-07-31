@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react'
 import Icon from './Icon'
 import Modal from './Modal'
+import Avatar from './Avatar'
+import WhenPicker, { DAY_PART_TIMES } from './WhenPicker'
+import { useAuth } from '../context/AuthContext'
 import { leaves as leavesApi } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
 import { InlineError } from './States'
@@ -11,7 +14,6 @@ function dayCount(start, end) {
   return Math.floor((new Date(end) - new Date(start)) / 86400000) + 1
 }
 
-const todayStr = () => new Date().toISOString().slice(0, 10)
 const MAX_REASON = 500
 
 /**
@@ -23,26 +25,45 @@ const MAX_REASON = 500
  * to check against, the approving manager has nothing else to go on.
  */
 export default function ApplyWfhModal({ onClose, onCreated }) {
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
+  const { user } = useAuth()
+  const [when, setWhen] = useState({
+    mode: 'range',
+    startDate: '',
+    endDate: '',
+    dates: [],
+    dayPart: 'full',
+    ...DAY_PART_TIMES.full,
+  })
   const [reason, setReason] = useState('')
   const [touched, setTouched] = useState({})
   const [submitError, setSubmitError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  const days = dayCount(startDate, endDate)
+  const { mode, startDate, endDate, dates, dayPart, startTime, endTime } = when
+  const custom = mode === 'custom'
+  const days = custom
+    ? dayPart === 'full' ? dates.length : dates.length ? 0.5 : 0
+    : dayPart === 'full' ? dayCount(startDate, endDate) : startDate ? 0.5 : 0
 
   const errors = useMemo(() => {
     const e = {}
-    if (!startDate) e.startDate = 'Pick a start date.'
-    if (!endDate) e.endDate = 'Pick an end date.'
-    else if (startDate && endDate < startDate) {
-      e.endDate = 'The end date can’t be before the start date.'
+    if (custom) {
+      if (dates.length === 0) e.dates = 'Add at least one date.'
+    } else {
+      if (!startDate) e.startDate = 'Pick a start date.'
+      if (!endDate) e.endDate = 'Pick an end date.'
+      else if (startDate && endDate < startDate) {
+        e.endDate = 'The end date can’t be before the start date.'
+      }
+    }
+    if (!startTime || !endTime) e.time = 'Pick the working hours.'
+    else if ((custom || (startDate && startDate === endDate)) && endTime <= startTime) {
+      e.time = 'The end time must be after the start time.'
     }
     if (!reason.trim()) e.reason = 'Let your manager know why you’ll be working from home.'
     else if (reason.trim().length > MAX_REASON) e.reason = `Keep it under ${MAX_REASON} characters.`
     return e
-  }, [startDate, endDate, reason])
+  }, [custom, dates, startDate, endDate, startTime, endTime, reason])
 
   const isValid = Object.keys(errors).length === 0
   const showError = (field) => (touched[field] || touched._submitted) && errors[field]
@@ -56,15 +77,24 @@ export default function ApplyWfhModal({ onClose, onCreated }) {
     setSubmitError('')
     setTouched((t) => ({ ...t, _submitted: true }))
     if (!isValid) {
-      const firstBad = ['startDate', 'endDate', 'reason'].find((f) => errors[f])
-      document.getElementById(`wfh-${firstBad}`)?.focus()
+      const firstBad = ['dates', 'startDate', 'endDate', 'time', 'reason'].find((f) => errors[f])
+      const focusId = { dates: 'draftDate', time: 'startTime' }[firstBad] ?? firstBad
+      document.getElementById(`wfh-${focusId}`)?.focus()
       return
     }
 
     setSubmitting(true)
     haptic('medium')
     try {
-      const wfh = await leavesApi.applyWfh({ startDate, endDate, reason: reason.trim() })
+      // Custom mode sends the picked dates; the server groups consecutive
+      // ones and returns one created request per block (an array).
+      const wfh = await leavesApi.applyWfh({
+        ...(custom ? { dates } : { startDate, endDate }),
+        dayPart,
+        startTime,
+        endTime,
+        reason: reason.trim(),
+      })
       haptic('success')
       onCreated?.(wfh)
       onClose()
@@ -85,44 +115,25 @@ export default function ApplyWfhModal({ onClose, onCreated }) {
 
       {submitError && <InlineError>{submitError}</InlineError>}
 
-      <form onSubmit={handleSubmit} noValidate>
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="wfh-startDate">Start date</label>
-            <input
-              id="wfh-startDate"
-              type="date"
-              value={startDate}
-              min={todayStr()}
-              onChange={(e) => setStartDate(e.target.value)}
-              onBlur={() => markTouched('startDate')}
-              aria-invalid={Boolean(showError('startDate'))}
-              aria-describedby={showError('startDate') ? 'err-wfh-start' : undefined}
-              required
-            />
-            {showError('startDate') && (
-              <p className="field-error" id="err-wfh-start">{errors.startDate}</p>
-            )}
-          </div>
-
-          <div className="field">
-            <label htmlFor="wfh-endDate">End date</label>
-            <input
-              id="wfh-endDate"
-              type="date"
-              value={endDate}
-              min={startDate || todayStr()}
-              onChange={(e) => setEndDate(e.target.value)}
-              onBlur={() => markTouched('endDate')}
-              aria-invalid={Boolean(showError('endDate'))}
-              aria-describedby={showError('endDate') ? 'err-wfh-end' : undefined}
-              required
-            />
-            {showError('endDate') && (
-              <p className="field-error" id="err-wfh-end">{errors.endDate}</p>
-            )}
-          </div>
+      {/* Who this request is filed as — the same identity (employee ID +
+          email) the approving manager sees on the request card. */}
+      <div className="apply-ident">
+        <Avatar name={user?.name} photoUrl={user?.photoUrl} size="sm" />
+        <div className="apply-ident__text">
+          <strong>{user?.name}</strong>
+          <em>{[user?.employeeId, user?.email].filter(Boolean).join(' · ')}</em>
         </div>
+      </div>
+
+      <form onSubmit={handleSubmit} noValidate>
+        <WhenPicker
+          idPrefix="wfh"
+          value={when}
+          onChange={(patch) => setWhen((w) => ({ ...w, ...patch }))}
+          showError={showError}
+          errors={errors}
+          markTouched={markTouched}
+        />
 
         <div className="field">
           <label htmlFor="wfh-reason">Reason</label>
@@ -148,7 +159,7 @@ export default function ApplyWfhModal({ onClose, onCreated }) {
         {days > 0 && (
           <p className="apply-summary" aria-live="polite">
             <Icon name="calendar" size={15} />
-            {days} day{days > 1 ? 's' : ''} requested
+            {days === 0.5 ? 'Half a day' : `${days} day${days > 1 ? 's' : ''}`} requested
           </p>
         )}
 

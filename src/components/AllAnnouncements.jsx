@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { EmptyState } from './States'
-import { AnnouncementItem } from './notifications/NotificationsPanel'
+import { AnnouncementItem } from './notifications/NotificationsFeed'
 import ComposeAnnouncementForm from './notifications/ComposeAnnouncementForm'
 import TeamsManager from './TeamsManager'
 

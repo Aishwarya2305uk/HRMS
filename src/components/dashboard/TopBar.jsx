@@ -1,8 +1,8 @@
 import Icon from '../Icon'
 import Menu from '../Menu'
 import Avatar from '../Avatar'
-import ThemePicker from './ThemePicker'
 import { haptic, tactile } from '../../lib/haptics'
+import { THEMES } from '../../lib/themes'
 
 /**
  * Top bar: page title, an (optionally active) search box, a notifications
@@ -48,8 +48,6 @@ export default function TopBar({
       )}
 
       <div className="emp__top-actions">
-        <ThemePicker theme={theme} onChange={onThemeChange} />
-
         <button
           className="icon-btn"
           onClick={() => { haptic('light'); onBellClick() }}
@@ -74,6 +72,37 @@ export default function TopBar({
             <strong>{user?.name}</strong>
             <span>{user?.email}</span>
           </div>
+
+          {/* Theme lives inside the account menu; stopPropagation keeps the
+              menu open (Menu closes on any panel click) so several accents
+              can be tried in a row without reopening it. */}
+          <div
+            className="user-menu__theme"
+            role="group"
+            aria-label="Workspace theme"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="user-menu__theme-label">
+              <Icon name="palette" size={14} />
+              Theme
+            </span>
+            <div className="user-menu__swatches">
+              {THEMES.map((t) => (
+                <button
+                  key={t.key || 'default'}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={t.key === (theme || '')}
+                  className={`theme-swatch${t.key === (theme || '') ? ' is-selected' : ''}`}
+                  style={{ background: t.swatch }}
+                  title={t.label}
+                  aria-label={`${t.label} theme`}
+                  onClick={() => { haptic('light'); onThemeChange(t.key) }}
+                />
+              ))}
+            </div>
+          </div>
+
           <button role="menuitem" className="user-menu__item" onClick={onOpenProfile}>
             <Icon name="user" size={16} />
             My profile

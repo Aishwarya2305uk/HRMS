@@ -28,8 +28,18 @@ const leaveSchema = new Schema(
     // Inclusive date range. Stored at UTC midnight (see routes for normalization).
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
+    // Which part of the working day the request covers. 'first'/'second' are
+    // half days — only valid for single-day requests (routes enforce that)
+    // and count as 0.5 days against the balance.
+    dayPart: { type: String, enum: ['full', 'first', 'second'], default: 'full' },
+    // Working-hours window as 'HH:MM' strings (defaulted by the client from
+    // the day part, e.g. full 09:00–18:00, first half 09:00–13:30). Display
+    // only — `days` stays the unit that balances are counted in.
+    startTime: { type: String, trim: true, default: '' },
+    endTime: { type: String, trim: true, default: '' },
     // Inclusive calendar-day count (v1 counts weekends too — see requirements §5).
-    days: { type: Number, required: true, min: 1 },
+    // Half-day requests are 0.5.
+    days: { type: Number, required: true, min: 0.5 },
 
     reason: { type: String, trim: true, default: '' },
 
@@ -54,10 +64,17 @@ leaveSchema.methods.toJSONSafe = function toJSONSafe() {
     id: this._id.toString(),
     userId: this.userId?._id ? this.userId._id.toString() : this.userId?.toString(),
     employeeName: this.userId?.name ?? null,
+    // Human-readable staff code + email (populated by routes) so request
+    // cards can identify the requester beyond just their name.
+    employeeId: this.userId?.employeeId ?? null,
+    employeeEmail: this.userId?.email ?? null,
     kind: this.kind,
     type: this.type ?? null,
     startDate: this.startDate,
     endDate: this.endDate,
+    dayPart: this.dayPart ?? 'full',
+    startTime: this.startTime || null,
+    endTime: this.endTime || null,
     days: this.days,
     reason: this.reason,
     status: this.status,

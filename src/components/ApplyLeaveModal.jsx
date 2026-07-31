@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react'
 import Icon from './Icon'
 import Modal from './Modal'
+import Avatar from './Avatar'
+import WhenPicker, { DAY_PART_TIMES } from './WhenPicker'
+import { useAuth } from '../context/AuthContext'
 import { leaves as leavesApi } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
 import { InlineError } from './States'
@@ -10,8 +13,6 @@ function dayCount(start, end) {
   if (!start || !end || end < start) return 0
   return Math.floor((new Date(end) - new Date(start)) / 86400000) + 1
 }
-
-const todayStr = () => new Date().toISOString().slice(0, 10)
 
 /**
  * Modal form to apply for leave.
@@ -26,33 +27,52 @@ const todayStr = () => new Date().toISOString().slice(0, 10)
  *  - The server stays the source of truth; these checks only save a round trip.
  */
 export default function ApplyLeaveModal({ types, balances, onClose, onCreated }) {
+  const { user } = useAuth()
   const [type, setType] = useState(types[0]?.key ?? '')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
+  const [when, setWhen] = useState({
+    mode: 'range',
+    startDate: '',
+    endDate: '',
+    dates: [],
+    dayPart: 'full',
+    ...DAY_PART_TIMES.full,
+  })
   const [reason, setReason] = useState('')
   const [touched, setTouched] = useState({})
   const [submitError, setSubmitError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  const days = dayCount(startDate, endDate)
+  const { mode, startDate, endDate, dates, dayPart, startTime, endTime } = when
+  const custom = mode === 'custom'
+  const days = custom
+    ? dayPart === 'full' ? dates.length : dates.length ? 0.5 : 0
+    : dayPart === 'full' ? dayCount(startDate, endDate) : startDate ? 0.5 : 0
   const remaining = Number(balances?.[type]) || 0
 
   /** Field-level validation, recomputed as the user types. */
   const errors = useMemo(() => {
     const e = {}
-    if (!startDate) e.startDate = 'Pick a start date.'
-    if (!endDate) e.endDate = 'Pick an end date.'
-    else if (startDate && endDate < startDate) {
-      e.endDate = 'The end date can’t be before the start date.'
+    if (custom) {
+      if (dates.length === 0) e.dates = 'Add at least one date.'
+    } else {
+      if (!startDate) e.startDate = 'Pick a start date.'
+      if (!endDate) e.endDate = 'Pick an end date.'
+      else if (startDate && endDate < startDate) {
+        e.endDate = 'The end date can’t be before the start date.'
+      }
+    }
+    if (!startTime || !endTime) e.time = 'Pick the working hours.'
+    else if ((custom || (startDate && startDate === endDate)) && endTime <= startTime) {
+      e.time = 'The end time must be after the start time.'
     }
     if (days > 0 && days > remaining) {
       e.type =
         remaining === 0
           ? 'You have no days left of this leave type.'
-          : `That's ${days} days, but only ${remaining} remain.`
+          : `That's ${days} day${days > 1 ? 's' : ''}, but only ${remaining} remain.`
     }
     return e
-  }, [startDate, endDate, days, remaining])
+  }, [custom, dates, startDate, endDate, startTime, endTime, days, remaining])
 
   const isValid = Object.keys(errors).length === 0
   /** Show a field's error once it's been touched, or after a submit attempt. */
@@ -68,15 +88,25 @@ export default function ApplyLeaveModal({ types, balances, onClose, onCreated })
     setTouched((t) => ({ ...t, _submitted: true }))
     if (!isValid) {
       // Move focus to the first problem so keyboard/screen-reader users land on it.
-      const firstBad = ['startDate', 'endDate', 'type'].find((f) => errors[f])
-      document.getElementById(`lv-${firstBad}`)?.focus()
+      const firstBad = ['dates', 'startDate', 'endDate', 'time', 'type'].find((f) => errors[f])
+      const focusId = { dates: 'draftDate', time: 'startTime' }[firstBad] ?? firstBad
+      document.getElementById(`lv-${focusId}`)?.focus()
       return
     }
 
     setSubmitting(true)
     haptic('medium')
     try {
-      const leave = await leavesApi.apply({ type, startDate, endDate, reason })
+      // Custom mode sends the picked dates; the server groups consecutive
+      // ones and returns one created request per block (an array).
+      const leave = await leavesApi.apply({
+        type,
+        ...(custom ? { dates } : { startDate, endDate }),
+        dayPart,
+        startTime,
+        endTime,
+        reason,
+      })
       haptic('success')
       onCreated?.(leave)
       onClose()
@@ -96,6 +126,16 @@ export default function ApplyLeaveModal({ types, balances, onClose, onCreated })
       </div>
 
       {submitError && <InlineError>{submitError}</InlineError>}
+
+      {/* Who this request is filed as — the same identity (employee ID +
+          email) the approving manager sees on the request card. */}
+      <div className="apply-ident">
+        <Avatar name={user?.name} photoUrl={user?.photoUrl} size="sm" />
+        <div className="apply-ident__text">
+          <strong>{user?.name}</strong>
+          <em>{[user?.employeeId, user?.email].filter(Boolean).join(' · ')}</em>
+        </div>
+      </div>
 
       <form onSubmit={handleSubmit} noValidate>
         <div className="field">
@@ -122,43 +162,14 @@ export default function ApplyLeaveModal({ types, balances, onClose, onCreated })
           )}
         </div>
 
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="lv-startDate">Start date</label>
-            <input
-              id="lv-startDate"
-              type="date"
-              value={startDate}
-              min={todayStr()}
-              onChange={(e) => setStartDate(e.target.value)}
-              onBlur={() => markTouched('startDate')}
-              aria-invalid={Boolean(showError('startDate'))}
-              aria-describedby={showError('startDate') ? 'err-start' : undefined}
-              required
-            />
-            {showError('startDate') && (
-              <p className="field-error" id="err-start">{errors.startDate}</p>
-            )}
-          </div>
-
-          <div className="field">
-            <label htmlFor="lv-endDate">End date</label>
-            <input
-              id="lv-endDate"
-              type="date"
-              value={endDate}
-              min={startDate || todayStr()}
-              onChange={(e) => setEndDate(e.target.value)}
-              onBlur={() => markTouched('endDate')}
-              aria-invalid={Boolean(showError('endDate'))}
-              aria-describedby={showError('endDate') ? 'err-end' : undefined}
-              required
-            />
-            {showError('endDate') && (
-              <p className="field-error" id="err-end">{errors.endDate}</p>
-            )}
-          </div>
-        </div>
+        <WhenPicker
+          idPrefix="lv"
+          value={when}
+          onChange={(patch) => setWhen((w) => ({ ...w, ...patch }))}
+          showError={showError}
+          errors={errors}
+          markTouched={markTouched}
+        />
 
         <div className="field">
           <label htmlFor="lv-reason">
@@ -179,7 +190,8 @@ export default function ApplyLeaveModal({ types, balances, onClose, onCreated })
         {days > 0 && (
           <p className={`apply-summary${errors.type ? ' over' : ''}`} aria-live="polite">
             <Icon name="calendar" size={15} />
-            {days} day{days > 1 ? 's' : ''} requested · {remaining} available
+            {days === 0.5 ? 'Half a day' : `${days} day${days > 1 ? 's' : ''}`} requested ·{' '}
+            {remaining} available
           </p>
         )}
 

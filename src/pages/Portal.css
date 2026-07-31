@@ -197,6 +197,94 @@
 }
 .apply-summary.over { color: var(--danger); font-weight: 600; }
 
+/* ---- Requester identity strip inside the apply modals ---- */
+.apply-ident {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 13px;
+  margin-bottom: 16px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+.apply-ident__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.apply-ident__text strong { font-size: var(--text-sm); }
+.apply-ident__text em {
+  font-style: normal;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* ---- "Dates & time" card inside the apply modals ---- */
+.when-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 15px;
+  margin-bottom: 16px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+.when-card .field { margin-bottom: 0; }
+.when-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.when-card__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+.when-card .seg { background: var(--surface-1); }
+.when-card .seg__btn.is-active { background: var(--surface-sunken); }
+.when-card input:disabled { opacity: 0.55; cursor: not-allowed; }
+.when-card__mode { align-self: flex-start; }
+
+/* Custom-dates mode: staged date + Add button, then removable chips. */
+.when-custom__add { display: flex; align-items: center; gap: 8px; }
+.when-custom__add input { flex: 1; min-width: 0; }
+.when-custom__add .btn-tactile { flex-shrink: 0; }
+.when-chips {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.when-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px 4px 10px;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  color: var(--primary-700);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+.when-chip__remove {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.when-chip__remove:hover { background: var(--danger-soft); color: var(--danger); }
+
 /* ---- Modal ---- */
 .modal-overlay {
   position: fixed;
@@ -259,6 +347,78 @@
   .modal--right { width: 100vw; border-radius: 0; }
 }
 
+/* ---- Documents card (dashboard + profile — see DocumentsCard.jsx) ---- */
+.docs-card__hint {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  margin: -6px 0 14px;
+}
+.doc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.doc-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 13px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+.doc-row__icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--primary-600);
+  flex-shrink: 0;
+}
+.doc-row__meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.doc-row__meta strong { font-size: var(--text-sm); overflow-wrap: anywhere; }
+.doc-row__meta em { font-style: normal; font-size: var(--text-xs); color: var(--text-muted); }
+.doc-row__actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.doc-row__delete:hover { color: var(--danger); background: var(--danger-soft); }
+
+.doc-confirm {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 15px;
+  margin-bottom: 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+.doc-confirm__icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--primary-600);
+  flex-shrink: 0;
+}
+.doc-confirm__preview {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.doc-confirm__meta { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.doc-confirm__meta strong { font-size: var(--text-sm); overflow-wrap: anywhere; }
+.doc-confirm__meta em { font-style: normal; font-size: var(--text-xs); color: var(--text-muted); }
+.doc-confirm__actions { flex-wrap: wrap; }
+
 /* ---- Notifications drawer ---- */
 .notif-drawer { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .notif-drawer__head {
@@ -278,6 +438,11 @@
   flex-direction: column;
   gap: 22px;
 }
+
+/* ---- Dedicated Notifications page (sidebar section) ---- */
+.notif-page { max-width: 860px; }
+.notif-page .attendance__head h2 { display: flex; align-items: center; gap: 10px; }
+.notif-page__body { display: flex; flex-direction: column; gap: 22px; }
 
 .notif-section__head {
   display: flex;
@@ -533,6 +698,7 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
 .approval__who { display: flex; align-items: center; gap: 11px; }
 .approval__who strong { font-size: var(--text-sm); }
 .approval__who em { display: block; font-style: normal; font-size: var(--text-xs); color: var(--text-muted); }
+.approval__who .approval__ident { font-size: var(--text-2xs); color: var(--text-faint); overflow-wrap: anywhere; }
 .approval__reason { font-size: var(--text-xs); color: var(--text-muted); margin-top: 8px; font-style: italic; }
 .approval__actions, .approval__reject { display: flex; gap: 8px; align-items: center; }
 .approval__reject input {
@@ -586,6 +752,22 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   color: var(--text-muted);
 }
 .profile-hero__edit { flex-shrink: 0; }
+.profile-hero__ident {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 7px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.profile-hero__ident-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  overflow-wrap: anywhere;
+}
+.profile-hero__ident-item svg { flex-shrink: 0; color: var(--text-faint); }
 
 .profile-details h3 { font-size: var(--text-base); margin-bottom: 14px; }
 .profile-details__head {

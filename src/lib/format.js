@@ -42,6 +42,45 @@ export function formatRange(start, end) {
   return a === b ? a : `${a} – ${b}`
 }
 
+/** 'HH:MM' (24h) -> "9:00 AM" clock time, or '' when absent/malformed. */
+export function formatClock(hhmm) {
+  if (!/^\d{2}:\d{2}$/.test(hhmm || '')) return ''
+  const [h, m] = hhmm.split(':').map(Number)
+  const suffix = h < 12 ? 'AM' : 'PM'
+  const hour12 = h % 12 || 12
+  return `${hour12}:${String(m).padStart(2, '0')} ${suffix}`
+}
+
+/** A request's day-part as a short label ('full' renders as nothing). */
+export function dayPartLabel(dayPart) {
+  if (dayPart === 'first') return 'First half'
+  if (dayPart === 'second') return 'Second half'
+  return ''
+}
+
+/**
+ * One-line summary of a leave/WFH request's window:
+ * "Jul 22 – Jul 24 · 3 days · 9:00 AM – 6:00 PM". Half days show their part
+ * instead of a count ("Jul 22 · First half · 9:00 AM – 1:30 PM"); requests
+ * from before times existed simply omit the clock segment.
+ */
+export function formatRequestWindow(r) {
+  const parts = [formatRange(r.startDate, r.endDate)]
+  parts.push(dayPartLabel(r.dayPart) || `${r.days} ${r.days > 1 ? 'days' : 'day'}`)
+  const from = formatClock(r.startTime)
+  const to = formatClock(r.endTime)
+  if (from && to) parts.push(`${from} – ${to}`)
+  return parts.join(' · ')
+}
+
+/** Bytes -> "312 KB" / "2.4 MB" for document sizes. */
+export function formatBytes(bytes) {
+  const n = Number(bytes) || 0
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
 /** ISO datetime -> "Just now" / "12m ago" / "3h ago" / "2d ago", falling back to formatDate past a week. */
 export function formatRelativeTime(value) {
   if (!value) return ''
