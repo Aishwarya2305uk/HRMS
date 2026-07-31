@@ -32,6 +32,7 @@ const PATHS = {
   flame: <path d="M12 2c1 3-3 5-3 9a3 3 0 0 0 6 0c0-1-1-2-1-3 2 1 4 4 4 7a6 6 0 0 1-12 0c0-5 3-8 6-13Z" />,
   barChart: <><path d="M3 21h18" /><rect x="6" y="12" width="3" height="7" /><rect x="14" y="7" width="3" height="12" /></>,
   sliders: <><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></>,
+  palette: <><path d="M12 22a10 10 0 1 1 10-10c0 1.7-1.34 3-3 3h-2.5a2.5 2.5 0 0 0-1.9 4.13c.38.44.4 1.12-.02 1.53-.66.64-1.6.34-2.58.34Z" /><circle cx="13.5" cy="6.5" r="0.8" fill="currentColor" /><circle cx="17.5" cy="10.5" r="0.8" fill="currentColor" /><circle cx="8.5" cy="7.5" r="0.8" fill="currentColor" /><circle cx="6.5" cy="12.5" r="0.8" fill="currentColor" /></>,
 }
 
 export default function Icon({ name, size = 20, strokeWidth = 1.9, ...rest }) {

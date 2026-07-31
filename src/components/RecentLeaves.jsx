@@ -31,6 +31,8 @@ export default function RecentLeaves({
   onRetry,
   onApply,
   onCancel,
+  title = 'My leave requests',
+  plain = false,
 }) {
   const rows = limit ? leaves.slice(0, limit) : leaves
   const [confirmingId, setConfirmingId] = useState(null)
@@ -52,10 +54,16 @@ export default function RecentLeaves({
     }
   }
 
+  // `plain` drops the card chrome so this can sit as one section inside a
+  // larger card (the Leaves tab's split "history" card).
+  const Root = plain ? 'div' : 'section'
   return (
-    <section className="card requests pop" style={{ '--d': '440ms' }}>
+    <Root
+      className={plain ? 'requests' : 'card requests pop'}
+      style={plain ? undefined : { '--d': '440ms' }}
+    >
       <div className="attendance__head">
-        <h2>My leave requests</h2>
+        <h2>{title}</h2>
         {!loading && !error && leaves.length > 0 && (
           <span className="count-pill">{leaves.length}</span>
         )}
@@ -142,6 +150,6 @@ export default function RecentLeaves({
           })}
         </ul>
       )}
-    </section>
+    </Root>
   )
 }

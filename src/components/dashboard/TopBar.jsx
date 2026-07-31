@@ -1,6 +1,7 @@
 import Icon from '../Icon'
 import Menu from '../Menu'
 import Avatar from '../Avatar'
+import ThemePicker from './ThemePicker'
 import { haptic, tactile } from '../../lib/haptics'
 
 /**
@@ -19,6 +20,8 @@ export default function TopBar({
   searchPlaceholder = 'Search…',
   notificationCount = 0,
   onBellClick,
+  theme,
+  onThemeChange,
   user,
   role,
   onLogout,
@@ -45,6 +48,8 @@ export default function TopBar({
       )}
 
       <div className="emp__top-actions">
+        <ThemePicker theme={theme} onChange={onThemeChange} />
+
         <button
           className="icon-btn"
           onClick={() => { haptic('light'); onBellClick() }}

@@ -25,6 +25,9 @@ export default function WfhRequests({
   onRetry,
   onApply,
   onCancel,
+  title = 'Work from home',
+  showApply = true,
+  plain = false,
 }) {
   const [confirmingId, setConfirmingId] = useState(null)
   const [busyId, setBusyId] = useState(null)
@@ -45,22 +48,31 @@ export default function WfhRequests({
     }
   }
 
+  // `plain` drops the card chrome so this can sit as one section inside a
+  // larger card; `showApply={false}` hides the header button for history-only
+  // views where applying lives elsewhere (the empty state still offers it).
+  const Root = plain ? 'div' : 'section'
   return (
-    <section className="card requests pop" style={{ '--d': '500ms' }}>
+    <Root
+      className={plain ? 'requests' : 'card requests pop'}
+      style={plain ? undefined : { '--d': '500ms' }}
+    >
       <div className="attendance__head">
-        <h2>Work from home</h2>
+        <h2>{title}</h2>
         <div className="attendance__head-actions">
           {!loading && !error && requests.length > 0 && (
             <span className="count-pill">{requests.length}</span>
           )}
-          <button
-            type="button"
-            className="btn-tactile primary sm"
-            onClick={() => { haptic('light'); onApply() }}
-          >
-            <Icon name="plus" size={15} />
-            Request WFH
-          </button>
+          {showApply && (
+            <button
+              type="button"
+              className="btn-tactile primary sm"
+              onClick={() => { haptic('light'); onApply() }}
+            >
+              <Icon name="plus" size={15} />
+              Request WFH
+            </button>
+          )}
         </div>
       </div>
 
@@ -72,7 +84,8 @@ export default function WfhRequests({
         <EmptyState
           icon="home"
           title="No WFH requests yet"
-          message="Request a work-from-home day using the button above — your manager will be notified."
+          message="Request a work-from-home day — your manager will be notified."
+          action={!showApply && onApply ? { label: 'Request WFH', onClick: onApply } : undefined}
         />
       ) : (
         <ul className="req-list">
@@ -146,6 +159,6 @@ export default function WfhRequests({
           })}
         </ul>
       )}
-    </section>
+    </Root>
   )
 }

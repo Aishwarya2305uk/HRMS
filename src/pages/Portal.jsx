@@ -12,12 +12,14 @@ import {
   announcements as announcementsApi,
 } from '../lib/hrms'
 import { formatHours } from '../lib/format'
+import { getSavedTheme, saveTheme } from '../lib/themes'
 
 import AttendanceCard from '../components/AttendanceCard'
 import LeaveBalanceCard from '../components/LeaveBalanceCard'
 import RecentLeaves from '../components/RecentLeaves'
 import ApplyLeaveModal from '../components/ApplyLeaveModal'
 import WfhRequests from '../components/WfhRequests'
+import WfhApplyCard from '../components/WfhApplyCard'
 import ApplyWfhModal from '../components/ApplyWfhModal'
 import Approvals from '../components/Approvals'
 import AttendanceHistory from '../components/AttendanceHistory'
@@ -144,6 +146,19 @@ export default function Portal() {
       localStorage.setItem('hrms.sidebarCollapsed', c ? '0' : '1')
       return !c
     })
+  }
+
+  // Workspace theme — every role picks freely from the same 10 options
+  // (topbar palette menu). Stored per user id so accounts sharing a browser
+  // don't overwrite each other's choice.
+  const [theme, setTheme] = useState(() => getSavedTheme(user?.id))
+  useEffect(() => {
+    setTheme(getSavedTheme(user?.id))
+  }, [user?.id])
+
+  function changeTheme(key) {
+    setTheme(key)
+    saveTheme(user?.id, key)
   }
 
   function selectTab(key) {
@@ -393,7 +408,7 @@ export default function Portal() {
   }
 
   return (
-    <div className={`emp${collapsed ? ' emp--collapsed' : ''}`} data-role={role}>
+    <div className={`emp${collapsed ? ' emp--collapsed' : ''}`} data-role={role} data-theme={theme || undefined}>
       <Sidebar
         nav={nav}
         active={active}
@@ -419,6 +434,8 @@ export default function Portal() {
           searchPlaceholder={SEARCHABLE_TABS[active]}
           notificationCount={unreadCount}
           onBellClick={openNotifications}
+          theme={theme}
+          onThemeChange={changeTheme}
           user={user}
           role={role}
           onLogout={handleLogout}
@@ -500,15 +517,27 @@ export default function Portal() {
 
           {active === 'leaves' && (
             <div className="single-col">
-              <div className="leaves-grid">
+              {/* Upper card — applying: leave (left) and WFH (right). */}
+              <section className="card leaves-duo pop" style={{ '--d': '370ms' }}>
                 <LeaveBalanceCard
+                  plain
                   user={user}
                   types={types}
                   loading={configQ.loading}
                   onApply={() => setShowApply(true)}
                   canApply={types.length > 0}
                 />
+                <WfhApplyCard
+                  onApply={() => setShowApplyWfh(true)}
+                  pendingCount={myWfh.filter((r) => r.status === 'pending').length}
+                />
+              </section>
+
+              {/* Lower card — request history: leave (left) and WFH (right). */}
+              <section className="card leaves-duo pop" style={{ '--d': '440ms' }}>
                 <RecentLeaves
+                  plain
+                  title="Leave request history"
                   leaves={myLeaves}
                   typeLabels={typeLabels}
                   loading={myLeavesQ.loading && myLeavesQ.data === null}
@@ -517,16 +546,18 @@ export default function Portal() {
                   onApply={() => setShowApply(true)}
                   onCancel={onLeaveCancelled}
                 />
-              </div>
-
-              <WfhRequests
-                requests={myWfh}
-                loading={myLeavesQ.loading && myLeavesQ.data === null}
-                error={myLeavesQ.error}
-                onRetry={myLeavesQ.reload}
-                onApply={() => setShowApplyWfh(true)}
-                onCancel={onWfhCancelled}
-              />
+                <WfhRequests
+                  plain
+                  showApply={false}
+                  title="WFH request history"
+                  requests={myWfh}
+                  loading={myLeavesQ.loading && myLeavesQ.data === null}
+                  error={myLeavesQ.error}
+                  onRetry={myLeavesQ.reload}
+                  onApply={() => setShowApplyWfh(true)}
+                  onCancel={onWfhCancelled}
+                />
+              </section>
             </div>
           )}
 

@@ -40,6 +40,18 @@ export default function Sidebar({
         </div>
       </div>
 
+      <button
+        type="button"
+        className="sidebar-collapse-btn"
+        onClick={() => { haptic('light'); onToggleCollapse() }}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-pressed={collapsed}
+      >
+        <Icon name="chevronsLeft" size={16} className={`collapse-chevron${collapsed ? ' is-collapsed' : ''}`} />
+        <span className="sidebar-label">Collapse</span>
+      </button>
+
       <nav className="emp__nav" aria-label="Main">
         {nav.map((item) => (
           <button
@@ -74,18 +86,6 @@ export default function Sidebar({
             <strong>{userName}</strong>
             <span>{userTitle || role}</span>
           </div>
-        </button>
-
-        <button
-          type="button"
-          className="sidebar-collapse-btn"
-          onClick={() => { haptic('light'); onToggleCollapse() }}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          aria-pressed={collapsed}
-        >
-          <Icon name="chevronsLeft" size={16} className={`collapse-chevron${collapsed ? ' is-collapsed' : ''}`} />
-          <span className="sidebar-label">Collapse</span>
         </button>
       </div>
     </aside>

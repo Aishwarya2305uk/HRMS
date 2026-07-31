@@ -16,15 +16,22 @@ const tintFor = (key, index) => TINTS[key] || TINT_PALETTE[index % TINT_PALETTE.
  * When a type is fully used we say so explicitly rather than showing a bare 0 —
  * "0 left" is easy to misread as "not loaded".
  */
-export default function LeaveBalanceCard({ user, types, onApply, loading, canApply = true }) {
+export default function LeaveBalanceCard({ user, types, onApply, loading, canApply = true, plain = false }) {
   const balances = user?.leaveBalances ?? {}
   const quotaTotal = user?.leaveQuotaTotal ?? 0
   const remaining = types.reduce((s, t) => s + (Number(balances[t.key]) || 0), 0)
   const pct = quotaTotal ? Math.min(100, (remaining / quotaTotal) * 100) : 0
   const noneLeft = types.length > 0 && remaining === 0
 
+  // `plain` drops the card chrome so this can sit as one section inside a
+  // larger card (the Leaves tab's split "apply" card) — the parent then owns
+  // padding, border and the entrance animation.
+  const Root = plain ? 'div' : 'section'
   return (
-    <section className="card leave-balance pop" style={{ '--d': '370ms' }}>
+    <Root
+      className={plain ? 'leave-balance' : 'card leave-balance pop'}
+      style={plain ? undefined : { '--d': '370ms' }}
+    >
       <div className="attendance__head">
         <h2>Leave balance</h2>
       </div>
@@ -75,6 +82,6 @@ export default function LeaveBalanceCard({ user, types, onApply, loading, canApp
           )}
         </>
       )}
-    </section>
+    </Root>
   )
 }

@@ -14,17 +14,62 @@
 @media (max-width: 1040px) {
   .two-col { grid-template-columns: 1fr; }
 }
-/* Leaves tab: balance card stays a comfortable fixed-ish width so the request
-   list — the primary content, and the one that grows — gets the rest of the
-   space instead of being squeezed into a near-even split. */
-.leaves-grid {
+/* Leaves tab: two stacked cards, each split down the middle into two
+   sections — the upper one for applying (leave | WFH), the lower one for
+   request history (leave | WFH). The card owns the chrome; each child is a
+   plain-mode pane (see LeaveBalanceCard/RecentLeaves/WfhRequests `plain`)
+   that gets its padding and dividing border from here. */
+.leaves-duo {
   display: grid;
-  grid-template-columns: minmax(300px, 340px) 1fr;
-  gap: 22px;
+  grid-template-columns: 1fr 1fr;
   align-items: start;
+  padding: 0;
+  overflow: hidden;
+}
+.leaves-duo > * {
+  min-width: 0;
+  padding: 22px;
+}
+.leaves-duo > * + * {
+  border-left: 1px solid var(--border);
 }
 @media (max-width: 900px) {
-  .leaves-grid { grid-template-columns: 1fr; }
+  .leaves-duo { grid-template-columns: 1fr; }
+  .leaves-duo > * + * {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* The WFH half of the apply card (see WfhApplyCard.jsx). Column flex with the
+   pitch flexing so the button sits level with its leave-side counterpart. */
+.wfh-apply {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+}
+.wfh-apply__body {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1;
+}
+.wfh-apply__icon {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
+  background: var(--primary-soft);
+  color: var(--primary-700);
+}
+.wfh-apply__body p {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.55;
 }
 .loading-block, .empty {
   color: var(--text-muted);
