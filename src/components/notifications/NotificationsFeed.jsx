@@ -72,28 +72,40 @@ export function AnnouncementItem({ item, canRemove, onRemove }) {
   )
 }
 
-function PendingLeaveRow({ leave, typeLabels, showName }) {
+const STATUS_LABEL = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected' }
+
+/** One leave/WFH request row — pending queues, decisions, upcoming time off. */
+function LeaveRow({ leave, typeLabels, showName, showDecidedTime }) {
   const label = leave.kind === 'wfh' ? 'Work from home' : typeLabels[leave.type] ?? leave.type
   return (
     <li className="notif-item notif-item--pending">
       <div className="notif-item__head">
         <strong>{showName ? leave.employeeName : label}</strong>
-        <span className="status pending">Pending</span>
+        <span className={`status ${leave.status}`}>{STATUS_LABEL[leave.status] ?? leave.status}</span>
       </div>
       <p className="notif-item__body">
         {showName && <>{label} · </>}
         {formatRequestWindow(leave)}
       </p>
+      {showDecidedTime && leave.decidedAt && (
+        <div className="notif-item__meta">
+          <span>Decided {formatRelativeTime(leave.decidedAt)}</span>
+        </div>
+      )}
     </li>
   )
 }
 
 /**
- * The notification feed itself — urgent messages, announcements, and pending
- * work (approvals queue for managers/admins, own pending requests for
- * everyone). Pure rendering, shared by the topbar drawer (NotificationsPanel)
- * and the dedicated sidebar page (NotificationsPage); marking-as-read and
- * composing stay with those surfaces, which own their own chrome.
+ * The notification feed itself — urgent admin messages plus work items
+ * (approvals queue for managers/admins, own pending requests, decisions on
+ * those requests and upcoming approved time off). Pure rendering, shared by
+ * the topbar drawer (NotificationsPanel) and the dedicated sidebar page
+ * (NotificationsPage); marking-as-read stays with those surfaces.
+ *
+ * `showAnnouncements` keeps regular announcements in the drawer's quick
+ * glance, while the full page leaves them to the dedicated Announcements
+ * section (that page is for reading/managing them — this one is work).
  */
 export default function NotificationsFeed({
   query,
@@ -105,12 +117,20 @@ export default function NotificationsFeed({
   role,
   onViewApprovals,
   onViewLeaves,
+  showAnnouncements = true,
+  recentDecisions = [],
+  upcoming = [],
 }) {
   const items = query.data ?? []
   const urgent = items.filter((a) => a.type === 'urgent')
-  const normal = items.filter((a) => a.type !== 'urgent')
-  const hasPendingWork = approvalsPending.length > 0 || myPendingLeaves.length > 0
-  const isEmpty = !query.loading && !query.error && items.length === 0 && !hasPendingWork
+  const normal = showAnnouncements ? items.filter((a) => a.type !== 'urgent') : []
+  const hasPendingWork =
+    approvalsPending.length > 0 ||
+    myPendingLeaves.length > 0 ||
+    recentDecisions.length > 0 ||
+    upcoming.length > 0
+  const isEmpty =
+    !query.loading && !query.error && urgent.length === 0 && normal.length === 0 && !hasPendingWork
 
   function canRemove(item) {
     return role === 'admin' || item.authorId === currentUserId
@@ -128,7 +148,7 @@ export default function NotificationsFeed({
       ) : (
         <>
           {urgent.length > 0 && (
-            <NotifSection title="Urgent" icon="alertTriangle" tone="urgent">
+            <NotifSection title="Urgent admin messages" icon="alertTriangle" tone="urgent">
               {urgent.map((a) => (
                 <AnnouncementItem key={a.id} item={a} canRemove={canRemove(a)} onRemove={onRemoved} />
               ))}
@@ -152,7 +172,7 @@ export default function NotificationsFeed({
           action={{ label: 'View all', onClick: onViewApprovals }}
         >
           {approvalsPending.slice(0, 5).map((l) => (
-            <PendingLeaveRow key={l.id} leave={l} typeLabels={typeLabels} showName />
+            <LeaveRow key={l.id} leave={l} typeLabels={typeLabels} showName />
           ))}
         </NotifSection>
       )}
@@ -164,7 +184,31 @@ export default function NotificationsFeed({
           action={{ label: 'View all', onClick: onViewLeaves }}
         >
           {myPendingLeaves.slice(0, 5).map((l) => (
-            <PendingLeaveRow key={l.id} leave={l} typeLabels={typeLabels} />
+            <LeaveRow key={l.id} leave={l} typeLabels={typeLabels} />
+          ))}
+        </NotifSection>
+      )}
+
+      {recentDecisions.length > 0 && (
+        <NotifSection
+          title="Updates on your requests"
+          icon="bell"
+          action={{ label: 'View all', onClick: onViewLeaves }}
+        >
+          {recentDecisions.slice(0, 5).map((l) => (
+            <LeaveRow key={l.id} leave={l} typeLabels={typeLabels} showDecidedTime />
+          ))}
+        </NotifSection>
+      )}
+
+      {upcoming.length > 0 && (
+        <NotifSection
+          title="Coming up"
+          icon="calendar"
+          action={{ label: 'View all', onClick: onViewLeaves }}
+        >
+          {upcoming.slice(0, 5).map((l) => (
+            <LeaveRow key={l.id} leave={l} typeLabels={typeLabels} />
           ))}
         </NotifSection>
       )}
@@ -173,7 +217,11 @@ export default function NotificationsFeed({
         <EmptyState
           icon="bell"
           title="You're all caught up"
-          message="No announcements or pending items right now."
+          message={
+            showAnnouncements
+              ? 'No announcements or pending items right now.'
+              : 'No pending work, request updates or admin messages right now.'
+          }
         />
       )}
     </>

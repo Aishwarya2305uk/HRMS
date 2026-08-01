@@ -51,6 +51,11 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
   const custom = mode === 'custom'
   // The date staged in the custom-mode picker before "Add" commits it.
   const [draftDate, setDraftDate] = useState('')
+  // Which end of the range the user is working on — each date unlocks only
+  // its own time: start date pairs with "From", end date with "To".
+  const [activeEnd, setActiveEnd] = useState('start')
+  const startTimeLocked = !custom && activeEnd === 'end'
+  const endTimeLocked = !custom && activeEnd === 'start'
 
   function pickDayPart(part) {
     if (part === dayPart) return
@@ -191,9 +196,11 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
                 type="date"
                 value={startDate}
                 min={todayStr()}
-                onChange={(e) =>
+                onFocus={() => setActiveEnd('start')}
+                onChange={(e) => {
+                  setActiveEnd('start')
                   onChange({ startDate: e.target.value, ...(half ? { endDate: e.target.value } : {}) })
-                }
+                }}
                 onBlur={() => markTouched('startDate')}
                 aria-invalid={Boolean(showError('startDate'))}
                 aria-describedby={showError('startDate') ? `err-${idPrefix}-start` : undefined}
@@ -212,7 +219,11 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
                 value={endDate}
                 min={startDate || todayStr()}
                 disabled={half}
-                onChange={(e) => onChange({ endDate: e.target.value })}
+                onFocus={() => setActiveEnd('end')}
+                onChange={(e) => {
+                  setActiveEnd('end')
+                  onChange({ endDate: e.target.value })
+                }}
                 onBlur={() => markTouched('endDate')}
                 aria-invalid={Boolean(showError('endDate'))}
                 aria-describedby={showError('endDate') ? `err-${idPrefix}-end` : undefined}
@@ -234,6 +245,8 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
             id={`${idPrefix}-startTime`}
             type="time"
             value={startTime}
+            disabled={startTimeLocked}
+            title={startTimeLocked ? 'Switch to the start date to edit this time.' : undefined}
             onChange={(e) => onChange({ startTime: e.target.value })}
             onBlur={() => markTouched('time')}
             aria-invalid={Boolean(showError('time'))}
@@ -247,6 +260,8 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
             id={`${idPrefix}-endTime`}
             type="time"
             value={endTime}
+            disabled={endTimeLocked}
+            title={endTimeLocked ? 'Switch to the end date to edit this time.' : undefined}
             onChange={(e) => onChange({ endTime: e.target.value })}
             onBlur={() => markTouched('time')}
             aria-invalid={Boolean(showError('time'))}

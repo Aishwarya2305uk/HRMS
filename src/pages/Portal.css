@@ -440,9 +440,19 @@
 }
 
 /* ---- Dedicated Notifications page (sidebar section) ---- */
-.notif-page { max-width: 860px; }
+/* Full-width card; the feed's sections flow into columns so wide screens
+   don't leave the right side empty. Urgent messages and the empty state
+   span the whole row. */
+.notif-page { width: 100%; }
 .notif-page .attendance__head h2 { display: flex; align-items: center; gap: 10px; }
-.notif-page__body { display: flex; flex-direction: column; gap: 22px; }
+.notif-page__body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 22px;
+  align-items: start;
+}
+.notif-page__body .notif-section--urgent,
+.notif-page__body .state--empty { grid-column: 1 / -1; }
 
 .notif-section__head {
   display: flex;

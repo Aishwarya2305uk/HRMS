@@ -233,6 +233,26 @@ export default function Portal() {
     () => allMine.filter((l) => l.status === 'pending'),
     [allMine],
   )
+  // Work notifications for the Notifications page: decisions made on your
+  // requests in the last two weeks, and approved time off starting within a
+  // week — newest decision / soonest start first.
+  const myRecentDecisions = useMemo(() => {
+    const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000
+    return allMine
+      .filter((l) => l.status !== 'pending' && l.decidedAt && new Date(l.decidedAt).getTime() >= cutoff)
+      .sort((a, b) => new Date(b.decidedAt) - new Date(a.decidedAt))
+  }, [allMine])
+  const myUpcoming = useMemo(() => {
+    const now = Date.now()
+    const horizon = now + 7 * 24 * 60 * 60 * 1000
+    return allMine
+      .filter((l) => {
+        if (l.status !== 'approved' || !l.startDate) return false
+        const start = new Date(l.startDate).getTime()
+        return start >= now && start <= horizon
+      })
+      .sort((a, b) => new Date(a.startDate) - new Date(b.startDate))
+  }, [allMine])
   const unreadCount = useMemo(
     () => announcementsList.filter((a) => !a.read).length,
     [announcementsList],
@@ -526,11 +546,11 @@ export default function Portal() {
             <NotificationsPage
               query={announcementsQ}
               onMarkedRead={onAnnouncementsRead}
-              canCompose={isManager}
-              onCreated={onAnnouncementCreated}
               onRemoved={onAnnouncementRemoved}
               approvalsPending={pending}
               myPendingLeaves={myPendingLeaves}
+              recentDecisions={myRecentDecisions}
+              upcoming={myUpcoming}
               typeLabels={typeLabels}
               currentUserId={user?.id}
               role={role}
