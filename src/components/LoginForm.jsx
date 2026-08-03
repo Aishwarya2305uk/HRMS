@@ -67,7 +67,7 @@ export default function LoginForm() {
     <div className="auth-card">
       <span className="auth-card__badge">Welcome back</span>
 
-      <h2>Sign in to Trula</h2>
+      <h2>Sign in to Orbit</h2>
       <p className="auth-card__sub">
         Use your work email to access your dashboard, leaves and team.
       </p>

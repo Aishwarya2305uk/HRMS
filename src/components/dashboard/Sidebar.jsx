@@ -35,7 +35,7 @@ export default function Sidebar({
       <div className="emp__logo">
         <span className="mark">◈</span>
         <div className="emp__logo-text sidebar-label">
-          <span>Trula</span>
+          <span>Orbit</span>
           <em>{CONSOLE_LABEL[role] ?? 'Workspace'}</em>
         </div>
       </div>

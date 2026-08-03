@@ -1,4 +1,4 @@
-# Trula HRMS — v1
+# Orbit by Trula.ai — v1
 
 A fast, lean Human Resource Management System covering attendance, leave
 management, and organization visibility. Built to the spec in

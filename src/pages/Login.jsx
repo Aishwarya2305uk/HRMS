@@ -8,7 +8,7 @@ export default function Login() {
       <aside className="auth__brand">
         <div className="brand__logo">
           <span className="mark">◈</span>
-          Trula&nbsp;HRMS
+          Orbit&nbsp;by&nbsp;Trula.ai
         </div>
 
         <div className="brand__intro">

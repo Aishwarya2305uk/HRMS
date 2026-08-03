@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Local credentials sheet — never commit
+credentials.csv
+credentials.xlsx
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
