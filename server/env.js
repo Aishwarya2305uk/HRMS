@@ -11,8 +11,19 @@ dotenv.config({ path: resolve(root, '.env') })
 
 // dotenv keeps surrounding quotes off but tolerates `KEY = value` spacing.
 export const MONGODB_URL = process.env.MONGODB_URL?.trim()
-export const JWT_SECRET =
-  process.env.JWT_SECRET?.trim() || 'dev-only-insecure-secret-change-me'
+
+// In production a missing/weak JWT_SECRET is fatal: anyone who reads the
+// public dev fallback below could forge a valid token for any account, so
+// refusing to start is strictly safer than starting insecurely.
+const isProduction = process.env.NODE_ENV === 'production'
+const configuredJwtSecret = process.env.JWT_SECRET?.trim()
+if (isProduction && (!configuredJwtSecret || configuredJwtSecret.length < 32)) {
+  throw new Error(
+    'JWT_SECRET must be set to at least 32 characters in production. ' +
+      'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"',
+  )
+}
+export const JWT_SECRET = configuredJwtSecret || 'dev-only-insecure-secret-change-me'
 export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN?.trim() || '7d'
 export const PORT = Number(process.env.PORT) || 4000
 
@@ -29,3 +40,11 @@ export const ADMIN_NAME = process.env.ADMIN_NAME?.trim() || 'Administrator'
 // routes/auth.js) rather than locking everyone out — same "warn and skip if
 // unconfigured" policy as the admin bootstrap above.
 export const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY?.trim()
+
+// Comma-separated list of browser origins allowed to call the API cross-
+// origin (e.g. the Vercel frontend URL). Empty means "allow all" — fine for
+// local dev, but production should always set it (see middleware/security.js).
+export const CORS_ORIGINS = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((v) => v.trim())
+  .filter(Boolean)

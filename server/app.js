@@ -1,5 +1,5 @@
 import express from 'express'
-import cors from 'cors'
+import { securityHeaders, corsPolicy } from './middleware/security.js'
 import authRoutes from './routes/auth.js'
 import attendanceRoutes from './routes/attendance.js'
 import leaveRoutes from './routes/leaves.js'
@@ -36,7 +36,11 @@ function smartJson() {
 /** Builds the Express app (routes only — no DB connection, no listen). */
 export function createApp() {
   const app = express()
-  app.use(cors())
+  // One proxy hop in front of us (Vercel rewrite / Render) — makes req.ip the
+  // real client address, which the login rate limiter keys on.
+  app.set('trust proxy', 1)
+  app.use(securityHeaders)
+  app.use(corsPolicy)
   app.use(smartJson())
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }))

@@ -1,8 +1,8 @@
 import { User } from './models/User.js'
 import { EmploymentType } from './models/EmploymentType.js'
 import { ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_NAME } from './env.js'
+import { passwordPolicyError } from './utils/password.js'
 
-const MIN_PASSWORD = 8
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 /**
@@ -32,10 +32,9 @@ export async function bootstrapAdmin() {
     console.error('[bootstrap] ADMIN_EMAIL is not a valid email address — skipping admin creation.')
     return
   }
-  if (ADMIN_PASSWORD.length < MIN_PASSWORD) {
-    console.error(
-      `[bootstrap] ADMIN_PASSWORD must be at least ${MIN_PASSWORD} characters — skipping admin creation.`,
-    )
+  const passwordError = passwordPolicyError(ADMIN_PASSWORD)
+  if (passwordError) {
+    console.error(`[bootstrap] ADMIN_PASSWORD rejected: ${passwordError} Skipping admin creation.`)
     return
   }
 

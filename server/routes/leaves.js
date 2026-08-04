@@ -306,26 +306,48 @@ async function loadDecidableLeave(req) {
 router.post('/:id/approve', async (req, res, next) => {
   try {
     const leave = await loadDecidableLeave(req)
+    const balancePath = `leaveBalances.${leave.type}`
 
     if (leave.kind === 'leave') {
       const employee = await User.findById(leave.userId._id)
+      // Normally the balance key already exists (seeded at hire / first
+      // request). Only persist the merge when it filled a missing key, so the
+      // common path never rewrites leaveBalances and can't clobber a
+      // concurrent deduction.
+      const hadKey = employee.leaveBalances?.[leave.type] !== undefined
       await employee.ensureLeaveBalances()
-      const remaining = Number(employee.leaveBalances[leave.type]) || 0
-      if (leave.days > remaining) {
+      if (!hadKey) await employee.save()
+
+      // Atomic conditional deduction: succeeds only if the balance STILL
+      // covers the request at write time, so two simultaneous approvals can
+      // never observe the same starting balance and overdraw it.
+      const deducted = await User.findOneAndUpdate(
+        { _id: employee._id, [balancePath]: { $gte: leave.days } },
+        { $inc: { [balancePath]: -leave.days } },
+        { new: true },
+      )
+      if (!deducted) {
+        const remaining = Number(employee.leaveBalances[leave.type]) || 0
         return res.status(400).json({
           error: `Cannot approve — employee only has ${remaining} day(s) of that leave left.`,
         })
       }
-      employee.leaveBalances[leave.type] = remaining - leave.days
-      employee.markModified('leaveBalances')
-      await employee.save()
     }
 
-    leave.status = 'approved'
-    leave.approverId = req.user._id
-    leave.decidedAt = new Date()
-    await leave.save()
-    res.json(leave.toJSONSafe())
+    // Flip pending -> approved atomically as well; if a concurrent decision
+    // won the race, refund the deduction so the balance stays correct.
+    const decided = await Leave.findOneAndUpdate(
+      { _id: leave._id, status: 'pending' },
+      { status: 'approved', approverId: req.user._id, decidedAt: new Date() },
+      { new: true },
+    ).populate('userId', 'name email employeeId managerId')
+    if (!decided) {
+      if (leave.kind === 'leave') {
+        await User.updateOne({ _id: leave.userId._id }, { $inc: { [balancePath]: leave.days } })
+      }
+      return res.status(409).json({ error: 'This leave has already been decided.' })
+    }
+    res.json(decided.toJSONSafe())
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })
     next(err)
@@ -336,12 +358,23 @@ router.post('/:id/approve', async (req, res, next) => {
 router.post('/:id/reject', async (req, res, next) => {
   try {
     const leave = await loadDecidableLeave(req)
-    leave.status = 'rejected'
-    leave.approverId = req.user._id
-    leave.decidedAt = new Date()
-    leave.decisionComment = String(req.body?.comment || '').trim()
-    await leave.save()
-    res.json(leave.toJSONSafe())
+    // Same atomic pending -> decided flip as approve: a plain save() here
+    // could silently overwrite a concurrent approval (without refunding the
+    // balance it deducted).
+    const decided = await Leave.findOneAndUpdate(
+      { _id: leave._id, status: 'pending' },
+      {
+        status: 'rejected',
+        approverId: req.user._id,
+        decidedAt: new Date(),
+        decisionComment: String(req.body?.comment || '').trim(),
+      },
+      { new: true },
+    ).populate('userId', 'name email employeeId managerId')
+    if (!decided) {
+      return res.status(409).json({ error: 'This leave has already been decided.' })
+    }
+    res.json(decided.toJSONSafe())
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })
     next(err)

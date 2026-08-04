@@ -11,16 +11,21 @@ const router = Router()
  * Attendance is ALSO finalized lazily on read, so this cron is a belt-and-
  * suspenders backstop — the app is correct even without it.
  *
- * Auth: Vercel Cron sends `Authorization: Bearer $CRON_SECRET`. If CRON_SECRET
- * is set, we require it so the endpoint can't be triggered by the public.
+ * Auth: the caller sends `Authorization: Bearer $CRON_SECRET`. FAILS CLOSED:
+ * if CRON_SECRET isn't configured the endpoint refuses to run at all —
+ * a missing env var must never silently turn this into a public endpoint.
+ * (Safe default: attendance is also finalized lazily on read, so nothing
+ * breaks while the secret is unset.)
  */
 router.get('/finalize', async (req, res) => {
-  const secret = process.env.CRON_SECRET
-  if (secret) {
-    const header = req.headers.authorization || ''
-    if (header !== `Bearer ${secret}`) {
-      return res.status(401).json({ error: 'Unauthorized.' })
-    }
+  const secret = process.env.CRON_SECRET?.trim()
+  if (!secret) {
+    console.error('[cron/finalize] CRON_SECRET is not configured — refusing to run.')
+    return res.status(503).json({ error: 'Cron endpoint is not configured.' })
+  }
+  const header = req.headers.authorization || ''
+  if (header !== `Bearer ${secret}`) {
+    return res.status(401).json({ error: 'Unauthorized.' })
   }
   try {
     const closed = await finalizeStaleSessions()

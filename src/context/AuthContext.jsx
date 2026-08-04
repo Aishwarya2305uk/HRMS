@@ -62,6 +62,9 @@ export function AuthProvider({ children }) {
         method: 'POST',
         auth: false,
         body: { email, password, captchaToken },
+        // Longer than the default 15s: the Render backend may be cold-starting
+        // (service wake + Mongo connect + bootstraps) on the first request.
+        timeoutMs: 25000,
       })
       setToken(token)
       setUser(user)

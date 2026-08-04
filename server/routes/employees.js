@@ -5,6 +5,7 @@ import { User } from '../models/User.js'
 import { EmploymentType } from '../models/EmploymentType.js'
 import { WorkSession, isRunning } from '../models/WorkSession.js'
 import { dayKey } from '../utils/time.js'
+import { passwordPolicyError } from '../utils/password.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -274,6 +275,12 @@ router.post('/', async (req, res, next) => {
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email and password are required.' })
+    }
+    // Same policy as the bootstrap admin (utils/password.js) — an admin must
+    // not be able to hand out weaker credentials than the system's own.
+    const passwordError = passwordPolicyError(password)
+    if (passwordError) {
+      return res.status(400).json({ error: passwordError })
     }
     if (!['employee', 'manager', 'admin'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role.' })

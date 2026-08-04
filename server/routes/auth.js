@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import { JWT_SECRET, JWT_EXPIRES_IN, RECAPTCHA_SECRET_KEY } from '../env.js'
 import { User } from '../models/User.js'
 import { requireAuth } from '../middleware/auth.js'
+import { loginLimiter } from '../middleware/security.js'
 
 const router = Router()
 
@@ -28,7 +29,13 @@ async function verifyCaptcha(token, remoteIp) {
   try {
     const params = new URLSearchParams({ secret: RECAPTCHA_SECRET_KEY, response: token })
     if (remoteIp) params.set('remoteip', remoteIp)
-    const res = await fetch(RECAPTCHA_VERIFY_URL, { method: 'POST', body: params })
+    // Bounded so a slow Google response can't eat the client's whole login
+    // timeout — a stalled verification fails the login within 5s instead.
+    const res = await fetch(RECAPTCHA_VERIFY_URL, {
+      method: 'POST',
+      body: params,
+      signal: AbortSignal.timeout(5000),
+    })
     const data = await res.json()
     return data.success === true
   } catch (err) {
@@ -51,7 +58,7 @@ function signToken(user) {
  * touching the database at all, so a failed challenge never costs a bcrypt
  * comparison or reveals anything about whether the email exists.
  */
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { email, password, captchaToken } = req.body || {}
     if (!email || !password) {

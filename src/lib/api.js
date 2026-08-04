@@ -11,8 +11,12 @@
  */
 const TOKEN_KEY = 'hrms.token'
 
-/** Requests that hang longer than this are aborted with a friendly message. */
-const TIMEOUT_MS = 15000
+/**
+ * Requests that hang longer than this are aborted with a friendly message.
+ * Callers can override per request via `timeoutMs` — login uses a longer
+ * window because the hosted backend may need to cold-start.
+ */
+const DEFAULT_TIMEOUT_MS = 15000
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY)
@@ -66,14 +70,17 @@ function humanize(status, serverMessage) {
   }
 }
 
-export async function apiFetch(path, { method = 'GET', body, auth = true, signal } = {}) {
+export async function apiFetch(
+  path,
+  { method = 'GET', body, auth = true, signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {},
+) {
   const headers = { 'Content-Type': 'application/json' }
   const token = getToken()
   if (auth && token) headers.Authorization = `Bearer ${token}`
 
   // Fail fast rather than leaving the user staring at a spinner forever.
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true })
 
   let res
