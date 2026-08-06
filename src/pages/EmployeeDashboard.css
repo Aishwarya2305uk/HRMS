@@ -208,6 +208,15 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* Elastic spacer between the main nav group and the foot group (Feedback /
+   HR Request) — pins the latter to the bottom of the rail. Collapses to
+   nothing once the item list is tall enough to scroll. */
+.emp__nav-gap {
+  flex: 1;
 }
 .nav-item {
   position: relative;
@@ -251,6 +260,64 @@
 .nav-item.is-active svg {
   transform: scale(1.1);
 }
+
+/* "More" launcher — trailing sections open in a floating tile panel beside
+   the rail (above the bottom bar on mobile). Fixed positioning keeps it clear
+   of the nav's own scroll/overflow clipping; the desktop left/top comes as an
+   inline style anchored to the More button (see Sidebar.jsx). */
+.nav-more__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+}
+.nav-more__group {
+  position: fixed;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  width: 248px;
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  box-shadow: var(--elev-2);
+  animation: more-panel-in 0.18s var(--spring-soft);
+}
+@keyframes more-panel-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.more-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 4px;
+  border: none;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.more-tile:hover { background: var(--surface-sunken); }
+.more-tile__icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+/* ClickUp-style color rotation for the tiles, from the app's soft palette. */
+.more-tile:nth-child(4n + 1) .more-tile__icon { background: var(--accent-soft); color: var(--primary-600); }
+.more-tile:nth-child(4n + 2) .more-tile__icon { background: var(--success-soft); color: var(--success); }
+.more-tile:nth-child(4n + 3) .more-tile__icon { background: var(--warning-soft); color: var(--warning); }
+.more-tile:nth-child(4n) .more-tile__icon { background: var(--danger-soft); color: var(--danger); }
+.more-tile.is-active .more-tile__icon { box-shadow: var(--ring-primary); }
 
 .emp__side-foot {
   margin-top: auto;
@@ -1017,6 +1084,19 @@ button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
   .emp__logo, .emp__side-foot, .sidebar-collapse-btn { display: none; }
   .emp__nav { flex-direction: row; width: 100%; justify-content: space-around; }
   .nav-item { flex-direction: column; gap: 4px; font-size: var(--text-2xs); padding: 6px; }
+  /* Admin has too many sections for labeled items to fit un-scrolled — go
+     icon-only and let items share the width so nothing overflows or scrolls.
+     (The base rule's overflow-y:auto otherwise computes overflow-x to auto.)
+     Only the bar's direct items: the More popover keeps its labels. */
+  .emp[data-role='admin'] .emp__nav { overflow: hidden; }
+  .emp[data-role='admin'] .emp__nav > .nav-item { flex: 1 1 0; min-width: 0; padding: 6px 0; }
+  .emp[data-role='admin'] .emp__nav > .nav-item > .sidebar-label { display: none; }
+  /* On the bottom bar the tile panel pins above the bar (no anchor style is
+     set on mobile — see Sidebar.jsx's toggleMore). */
+  .nav-more__group {
+    bottom: 84px;
+    right: 10px;
+  }
   .emp__content { padding: 20px 16px 90px; }
   .emp__topbar { padding: 18px 16px; }
   .emp__topbar h1 { font-size: 20px; line-height: 28px; }

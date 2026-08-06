@@ -15,8 +15,10 @@ import { useEffect, useRef } from 'react'
  * @param {'center'|'right'} [placement='center']  'right' renders a full-height
  *   drawer anchored to the right edge instead of a centered dialog (see
  *   .modal--right in Portal.css) — same a11y behavior either way.
+ * @param {string} [className]  Extra class(es) on the dialog box itself, for
+ *   variants that need their own sizing (e.g. .modal--form-link).
  */
-export default function Modal({ titleId, label, onClose, children, placement = 'center' }) {
+export default function Modal({ titleId, label, onClose, children, placement = 'center', className }) {
   const ref = useRef(null)
   const restoreTo = useRef(null)
 
@@ -69,7 +71,7 @@ export default function Modal({ titleId, label, onClose, children, placement = '
       onMouseDown={onClose}
     >
       <div
-        className={`modal${placement === 'right' ? ' modal--right' : ''}`}
+        className={`modal${placement === 'right' ? ' modal--right' : ''}${className ? ` ${className}` : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

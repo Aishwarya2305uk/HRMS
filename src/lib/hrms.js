@@ -75,6 +75,14 @@ export const leaveTypes = {
   update: (id, body) => apiFetch(`/leave-types/${id}`, { method: 'PATCH', body }),
 }
 
+/** Org-wide settings: everyone reads (the sidebar's Feedback / HR Request form
+ *  links); only an admin may update, from the Other Settings page. Both rules
+ *  are enforced server-side — see server/routes/settings.js. */
+export const appSettings = {
+  get: () => apiFetch('/settings'),
+  update: (body) => apiFetch('/settings', { method: 'PATCH', body }),
+}
+
 /** Admin-only: manage employment classifications (Intern/Full-time/Part-time/custom) and their per-leave-type quotas. */
 export const employmentTypes = {
   list: () => apiFetch('/employment-types'),

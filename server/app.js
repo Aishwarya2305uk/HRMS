@@ -10,6 +10,7 @@ import teamRoutes from './routes/teams.js'
 import leaveTypeRoutes from './routes/leaveTypes.js'
 import employmentTypeRoutes from './routes/employmentTypes.js'
 import documentRoutes from './routes/documents.js'
+import settingsRoutes from './routes/settings.js'
 
 /**
  * JSON body parsing that works BOTH as a standalone server and inside a Vercel
@@ -54,6 +55,7 @@ export function createApp() {
   app.use('/api/leave-types', leaveTypeRoutes)
   app.use('/api/employment-types', employmentTypeRoutes)
   app.use('/api/documents', documentRoutes)
+  app.use('/api/settings', settingsRoutes)
 
   // Unknown /api route -> JSON 404. The method/path are logged server-side for
   // debugging but NOT reflected back in the response: echoing raw request input

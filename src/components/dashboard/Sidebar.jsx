@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import Icon from '../Icon'
 import Avatar from '../Avatar'
 import { haptic, tactile } from '../../lib/haptics'
@@ -30,6 +31,65 @@ export default function Sidebar({
   onToggleCollapse,
   onOpenProfile,
 }) {
+  // Items flagged `more` live behind the expandable "More" toggle; items
+  // flagged `foot` are pinned to the bottom by .emp__nav-gap. An item flagged
+  // both (admin's Feedback / HR Request) goes under More — `more` wins.
+  const mainItems = nav.filter((i) => !i.foot && !i.more)
+  const moreItems = nav.filter((i) => i.more)
+  const footItems = nav.filter((i) => i.foot && !i.more)
+  const activeInMore = moreItems.some((i) => i.key === active)
+  // The More panel is a floating tile launcher (ClickUp-style): opens beside
+  // the rail on desktop, above the bottom bar on mobile, and closes after any
+  // pick or outside click. The More toggle carries the active highlight when
+  // the current section lives inside it.
+  const [moreOpen, setMoreOpen] = useState(false)
+  // Inline fixed-position for the desktop panel (anchored to the More button);
+  // null on mobile, where the media-query CSS pins it above the bottom bar.
+  const [morePanelPos, setMorePanelPos] = useState(null)
+
+  function toggleMore(e) {
+    haptic('light')
+    if (moreOpen) {
+      setMoreOpen(false)
+      return
+    }
+    if (window.matchMedia('(max-width: 760px)').matches) {
+      setMorePanelPos(null)
+    } else {
+      const r = e.currentTarget.getBoundingClientRect()
+      // Clamp so the panel never runs past the bottom of the viewport.
+      setMorePanelPos({ left: r.right + 14, top: Math.max(12, Math.min(r.top, window.innerHeight - 230)) })
+    }
+    setMoreOpen(true)
+  }
+
+  function pickMoreItem(key) {
+    haptic('light')
+    onSelect(key)
+    setMoreOpen(false)
+  }
+
+  // Shared by the main nav group and the foot group.
+  const renderItem = (item) => (
+    <button
+      key={item.key}
+      className={`nav-item${active === item.key ? ' is-active' : ''}`}
+      aria-current={active === item.key ? 'page' : undefined}
+      aria-label={item.label}
+      title={item.label}
+      onClick={() => { haptic('light'); onSelect(item.key) }}
+      {...tactile('light')}
+    >
+      <Icon name={item.icon} size={19} />
+      <span className="sidebar-label">{item.label}</span>
+      {item.badge > 0 && (
+        <span className="nav-badge" aria-label={`${item.badge} ${item.badgeLabel ?? ''}`.trim()}>
+          {item.badge}
+        </span>
+      )}
+    </button>
+  )
+
   return (
     <aside className="emp__sidebar">
       <div className="emp__logo">
@@ -53,25 +113,50 @@ export default function Sidebar({
       </button>
 
       <nav className="emp__nav" aria-label="Main">
-        {nav.map((item) => (
-          <button
-            key={item.key}
-            className={`nav-item${active === item.key ? ' is-active' : ''}`}
-            aria-current={active === item.key ? 'page' : undefined}
-            aria-label={item.label}
-            title={item.label}
-            onClick={() => { haptic('light'); onSelect(item.key) }}
-            {...tactile('light')}
-          >
-            <Icon name={item.icon} size={19} />
-            <span className="sidebar-label">{item.label}</span>
-            {item.badge > 0 && (
-              <span className="nav-badge" aria-label={`${item.badge} ${item.badgeLabel ?? ''}`.trim()}>
-                {item.badge}
-              </span>
+        {mainItems.map((item) => renderItem(item))}
+        {moreItems.length > 0 && (
+          <>
+            <button
+              type="button"
+              className={`nav-item nav-more${activeInMore ? ' is-active' : ''}`}
+              aria-expanded={moreOpen}
+              aria-haspopup="menu"
+              aria-label="More"
+              title="More"
+              onClick={toggleMore}
+              {...tactile('light')}
+            >
+              <Icon name="moreHorizontal" size={19} />
+              <span className="sidebar-label">More</span>
+            </button>
+            {moreOpen && (
+              <>
+                <div className="nav-more__backdrop" onClick={() => setMoreOpen(false)} aria-hidden="true" />
+                <div className="nav-more__group" role="menu" style={morePanelPos ?? undefined}>
+                  {moreItems.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      role="menuitem"
+                      className={`more-tile${active === item.key ? ' is-active' : ''}`}
+                      aria-current={active === item.key ? 'page' : undefined}
+                      title={item.label}
+                      onClick={() => pickMoreItem(item.key)}
+                      {...tactile('light')}
+                    >
+                      <span className="more-tile__icon">
+                        <Icon name={item.icon} size={19} />
+                      </span>
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
-          </button>
-        ))}
+          </>
+        )}
+        {footItems.length > 0 && <div className="emp__nav-gap" aria-hidden="true" />}
+        {footItems.map((item) => renderItem(item))}
       </nav>
 
       <div className="emp__side-foot">

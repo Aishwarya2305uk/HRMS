@@ -41,11 +41,13 @@ async function activityByUser() {
 
 /**
  * GET /api/employees/org-tree — the whole reporting structure as a nested tree.
- * Available to ALL roles (per requirements): it's built purely from the
- * managerId self-reference. Roots are people with no manager (e.g. admins).
- * Each node also carries a coarse `activity` state for the presence dot.
+ * Admin only (org visibility for other roles is paused — restore by dropping
+ * the requireRole below and re-adding 'org' to Portal's ROLE_SECTIONS). Built
+ * purely from the managerId self-reference; roots are people with no manager
+ * (e.g. admins). Each node also carries a coarse `activity` state for the
+ * presence dot.
  */
-router.get('/org-tree', async (_req, res, next) => {
+router.get('/org-tree', requireRole('admin'), async (_req, res, next) => {
   try {
     const [users, activity] = await Promise.all([
       User.find({}).select('name designation department role managerId'),

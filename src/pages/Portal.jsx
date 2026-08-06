@@ -10,6 +10,7 @@ import {
   leaves as leavesApi,
   employees as employeesApi,
   announcements as announcementsApi,
+  appSettings as appSettingsApi,
 } from '../lib/hrms'
 import { formatHours } from '../lib/format'
 import { getSavedTheme, saveTheme } from '../lib/themes'
@@ -32,6 +33,8 @@ import AllAttendance from '../components/AllAttendance'
 import AllAnnouncements from '../components/AllAnnouncements'
 import LeaveTypesManager from '../components/LeaveTypesManager'
 import EmploymentTypesManager from '../components/EmploymentTypesManager'
+import OtherSettingsManager from '../components/OtherSettingsManager'
+import FormLinkModal from '../components/FormLinkModal'
 import Profile from '../components/Profile'
 import DocumentsCard from '../components/DocumentsCard'
 import { SkeletonCard, ErrorState, InlineError } from '../components/States'
@@ -68,8 +71,22 @@ const NAV_ITEMS = {
   allleaves: { label: 'All leaves', icon: 'calendarDays' },
   allattendance: { label: 'All attendance', icon: 'list' },
   leavepolicies: { label: 'Leave Policies', icon: 'sliders' },
+  othersettings: { label: 'Other Settings', icon: 'settings' },
   org: { label: 'Organization', icon: 'tree' },
   calendar: { label: 'Calendar', icon: 'calendar' },
+  // `foot: true` pins these below an elastic gap at the bottom of the sidebar.
+  // They don't open a section — selectTab intercepts them and opens the
+  // admin-configured external form link (see FORM_LINKS / Other Settings).
+  feedback: { label: 'Feedback', icon: 'messageSquare', foot: true },
+  hrrequest: { label: 'HR Request', icon: 'lifeBuoy', foot: true },
+}
+
+/** Sidebar keys that open an admin-configured external form (embedded in a
+ *  popup) instead of switching sections. The field names the settings
+ *  record's key; the title heads the popup. */
+const FORM_LINKS = {
+  feedback: { field: 'feedbackFormUrl', noun: 'feedback form', title: 'Share your feedback' },
+  hrrequest: { field: 'hrRequestFormUrl', noun: 'HR request form', title: 'Raise an HR request' },
 }
 
 /**
@@ -84,10 +101,22 @@ const NAV_ITEMS = {
 // topbar bell still opens the quick-glance drawer). Manager/admin ALSO keep
 // their "Announcements" section — that one is for composing and managing
 // SENT messages, while Notifications is the received feed plus pending work.
+// Org visibility is paused for employees/managers (admin-only for now) — to
+// restore it, re-add 'org' to their lists AND drop the matching
+// requireRole('admin') on GET /employees/org-tree (server/routes/employees.js).
 const ROLE_SECTIONS = {
-  employee: ['dashboard', 'notifications', 'attendance', 'leaves', 'org', 'calendar'],
-  manager: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'org', 'calendar'],
-  admin: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'people', 'allleaves', 'allattendance', 'leavepolicies', 'org', 'calendar'],
+  employee: ['dashboard', 'notifications', 'attendance', 'leaves', 'calendar', 'feedback', 'hrrequest'],
+  manager: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'calendar', 'feedback', 'hrrequest'],
+  admin: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'people', 'allleaves', 'allattendance', 'leavepolicies', 'othersettings', 'org', 'calendar', 'feedback', 'hrrequest'],
+}
+
+/** Sections tucked behind the sidebar's expandable "More" item instead of
+ *  being listed directly. They stay in ROLE_SECTIONS (that still decides
+ *  access + dashboard tiles); this only changes how the sidebar shows them.
+ *  The "More" toggle renders where the first of these falls in sidebar order
+ *  — for admin, right after Other Settings. */
+const MORE_SECTIONS = {
+  admin: ['org', 'calendar', 'feedback', 'hrrequest'],
 }
 
 function canAccess(role, key) {
@@ -106,6 +135,8 @@ function navFor(role, badges = {}) {
       icon: item.icon,
       badge: item.badgeKey ? badges[item.badgeKey] : undefined,
       badgeLabel: item.badgeLabel,
+      foot: item.foot,
+      more: (MORE_SECTIONS[role] ?? []).includes(key),
     }
   })
 }
@@ -132,6 +163,8 @@ export default function Portal() {
   const [showApply, setShowApply] = useState(false)
   const [showApplyWfh, setShowApplyWfh] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+  // Which FORM_LINKS popup is open ('feedback' | 'hrrequest'), or null.
+  const [openFormKey, setOpenFormKey] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   // 'YYYY-MM' — which month the admin All Attendance view is browsing.
   const [attendanceMonth, setAttendanceMonth] = useState(() => new Date().toISOString().slice(0, 7))
@@ -163,6 +196,24 @@ export default function Portal() {
   }
 
   function selectTab(key) {
+    // Feedback / HR Request aren't sections — they pop up the external form
+    // the admin configured under Other Settings, embedded in a modal.
+    const link = FORM_LINKS[key]
+    if (link) {
+      const url = settingsQ.data?.[link.field]
+      if (url) {
+        setOpenFormKey(key)
+      } else if (settingsQ.error) {
+        toast.error('The form links couldn’t load — please refresh and try again.')
+      } else {
+        toast.error(
+          role === 'admin'
+            ? `No ${link.noun} link is set yet — add one under Other Settings.`
+            : `The ${link.noun} isn’t set up yet — please contact an admin.`,
+        )
+      }
+      return
+    }
     setActive(key)
     setSearchQuery('') // a filter from one section shouldn't silently apply to the next
   }
@@ -170,6 +221,9 @@ export default function Portal() {
   const isManager = canAccess(role, 'approvals')
 
   // ---- Shared data (loaded up front, with visible failure states) ----
+  // Org-wide form links (Feedback / HR Request) — needed by the sidebar's foot
+  // items for every role, and edited in place on the admin Other Settings page.
+  const settingsQ = useAsyncData(useCallback(() => appSettingsApi.get(), []))
   const configQ = useAsyncData(useCallback(() => leavesApi.config(), []))
   const myLeavesQ = useAsyncData(useCallback(() => leavesApi.mine(), []))
   const historyQ = useAsyncData(useCallback(() => attendance.history(), []))
@@ -180,7 +234,7 @@ export default function Portal() {
 
   // ---- Lazily loaded per section ----
   const orgQ = useAsyncData(useCallback(() => employeesApi.orgTree(), []), {
-    enabled: active === 'org',
+    enabled: active === 'org' && canAccess(role, 'org'),
   })
   const peopleQ = useAsyncData(useCallback(() => employeesApi.list(), []), {
     enabled: active === 'people' && canAccess(role, 'people'),
@@ -473,7 +527,7 @@ export default function Portal() {
           {active === 'dashboard' && (
             <>
               <QuickAccessTiles
-                items={nav.filter((n) => n.key !== 'dashboard')}
+                items={nav.filter((n) => n.key !== 'dashboard' && !n.foot)}
                 onSelect={selectTab}
               />
 
@@ -628,7 +682,7 @@ export default function Portal() {
             />
           )}
 
-          {active === 'org' && (
+          {active === 'org' && canAccess(role, 'org') && (
             <Section query={orgQ} skeletonRows={5}>
               <OrgTree roots={orgQ.data?.roots ?? []} currentUserId={user?.id} searchQuery={searchQuery} />
             </Section>
@@ -684,6 +738,12 @@ export default function Portal() {
             </div>
           )}
 
+          {active === 'othersettings' && canAccess(role, 'othersettings') && (
+            <div className="single-col">
+              <OtherSettingsManager query={settingsQ} />
+            </div>
+          )}
+
           {active === 'announcements' && canAccess(role, 'announcements') && (
             <Section query={sentAnnouncementsQ} skeletonRows={5}>
               <AllAnnouncements
@@ -712,6 +772,14 @@ export default function Portal() {
         <ApplyWfhModal
           onClose={() => setShowApplyWfh(false)}
           onCreated={onWfhCreated}
+        />
+      )}
+
+      {openFormKey && settingsQ.data?.[FORM_LINKS[openFormKey].field] && (
+        <FormLinkModal
+          title={FORM_LINKS[openFormKey].title}
+          url={settingsQ.data[FORM_LINKS[openFormKey].field]}
+          onClose={() => setOpenFormKey(null)}
         />
       )}
 
