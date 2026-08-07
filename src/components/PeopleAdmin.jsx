@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import Icon from './Icon'
 import Avatar from './Avatar'
+import Modal from './Modal'
 import { useAuth } from '../context/AuthContext'
 import { employees as employeesApi, employmentTypes as employmentTypesApi } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
@@ -12,7 +13,6 @@ import { EmptyState, InlineError } from './States'
 const BLANK = {
   name: '',
   email: '',
-  password: '',
   role: 'employee',
   designation: '',
   department: '',
@@ -21,9 +21,10 @@ const BLANK = {
   employmentType: '',
 }
 
-/** Mirrors the server's policy so the user finds out before submitting. */
-const MIN_PASSWORD = 8
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/** The link an invited person opens to finish their account (SignUp page). */
+const inviteUrl = (token) => `${window.location.origin}/signup?token=${encodeURIComponent(token)}`
 
 /**
  * Admin people management: add an employee (assigning their manager, which is
@@ -49,6 +50,10 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
   const [saving, setSaving] = useState(false)
   const [busyManagerId, setBusyManagerId] = useState(null)
   const [busyRoleId, setBusyRoleId] = useState(null)
+  const [busyInviteId, setBusyInviteId] = useState(null)
+  /** { name, url } — shows the copy-the-invite-link dialog after add/re-invite. */
+  const [inviteModal, setInviteModal] = useState(null)
+  const [inviteCopied, setInviteCopied] = useState(false)
 
   // Only managers/admins can be someone's "reports to" — an employee can't.
   const managerCandidates = useMemo(
@@ -63,10 +68,6 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
     else if (!EMAIL_RE.test(form.email.trim())) e.email = 'That doesn’t look like a valid email.'
     else if (people.some((p) => p.email?.toLowerCase() === form.email.trim().toLowerCase())) {
       e.email = 'Someone already uses that email.'
-    }
-    if (!form.password) e.password = 'Set a temporary password.'
-    else if (form.password.length < MIN_PASSWORD) {
-      e.password = `Use at least ${MIN_PASSWORD} characters.`
     }
     return e
   }, [form, people])
@@ -94,7 +95,7 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
     setSubmitError('')
     setTouched((t) => ({ ...t, _submitted: true }))
     if (!isValid) {
-      const firstBad = ['name', 'email', 'password'].find((f) => errors[f])
+      const firstBad = ['name', 'email'].find((f) => errors[f])
       document.getElementById(`emp-${firstBad}`)?.focus()
       return
     }
@@ -112,9 +113,11 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
       setForm(BLANK)
       setTouched({})
       haptic('success')
-      toast.success(
-        `${created.name} added${managerName ? `, reporting to ${managerName}` : ''}.`,
-      )
+      toast.success(`Invite sent — ${created.name} can now register.`)
+      // The raw token exists only in this response — hand the admin the link
+      // to share right away (a fresh one can be issued from the roster later).
+      setInviteCopied(false)
+      setInviteModal({ name: created.name, url: inviteUrl(created.inviteToken) })
     } catch (err) {
       setSubmitError(err.message)
       toast.error(err.message)
@@ -144,6 +147,35 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
       toast.error(`Couldn't change role — ${err.message}`)
     } finally {
       setBusyRoleId(null)
+    }
+  }
+
+  /**
+   * Fresh invite link for a pending account — the original token is shown
+   * only once at creation, so this is how a lost/expired link is replaced.
+   * The server refuses it for accounts that already registered.
+   */
+  async function resendInvite(person) {
+    setBusyInviteId(person.id)
+    haptic('light')
+    try {
+      const { inviteToken } = await employeesApi.reinvite(person.id)
+      setInviteCopied(false)
+      setInviteModal({ name: person.name, url: inviteUrl(inviteToken) })
+    } catch (err) {
+      toast.error(`Couldn't create an invite link — ${err.message}`)
+    } finally {
+      setBusyInviteId(null)
+    }
+  }
+
+  async function copyInviteLink() {
+    try {
+      await navigator.clipboard.writeText(inviteModal.url)
+      setInviteCopied(true)
+      haptic('success')
+    } catch {
+      toast.error('Couldn’t copy automatically — select the link and copy it manually.')
     }
   }
 
@@ -212,26 +244,6 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
 
           <div className="field-row">
             <div className="field">
-              <label htmlFor="emp-password">Temporary password</label>
-              <input
-                id="emp-password"
-                type="text"
-                value={form.password}
-                onChange={(e) => update('password', e.target.value)}
-                onBlur={() => markTouched('password')}
-                aria-invalid={Boolean(showError('password'))}
-                aria-describedby={showError('password') ? 'err-password' : 'hint-password'}
-                placeholder={`At least ${MIN_PASSWORD} characters`}
-              />
-              {showError('password') ? (
-                <p className="field-error" id="err-password">{errors.password}</p>
-              ) : (
-                <p className="field-hint" id="hint-password">
-                  Share it securely — they should change it after signing in.
-                </p>
-              )}
-            </div>
-            <div className="field">
               <label htmlFor="emp-role">Role</label>
               <select id="emp-role" value={form.role} onChange={(e) => update('role', e.target.value)}>
                 <option value="employee">Employee</option>
@@ -244,6 +256,13 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
                   : form.role === 'manager'
                     ? 'Managers can approve leave for their direct reports.'
                     : 'Employees can log attendance and apply for leave.'}
+              </p>
+            </div>
+            <div className="field">
+              <label>Password</label>
+              <p className="field-hint" style={{ marginTop: 8 }}>
+                No password needed — adding someone sends an invite, and they set their own
+                password when they register through the invite link.
               </p>
             </div>
           </div>
@@ -351,6 +370,7 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
               <thead>
                 <tr>
                   <th>Name</th>
+                  <th>Status</th>
                   <th>Role</th>
                   <th>Employment type</th>
                   <th>Department</th>
@@ -374,6 +394,24 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
                           <em>{p.designation || '—'}</em>
                         </div>
                       </button>
+                    </td>
+                    <td>
+                      {p.status === 'invited' ? (
+                        <div className="invite-cell">
+                          <span className="status-pill invited">Invite sent</span>
+                          <button
+                            type="button"
+                            className="btn-tactile ghost sm"
+                            disabled={busyInviteId === p.id}
+                            onClick={() => resendInvite(p)}
+                            title={`Get a fresh invite link for ${p.name}`}
+                          >
+                            {busyInviteId === p.id ? 'Creating…' : 'Invite link'}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="status-pill active">Active</span>
+                      )}
                     </td>
                     <td>
                       {p.id === currentUser?.id ? (
@@ -428,6 +466,36 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
           </div>
         )}
       </section>
+
+      {/* Share-the-invite-link dialog — the only place the raw link appears. */}
+      {inviteModal && (
+        <Modal titleId="invite-link-title" onClose={() => setInviteModal(null)}>
+          <div className="modal__head">
+            <h2 id="invite-link-title">Invite {inviteModal.name}</h2>
+            <button className="icon-btn sm" onClick={() => setInviteModal(null)} aria-label="Close dialog">
+              <Icon name="x" size={16} />
+            </button>
+          </div>
+          <p className="field-hint" style={{ marginBottom: 12 }}>
+            Share this link with {inviteModal.name} (email, chat — whatever you use). They’ll
+            set their own password and finish registering. The link works once and expires in
+            7 days; you can issue a new one anytime from the roster.
+          </p>
+          <div className="field">
+            <label htmlFor="invite-link">Invite link</label>
+            <input id="invite-link" readOnly value={inviteModal.url} onFocus={(e) => e.target.select()} />
+          </div>
+          <div className="modal__actions">
+            <button type="button" className="btn-tactile ghost" onClick={() => setInviteModal(null)}>
+              Done
+            </button>
+            <button type="button" className="btn-tactile primary" onClick={copyInviteLink}>
+              <Icon name={inviteCopied ? 'check' : 'fileText'} size={16} />
+              {inviteCopied ? 'Copied!' : 'Copy link'}
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

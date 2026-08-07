@@ -1,7 +1,7 @@
 /**
  * Fetch wrapper for the HRMS API. Calls go to /api/* which Vite proxies to the
- * Express backend in dev (see vite.config.js) and which Vercel routes to the
- * serverless function in production.
+ * Express backend in dev (see vite.config.js) and which the frontend host
+ * rewrites to the long-running backend in production (see vercel.json).
  *
  * Error philosophy:
  *  - Every failure surfaces as an ApiError with a message a *user* can act on.

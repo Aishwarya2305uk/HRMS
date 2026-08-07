@@ -29,11 +29,21 @@ export const employees = {
   orgTree: () => apiFetch('/employees/org-tree'),
   list: () => apiFetch('/employees'),
   add: (body) => apiFetch('/employees', { method: 'POST', body }),
+  /** Fresh invite link for a still-pending account (admin only). */
+  reinvite: (id) => apiFetch(`/employees/${id}/invite`, { method: 'POST' }),
   setManager: (id, managerId) =>
     apiFetch(`/employees/${id}/manager`, { method: 'PATCH', body: { managerId } }),
   setRole: (id, role) => apiFetch(`/employees/${id}/role`, { method: 'PATCH', body: { role } }),
   profile: (id) => apiFetch(`/employees/${id}/profile`),
   updateProfile: (id, body) => apiFetch(`/employees/${id}/profile`, { method: 'PATCH', body }),
+}
+
+/** Invite-only registration (public, no auth): the sign-up page resolves the
+ *  invite token to a pending account, then completes it with a password. */
+export const invites = {
+  lookup: (token) =>
+    apiFetch(`/auth/invite?token=${encodeURIComponent(token)}`, { auth: false }),
+  register: (body) => apiFetch('/auth/register', { method: 'POST', body, auth: false }),
 }
 
 /** Documents on an employee's HR file. Visibility (self / direct manager /

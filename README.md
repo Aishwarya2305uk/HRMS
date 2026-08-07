@@ -49,46 +49,47 @@ npm run dev:all         # API on :4000 + Vite on :5173, against DATABASE_URL
 Open http://localhost:5173 (staff) or http://localhost:5173/admin.
 
 `node server/jobs/finalize.js` runs the end-of-day attendance finalizer (also
-applied lazily on read, so it's optional on serverless).
+applied lazily on read, so no scheduler is required for correctness).
 
-## Deploying to Vercel (frontend + API together — no separate backend)
+## Deploying (frontend + backend, no serverless)
 
-The whole app deploys as one Vercel project: the React build is served
-statically and the Express API runs as a single serverless function
-(`api/[...path].js` catches every `/api/*` request). No other backend to host.
+Two pieces: the React build served statically (Vercel) and ONE long-running
+Express server (Render) that every user talks to — so an action saved by one
+person is immediately visible to everyone.
 
-1. **Push to GitHub and import the repo in Vercel.** The build settings come
-   from [vercel.json](vercel.json) (build → `dist`, API function, SPA rewrites).
-2. **Add environment variables** (Project → Settings → Environment Variables):
+1. **Backend on Render** — point a Blueprint at this repo;
+   [render.yaml](render.yaml) creates the `hrms-api` web service running
+   `npm run server`. Fill in the env vars when prompted:
 
    | Variable         | Required | Notes                                                |
    | ---------------- | -------- | ----------------------------------------------------- |
-   | `DATABASE_URL`   | ✅       | Supabase Postgres connection string (transaction pooler, port 6543, for serverless) |
-   | `JWT_SECRET`     | ✅       | long random string                                    |
+   | `DATABASE_URL`   | ✅       | Supabase Postgres connection string (session pooler)  |
+   | `JWT_SECRET`     | ✅       | long random string (32+ chars — enforced in production) |
    | `JWT_EXPIRES_IN` | –        | defaults to `7d`                                      |
    | `ADMIN_EMAIL`    | ✅       | creates the one initial admin account                 |
    | `ADMIN_PASSWORD` | ✅       | at least 8 characters                                  |
    | `ADMIN_NAME`     | –        | defaults to "Administrator"                            |
-   | `CRON_SECRET`    | –        | if set, protects the daily finalizer cron endpoint     |
+   | `CORS_ORIGINS`   | rec.     | your frontend origin(s), comma-separated              |
+   | `CRON_SECRET`    | –        | if set, protects the finalizer cron endpoint           |
+   | `TURNSTILE_SECRET_KEY` | –  | Cloudflare Turnstile secret (CAPTCHA off if unset)     |
 
    Supabase's connection pooler accepts connections from anywhere by default —
    no IP allowlist step needed.
-3. **First deploy provisions itself.** The very first request that connects
-   to the database creates the `ADMIN_EMAIL` / `ADMIN_PASSWORD` admin
-   automatically (see `server/bootstrapAdmin.js`) — nothing to run by hand.
-   Sign in at `/admin` and add real people from the admin console. The env
-   vars only matter for that first creation; changing `ADMIN_PASSWORD`
-   afterwards does **not** reset the account — change the password from
-   inside the app instead.
+2. **Frontend on Vercel** — import the repo; [vercel.json](vercel.json)
+   proxies `/api/*` to the Render URL and rewrites everything else to the SPA.
+   Set `VITE_TURNSTILE_SITE_KEY` in Vercel env if using the CAPTCHA.
+3. **First boot provisions itself.** The server's first database connection
+   creates the schema (and migrates existing databases), then the
+   `ADMIN_EMAIL` / `ADMIN_PASSWORD` admin (see `server/bootstrapAdmin.js`) —
+   nothing to run by hand. Sign in and add real people from the People
+   screen; everyone else joins through their invite link. The env vars only
+   matter for that first creation; changing `ADMIN_PASSWORD` afterwards does
+   **not** reset the account — change the password from inside the app.
 
-**End-of-day finalizer on Vercel:** [vercel.json](vercel.json) registers a daily
-cron (`00:05 UTC`) hitting `/api/cron/finalize`. Attendance is *also* finalized
-lazily whenever data is read, so the app stays correct even between cron runs.
-
-> The API is designed to run both ways from the same code: a long-running
-> Express server locally and a serverless function on Vercel. Body parsing
-> adapts automatically (see `smartJson` in `server/app.js`) so POSTs work in
-> both environments.
+**End-of-day finalizer:** attendance finalizes lazily whenever data is read,
+so no scheduler is required. For punctual midnight closes, point any free
+scheduler (GitHub Actions, cron-job.org) at `GET /api/cron/finalize` with
+`Authorization: Bearer $CRON_SECRET`.
 
 ## Layout
 

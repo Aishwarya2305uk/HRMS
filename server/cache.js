@@ -3,10 +3,10 @@ import { q } from './db.js'
 /**
  * Tiny TTL'd read-through cache for hot REFERENCE data only (leave types,
  * employment types, app settings). Supabase is always the source of truth:
- * every mutating route calls invalidate() for its key so the next read
- * refetches, and entries expire after TTL_MS regardless — the bound that
- * matters on serverless, where each warm instance has its own cache and
- * can't see another instance's invalidation.
+ * every mutating route calls invalidate() for its key, and because ONE
+ * long-running server owns this cache, the very next read — from any user —
+ * refetches fresh data. The TTL is just a belt-and-braces bound in case a
+ * future write path forgets to invalidate.
  *
  * Deliberately NEVER used for per-user rows, authorization data, or
  * write-path validation reads — those always go to Postgres.

@@ -37,11 +37,11 @@ file to match, the same rule DESIGN.md applies to itself.
 | Layer     | Choice                                   | Notes |
 | --------- | ----------------------------------------- | ----- |
 | Frontend  | React 19 + Vite 8                         | No UI framework — hand-rolled CSS per page/component, no Tailwind/MUI/etc. |
-| Routing   | react-router-dom 7                        | 3 routes total (see [App shell & routing](#app-shell--routing)) |
-| Backend   | Express 5                                 | Shared app used by both a long-running server and a serverless function |
+| Routing   | react-router-dom 7                        | 4 routes total (see [App shell & routing](#app-shell--routing)) |
+| Backend   | Express 5                                 | ONE long-running server (`npm run server`) — no serverless functions |
 | Database  | Supabase Postgres via `pg`                | One database (`postgres`), 9 tables |
 | Auth      | jsonwebtoken + bcryptjs                   | Stateless JWT bearer tokens; no session store |
-| Bot check | Google reCAPTCHA v2 (checkbox)            | Optional — both sides no-op when unconfigured |
+| Bot check | Cloudflare Turnstile                      | Optional — both sides no-op when unconfigured |
 | Lint      | oxlint                                    | No test suite currently exists in the repo |
 
 All exact versions are in [package.json](package.json).
@@ -68,13 +68,12 @@ server/
     hierarchy.js         # ancestorChain(), descendantIds() — the two org-tree walks
   utils/time.js          # UTC day-key helpers shared by attendance + leave calendar
 
-api/[...path].js       # Vercel serverless entry — wraps createApp() for /api/* on Vercel
-
 src/
   main.jsx              # app bootstrap: ErrorBoundary > Router > ToastProvider > AuthProvider
-  App.jsx                # 3 routes: "/" (Login), "/dashboard", "/admin/dashboard"
+  App.jsx                # 4 routes: "/" (Login), "/signup", "/dashboard", "/admin/dashboard"
   pages/
     Login.jsx            # public sign-in page (brand panel + LoginForm)
+    SignUp.jsx           # invite-only registration (completes an admin-created account)
     Portal.jsx            # the ONE role-aware dashboard shell (~620 lines) — see "Portal.jsx shell pattern"
   context/
     AuthContext.jsx      # session state: login/logout/refreshUser, session restore, 401 handling
@@ -95,53 +94,45 @@ src/
 ## Runtime model
 
 The Express app is built exactly once by `createApp()` in
-[server/app.js](server/app.js) and reused by two different entry points:
+[server/app.js](server/app.js) and served by ONE entry point:
 
 - **`server/index.js`** — a long-running Node process (`npm run server`).
-  Calls `connectDB()` once, then `app.listen(PORT)`.
-- **`api/[...path].js`** — a Vercel serverless function. Every `/api/*`
-  request lands here (the `[...path]` filename makes it a catch-all). It
-  normalizes `req.url` to always carry an `/api` prefix (platforms differ on
-  whether the catch-all segment includes it), calls `connectDB()`, then hands
-  the request to the same `app` instance.
+  Calls `connectDB()` once, then `app.listen(PORT)`. This is the whole
+  backend, in dev and in production (Render). There is no serverless
+  function — the previous Vercel `/api` function was removed so every
+  request, everywhere, hits the same single server.
 
-Two details make this dual-mode setup work:
+Because one process serves everyone, writes are immediately visible to all
+users:
 
-- **Body parsing (`smartJson` in app.js)** — on Vercel the platform's Node
-  runtime may have already parsed the body into `req.body` before the
-  handler runs; running `express.json()` again would read an
-  already-consumed stream and clobber `req.body` with `{}`. `smartJson()`
-  only runs `express.json({ limit: '2mb' })` when `req.body` is still
-  `undefined`/`null`. The 2mb limit (vs. Express's 100kb default) exists to
-  fit a compressed profile-photo data URL.
+- **Every action writes straight to Postgres** — routes `insert`/`update`
+  on the request itself (no queues, no write-behind), and multi-step writes
+  (e.g. leave approval's deduct-then-flip) run inside a `tx()` transaction,
+  so readers can never observe a half-applied action.
 - **Reference-data cache (`server/cache.js`)** — leave types, employment
-  types, and app settings are served through a 30-second TTL read-through
-  cache; every mutating route invalidates its key immediately, so same-
-  process reads are never stale and other serverless instances catch up
-  within the TTL. Supabase is always the source of truth — per-user rows,
+  types, and app settings are served through a small read-through cache;
+  every mutating route invalidates its key immediately, and since the single
+  server owns the only cache, the very next read — from any user — is
+  fresh. The 30s TTL is only a backstop in case a future write path forgets
+  to invalidate. Supabase is always the source of truth — per-user rows,
   authorization checks, and write-path validation reads are never cached.
-- **DB connection caching (`server/db.js`)** — the pg Pool is cached on
-  `globalThis` (not a module-local variable), so it survives module
-  re-evaluation across warm serverless invocations. `max: 5` keeps the pool
-  small since serverless can spawn many isolated instances hitting the same
-  Supabase pooler. The bootstrap calls run exactly once per process (later
-  connectDB() calls await the same promise), so they're safe on both cold
-  starts and the long-running server.
-CORS is wide open: `app.use(cors())` with no options allow-lists every
-origin (the `cors` package's default). There is no rate limiting anywhere in
-the server.
+- **DB pool (`server/db.js`)** — one shared pg Pool (`max: 10`) for the
+  process, cached on `globalThis` so watch-mode module re-evaluation can't
+  open a second pool. The bootstrap calls run exactly once per process
+  (later connectDB() calls await the same promise).
 
 ---
 
 ## Authentication & session lifecycle
 
 **Login (`POST /api/auth/login`):**
-1. reCAPTCHA is checked *before* touching the database — a failed challenge
-   never costs a bcrypt comparison or reveals whether the email exists.
-   `verifyCaptcha()` returns `true` unconditionally if `RECAPTCHA_SECRET_KEY`
-   isn't set (fail-open when unconfigured); once configured, it fails
-   **closed** — a missing token, a Google "not verified" response, or even a
-   network error calling Google all reject the login.
+1. The CAPTCHA (Cloudflare Turnstile) is checked *before* touching the
+   database — a failed challenge never costs a bcrypt comparison or reveals
+   whether the email exists. `verifyCaptcha()` returns `true` unconditionally
+   if `TURNSTILE_SECRET_KEY` isn't set (fail-open when unconfigured); once
+   configured, it fails **closed** — a missing token, a Cloudflare "not
+   verified" response, or even a network error calling Cloudflare all reject
+   the login.
 2. The user is looked up by lowercased/trimmed email; `bcrypt.compare`
    checks the password. **Wrong email and wrong password return the exact
    same message** (`Invalid email or password.`) — no user enumeration.
@@ -311,7 +302,7 @@ the `timerState` the UI renders (`out | running | paused | done`).
 
 ### End-of-day finalization
 
-There is no always-on scheduler in serverless, so finalization happens
+Rather than depend on a scheduler being configured, finalization happens
 **lazily on read**: `finalizeStaleSessions(userId?)`
 (server/services/attendance.js) finds every `status: 'active'` session with
 `date < today` (scoped to one user, or company-wide when called with no
@@ -893,14 +884,15 @@ Two components worth calling out specifically:
   from `GET /attendance/today` rather than trusting any client-held counter.
   A ref (not a dependency) holds the latest `onChange` callback specifically
   to avoid an infinite fetch loop from the parent re-rendering every tick.
-- **`Recaptcha.jsx`** — renders nothing when `VITE_RECAPTCHA_SITE_KEY` isn't
-  set at build time (mirrors the backend's matching skip). Uses Google's
-  `render=explicit` + `onload=<callback>` pattern rather than calling
-  `grecaptcha.render` right after the script's own `load` event, because
-  `grecaptcha.render` isn't actually attached until Google's own async setup
-  finishes. Exposes an imperative `reset()` via `ref` because a completed
-  token is single-use — a failed login must reset the widget before the
-  user can complete it again.
+- **`Turnstile.jsx`** — Cloudflare Turnstile widget (replaced Google
+  reCAPTCHA, whose verification kept failing on the live deployment).
+  Renders nothing when `VITE_TURNSTILE_SITE_KEY` isn't set at build time
+  (mirrors the backend's matching skip). Uses the `render=explicit` +
+  `onload=<callback>` pattern rather than calling `turnstile.render` right
+  after the script's own `load` event, so the widget only renders once the
+  API is fully ready. Exposes an imperative `reset()` via `ref` because a
+  completed token is single-use — a failed login must reset the widget
+  before the user can complete it again.
 
 Styling is plain CSS per page/component (`Portal.css`, `Auth.css`,
 `EmployeeDashboard.css`, etc.) — no Tailwind, no CSS-in-JS, no component
@@ -924,8 +916,8 @@ See [.env.example](.env.example) for the template.
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | ✅ (for bootstrap) | — | no admin account is ever created; app has no way in |
 | `ADMIN_NAME` | – | `'Administrator'` | — |
 | `CRON_SECRET` | – | — | `/api/cron/finalize` accepts requests from anyone |
-| `RECAPTCHA_SECRET_KEY` | – | — | login skips CAPTCHA verification server-side entirely |
-| `VITE_RECAPTCHA_SITE_KEY` | – | — | the widget never renders client-side (build-time var) |
+| `TURNSTILE_SECRET_KEY` | – | — | login skips CAPTCHA verification server-side entirely |
+| `VITE_TURNSTILE_SITE_KEY` | – | — | the widget never renders client-side (build-time var) |
 
 Notes:
 - `ADMIN_PASSWORD` must be ≥ 8 characters and `ADMIN_EMAIL` must pass a
@@ -934,9 +926,12 @@ Notes:
 - Changing `ADMIN_EMAIL`/`ADMIN_PASSWORD` after the admin already exists
   does **not** reset it — the bootstrap only ever fires when no matching
   account exists yet.
-- `VITE_RECAPTCHA_SITE_KEY` and `RECAPTCHA_SECRET_KEY` are independent
+- `VITE_TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are independent
   toggles that happen to mirror each other — set both to turn CAPTCHA on,
-  or leave both blank to skip it everywhere.
+  or leave both blank to skip it everywhere. The Turnstile widget must list
+  every hostname it runs on (localhost AND the deployed domain) in the
+  Cloudflare dashboard, or verification fails only in the missing
+  environment.
 
 ---
 
@@ -965,40 +960,32 @@ the API's port and break that proxy.
 
 ## Deployment
 
-The repo supports being deployed as a single self-contained Vercel project:
-`api/[...path].js` is a catch-all serverless function wrapping the same
-`createApp()` used locally, so the whole app (static build + API) can live
-in one Vercel project with no separate backend to host.
+Two pieces, cleanly split — a static frontend and ONE long-running backend
+(the serverless function that used to live at `api/[...path].js` has been
+removed):
 
-**However, the currently committed [vercel.json](vercel.json) does not use
-that path.** It only declares:
+- **Backend — Render** ([render.yaml](render.yaml)): a `web` service running
+  `npm run server`. This single process serves every user, so a write from
+  one person is immediately visible to everyone else (see "Runtime model").
+  The database schema migrates itself on boot (`ensureSchema`).
+- **Frontend — Vercel** ([vercel.json](vercel.json)): the static Vite build,
+  plus two rewrites — `/api/*` proxies to the Render backend, everything
+  else falls back to `/index.html` for the SPA:
 
 ```jsonc
 {
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "https://hrms-backend-7rnx.onrender.com/api/$1" },
+    { "source": "/api/(.*)", "destination": "https://hrms-api-zc24.onrender.com/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
 ```
 
-Concretely, as currently configured:
-- Every `/api/*` request is proxied to an **externally-hosted** backend on
-  Render, not routed to `api/[...path].js`. That serverless function still
-  exists in the repo and works if invoked directly, but production traffic
-  per this file does not reach it.
-- There is no `crons` entry, so the daily Vercel-cron finalizer described in
-  README.md/DESIGN.md is not currently registered. The lazy on-read
-  finalization (`finalizeStaleSessions`, called from every attendance/leave
-  read handler) is what keeps attendance data correct in cron's absence —
-  the app doesn't depend on the cron firing.
-- Everything else (non-`/api` paths) falls back to `/index.html` for the SPA, as expected.
-
-If the intent is the single-Vercel-project model the other docs describe,
-`vercel.json` would need a `functions`/rewrite entry pointing `/api/*` at
-`api/[...path].js` instead of the Render URL, plus a `crons` entry for
-`/api/cron/finalize`. Treat `vercel.json` itself as the source of truth if
-this section and the file's actual contents ever disagree again.
+There is no cron registered anywhere. The lazy on-read finalization
+(`finalizeStaleSessions`, called from every attendance/leave read handler)
+keeps attendance data correct without one; an external scheduler can still
+hit `GET /api/cron/finalize` (with `CRON_SECRET`) for punctual midnight
+closes.
 
 ---
 

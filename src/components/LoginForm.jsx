@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Icon from './Icon'
-import Recaptcha from './Recaptcha'
+import Turnstile from './Turnstile'
 
 /** Login card used by the single sign-in page, shared by every role. */
 const ROLE_HOME = { admin: '/admin/dashboard' }
@@ -10,7 +10,7 @@ const ROLE_HOME = { admin: '/admin/dashboard' }
 // Mirrors the backend's "unconfigured -> skip" policy (see
 // server/routes/auth.js's verifyCaptcha): with no site key built in, the
 // widget never renders and the form never blocks on it.
-const REQUIRE_CAPTCHA = Boolean(import.meta.env.VITE_RECAPTCHA_SITE_KEY)
+const REQUIRE_CAPTCHA = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY)
 
 export default function LoginForm() {
   const { login, notice, clearNotice } = useAuth()
@@ -52,7 +52,7 @@ export default function LoginForm() {
     setSubmitting(false)
 
     if (!result.ok) {
-      // A reCAPTCHA token is single-use — whatever failed, the widget needs
+      // A Turnstile token is single-use — whatever failed, the widget needs
       // to be completed again before the next attempt.
       captchaRef.current?.reset()
       setCaptchaToken(null)
@@ -136,7 +136,7 @@ export default function LoginForm() {
         </div>
 
         {REQUIRE_CAPTCHA && (
-          <Recaptcha ref={captchaRef} onChange={setCaptchaToken} onError={setError} />
+          <Turnstile ref={captchaRef} onChange={setCaptchaToken} onError={setError} />
         )}
 
         <button
@@ -147,6 +147,12 @@ export default function LoginForm() {
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
+
+      {/* Invited-but-not-yet-registered people land here first — point them
+          at the registration page instead of a dead-end login error. */}
+      <p className="auth-card__switch">
+        New here? <Link to="/signup">Register with your invite</Link>
+      </p>
     </div>
   )
 }

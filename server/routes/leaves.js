@@ -43,6 +43,10 @@ function parseWhen(body) {
   if (endKey < startKey) {
     return { error: 'End date cannot be before the start date.' }
   }
+  const year = String(new Date().getFullYear())
+  if (!startKey.startsWith(year) || !endKey.startsWith(year)) {
+    return { error: 'Requests can only be made for dates within the current year.' }
+  }
   if (dayPart !== 'full' && startKey !== endKey) {
     return { error: 'Half-day requests must start and end on the same day.' }
   }
@@ -97,6 +101,10 @@ function parseCustomWhen(body) {
   const unique = [...new Set(keys)]
   if (unique.length > MAX_CUSTOM_DATES) {
     return { error: `Pick at most ${MAX_CUSTOM_DATES} dates per request.` }
+  }
+  const year = String(new Date().getFullYear())
+  if (unique.some((k) => !k.startsWith(year))) {
+    return { error: 'Requests can only be made for dates within the current year.' }
   }
   if (dayPart !== 'full' && unique.length > 1) {
     return { error: 'Half days can only cover a single date.' }

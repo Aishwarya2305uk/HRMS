@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Orbit — HRMS by Trula · Your whole workforce, in one orbit</title>
+<meta name="description" content="Orbit is Trula's HR management system — attendance, leave, work-from-home, approvals, announcements, people directory and org chart in one role-aware workspace." />
+<meta property="og:title" content="Orbit — HRMS by Trula" />
+<meta property="og:description" content="Attendance, leave, WFH, approvals, announcements, people and your org chart — every HR essential in a single, role-aware workspace." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://orbit.trula.ai/" />
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div id="progress" aria-hidden="true"></div>
+
+<!-- ================= HEADER ================= -->
+<header class="site-header" id="siteHeader">
+  <a class="brand" href="#top" aria-label="Orbit — back to top">
+    <span class="brand-mark" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 36 36"><path d="M18 9 27 18 18 27 9 18Z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M18 14 22 18 18 22 14 18Z" fill="currentColor"/></svg>
+    </span>
+    <span class="brand-word"><strong>ORBIT</strong><em>by Trula.ai</em></span>
+  </a>
+  <nav class="site-nav" aria-label="Page sections">
+    <a href="#features">Features</a>
+    <a href="#roles">Roles</a>
+    <a href="#how">How it works</a>
+    <a href="#try">Try it</a>
+    <a href="#inside">Inside Orbit</a>
+    <a href="#faq">FAQ</a>
+  </nav>
+  <div class="header-actions">
+    <button id="themeToggle" type="button" aria-label="Toggle dark mode">🌙</button>
+    <a class="btn ghost sm" href="#" data-signin>Sign in</a>
+    <a class="btn primary sm" href="#get-started">Request access</a>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ================= HERO ================= -->
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">HR management system</p>
+      <h1>Your whole workforce,<br />in one <span class="accent">orbit</span>.</h1>
+      <p class="hero-sub">
+        Attendance, leave, work-from-home, approvals, announcements, people and your
+        org chart — every HR essential in a single, role-aware workspace for
+        employees, managers and admins.
+      </p>
+      <div class="hero-cta">
+        <a class="btn primary lg" href="#get-started">Request access</a>
+        <a class="btn ghost lg" href="#features">Explore the features</a>
+      </div>
+      <ul class="hero-stats" aria-label="At a glance">
+        <li><strong><span class="count" data-to="12">0</span>+</strong><span>modules included</span></li>
+        <li><strong><span class="count" data-to="3">0</span></strong><span>role-aware workspaces</span></li>
+        <li><strong><span class="count" data-to="10">0</span></strong><span>color themes</span></li>
+        <li><strong>1</strong><span>place for your people</span></li>
+      </ul>
+    </div>
+
+    <!-- Floating product-flavored cards — decorative -->
+    <div class="hero-visual" aria-hidden="true">
+      <div class="hero-card f1">
+        <span class="hc-icon blue">⏱</span>
+        <div><strong>Checked in</strong><em>09:02 · Have a great day!</em></div>
+      </div>
+      <div class="hero-card f2">
+        <span class="hc-icon green">✓</span>
+        <div><strong>Leave approved</strong><em>Dec 24 – Dec 26 · Earned</em></div>
+      </div>
+      <div class="hero-card f3">
+        <span class="hc-icon amber">📣</span>
+        <div><strong>New announcement</strong><em>Town hall this Friday, 4pm</em></div>
+      </div>
+      <div class="hero-card f4 bars-card">
+        <strong>Leave balance</strong>
+        <div class="hc-bars">
+          <span style="--w:80%">Sick</span>
+          <span style="--w:60%">Casual</span>
+          <span style="--w:90%">Earned</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FEATURES ================= -->
+  <section class="section" id="features">
+    <div class="section-head reveal">
+      <p class="eyebrow">Everything included</p>
+      <h2>One system, every HR essential</h2>
+      <p class="section-sub">No add-ons, no modules to buy — every part of Orbit ships together and works together.</p>
+    </div>
+
+    <input id="featureFilter" type="search" class="reveal"
+           placeholder="Filter the modules… (try “leave”, “org”, “timer”)"
+           aria-label="Filter the feature cards below" />
+
+    <div class="grid" id="featureGrid">
+      <article class="card feature reveal"><span class="tile blue">⏱</span><h3>Attendance tracking</h3>
+        <p>A check-in timer records your day from server-side events — check in, pause for breaks, resume, check out. It survives refreshes and re-logins because time is always computed on the server.</p></article>
+      <article class="card feature reveal"><span class="tile green">🌿</span><h3>Leave management</h3>
+        <p>Sick, casual and earned leave with live balances. Full days, half days, date ranges or hand-picked custom dates — balances are deducted only on approval, never at submit time.</p></article>
+      <article class="card feature reveal"><span class="tile blue">🏠</span><h3>Work from home</h3>
+        <p>A location change, not time off — WFH never touches leave balances. The approval flow is identical to leave, and a reason is required so the manager has context.</p></article>
+      <article class="card feature reveal"><span class="tile green">✅</span><h3>Approvals</h3>
+        <p>Managers get a live queue of pending leave and WFH from their direct reports, with identity, dates and balance context on every card — approve or reject with an optional comment.</p></article>
+      <article class="card feature reveal"><span class="tile amber">📣</span><h3>Announcements</h3>
+        <p>Company-wide, per role, to a reporting subtree, or to custom teams — with read tracking on everything sent. The server validates the audience on every send.</p></article>
+      <article class="card feature reveal"><span class="tile blue">🔔</span><h3>Notifications</h3>
+        <p>A dedicated notifications page plus a quick-glance bell drawer, with unread badges in the sidebar. Pending work and received announcements land in one feed.</p></article>
+      <article class="card feature reveal"><span class="tile green">👥</span><h3>People directory</h3>
+        <p>Search every employee with designation, department, manager and photo. Admins onboard people, set roles and reassign managers right from the roster.</p></article>
+      <article class="card feature reveal"><span class="tile red">🏢</span><h3>Organization tree</h3>
+        <p>Built purely from who reports to whom and updated the moment someone is added or reassigned. Nodes show live presence — online, idle or offline — from today's timer activity.</p></article>
+      <article class="card feature reveal"><span class="tile amber">📅</span><h3>Shared calendar</h3>
+        <p>Approved leave and WFH plotted month by month, so anyone can see team availability at a glance and scheduling around absences is never a surprise.</p></article>
+      <article class="card feature reveal"><span class="tile blue">⚙️</span><h3>Leave policies</h3>
+        <p>Admins manage leave types, annual quotas and employment types on a dedicated page; balances update everywhere the moment a policy or approval changes.</p></article>
+      <article class="card feature reveal"><span class="tile green">📊</span><h3>Attendance analytics</h3>
+        <p>Personal KPIs, streaks, weekly charts and a 90-day heatmap — plus company-wide attendance and leave views for admins, month by month.</p></article>
+      <article class="card feature reveal"><span class="tile red">🛡️</span><h3>Role-based access</h3>
+        <p>Employee, manager and admin each get exactly the workspace they need — every permission is enforced on the server, not just hidden in the UI.</p></article>
+    </div>
+    <p id="noFeatureMatch">No module matches that — try “leave”, “timer”, “org”, “announce”…</p>
+  </section>
+
+  <!-- ================= ROLES ================= -->
+  <section class="section tint" id="roles">
+    <div class="section-head reveal">
+      <p class="eyebrow">Role-aware by design</p>
+      <h2>The right workspace for every role</h2>
+      <p class="section-sub">One sign-in for everyone — Orbit shapes itself around who you are. Every capability stacks on the previous role's.</p>
+    </div>
+
+    <div class="tabs reveal" role="tablist" aria-label="Choose a role">
+      <button role="tab" id="tab-emp" aria-selected="true" aria-controls="panel-emp">👤 Employee</button>
+      <button role="tab" id="tab-mgr" aria-selected="false" aria-controls="panel-mgr">✅ Manager</button>
+      <button role="tab" id="tab-adm" aria-selected="false" aria-controls="panel-adm">⚙️ Admin</button>
+    </div>
+
+    <div class="role-panel active" id="panel-emp" role="tabpanel" aria-labelledby="tab-emp">
+      <div class="card role emp">
+        <p class="who">Everyone</p>
+        <h3>Employee — your day, self-served</h3>
+        <ul>
+          <li>Check in / pause / resume / check out on the dashboard timer</li>
+          <li>Apply for leave and WFH; track <span class="pill a">Pending</span> <span class="pill g">Approved</span> <span class="pill r">Rejected</span></li>
+          <li>Live balance preview before submitting — the form warns when a request would overdraw it</li>
+          <li>Personal attendance history with daily verdicts and worked hours</li>
+          <li>Notifications feed, shared leave calendar, profile with photo and documents</li>
+          <li>Feedback &amp; HR Request forms one tap away in the sidebar</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="role-panel" id="panel-mgr" role="tabpanel" aria-labelledby="tab-mgr">
+      <div class="card role mgr">
+        <p class="who">+ Direct reports</p>
+        <h3>Manager — your team, in view</h3>
+        <ul>
+          <li>Everything an employee gets, plus:</li>
+          <li>Approvals queue for direct reports — approve or reject with a comment; balances re-checked at approval time</li>
+          <li>Live pending-approvals badge that updates as requests arrive</li>
+          <li>Compose announcements to their own reporting subtree</li>
+          <li>Create named teams (subsets of their subtree) for finer announcement targeting</li>
+          <li>Manage sent announcements and see who has read them</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="role-panel" id="panel-adm" role="tabpanel" aria-labelledby="tab-adm">
+      <div class="card role adm">
+        <p class="who">+ Whole company</p>
+        <h3>Admin — the whole org, under control</h3>
+        <ul>
+          <li>People roster: onboard employees with role, department, designation, joining date and manager</li>
+          <li>Reassign managers (cycle-safe) — this is what shapes the org tree</li>
+          <li>All leaves &amp; all attendance, company-wide, month by month</li>
+          <li>Leave Policies: manage leave types, annual quotas and employment types</li>
+          <li>Company-wide and per-role announcements</li>
+          <li>Org-wide settings, including Feedback / HR Request form links</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= HOW IT WORKS ================= -->
+  <section class="section" id="how">
+    <div class="section-head reveal">
+      <p class="eyebrow">How it works</p>
+      <h2>Up and running in four steps</h2>
+    </div>
+    <ol class="steps">
+      <li class="step reveal"><span class="step-num">1</span><h3>Admin sets up the org</h3><p>Add people, set designations and managers, define leave types and yearly quotas.</p></li>
+      <li class="step reveal"><span class="step-num">2</span><h3>Everyone checks in</h3><p>Employees mark attendance and file leave or WFH requests in seconds.</p></li>
+      <li class="step reveal"><span class="step-num">3</span><h3>Managers approve</h3><p>Requests land in the approvals queue with full context — one click to decide.</p></li>
+      <li class="step reveal"><span class="step-num">4</span><h3>Everything stays in sync</h3><p>Balances, calendars, notifications and records update instantly for every role.</p></li>
+    </ol>
+  </section>
+
+  <!-- ================= INTERACTIVE DEMOS ================= -->
+  <section class="section tint" id="try">
+    <div class="section-head reveal">
+      <p class="eyebrow">Hands on</p>
+      <h2>Try Orbit, right on this page</h2>
+      <p class="section-sub">Three live simulations of what's inside the product — no account needed.</p>
+    </div>
+
+    <!-- Attendance timer demo -->
+    <div class="demo reveal">
+      <h3>▶ A simulated workday</h3>
+      <p class="hint">Signing in never marks attendance — only the timer does. This demo runs at warp speed:
+        <b>1 real second = 12 simulated minutes</b>. Check in, take a break, check out — and watch the 8-hour verdict apply.</p>
+      <div class="demo-timer">
+        <span id="demoClock" aria-live="off">00:00</span>
+        <div class="btns">
+          <button type="button" class="btn primary sm" id="dCheckIn">Check in</button>
+          <button type="button" class="btn ghost sm" id="dPause" disabled>Pause</button>
+          <button type="button" class="btn ghost sm" id="dResume" disabled>Resume</button>
+          <button type="button" class="btn ghost sm" id="dCheckOut" disabled>Check out</button>
+          <button type="button" class="btn ghost sm" id="dReset" disabled>Reset</button>
+        </div>
+      </div>
+      <p id="demoVerdict" aria-live="polite"></p>
+      <div class="callout">
+        <b>The 8-hour rule:</b> when a day closes, ≥ 8 recorded hours marks it
+        <span class="pill g">Present</span>; anything less automatically becomes
+        <span class="pill a">Auto-leave</span>. Paused minutes never count, and a forgotten
+        check-out auto-closes at midnight with whatever was recorded.
+      </div>
+    </div>
+
+    <!-- Leave balance calculator -->
+    <div class="demo reveal">
+      <h3>▶ Leave balance preview</h3>
+      <p class="hint">The same live math the apply form shows before you submit (using the default quotas).</p>
+      <div class="calc">
+        <label>Leave type
+          <select id="calcType">
+            <option value="12" data-name="Casual Leave">Casual — 12 days/yr</option>
+            <option value="8" data-name="Sick Leave">Sick — 8 days/yr</option>
+            <option value="15" data-name="Earned Leave">Earned — 15 days/yr</option>
+          </select>
+        </label>
+        <label>Days already taken
+          <input id="calcTaken" type="number" min="0" max="31" value="4" />
+        </label>
+        <label>Days requested now
+          <input id="calcDays" type="number" min="0.5" max="31" step="0.5" value="3" />
+        </label>
+      </div>
+      <p id="calcOut" aria-live="polite"></p>
+      <div class="bar" aria-hidden="true"><i id="calcBar" style="width:0"></i></div>
+    </div>
+
+    <!-- Theme swatches -->
+    <div class="demo reveal">
+      <h3>▶ Make it yours — ten themes</h3>
+      <p class="hint">Every user picks their own workspace accent, remembered per account. Click one to recolor this page.</p>
+      <div class="swatches" id="swatches">
+        <button type="button" style="--sw:#2563eb" data-c="#2563eb" data-h="#1d4ed8" class="active"><i></i>Trust Blue</button>
+        <button type="button" style="--sw:#4f46e5" data-c="#4f46e5" data-h="#4338ca"><i></i>Indigo</button>
+        <button type="button" style="--sw:#7c3aed" data-c="#7c3aed" data-h="#6d28d9"><i></i>Violet</button>
+        <button type="button" style="--sw:#059669" data-c="#059669" data-h="#047857"><i></i>Emerald</button>
+        <button type="button" style="--sw:#0d9488" data-c="#0d9488" data-h="#0f766e"><i></i>Teal</button>
+        <button type="button" style="--sw:#0891b2" data-c="#0891b2" data-h="#0e7490"><i></i>Ocean</button>
+        <button type="button" style="--sw:#d97706" data-c="#d97706" data-h="#b45309"><i></i>Amber</button>
+        <button type="button" style="--sw:#e11d48" data-c="#e11d48" data-h="#be123c"><i></i>Rose</button>
+        <button type="button" style="--sw:#dc2626" data-c="#dc2626" data-h="#b91c1c"><i></i>Crimson</button>
+        <button type="button" style="--sw:#475569" data-c="#475569" data-h="#334155"><i></i>Slate</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LEAVE POLICY ================= -->
+  <section class="section" id="policy">
+    <div class="section-head reveal">
+      <p class="eyebrow">Leave &amp; WFH</p>
+      <h2>Sensible defaults, fully configurable</h2>
+    </div>
+    <div class="tbl-scroll reveal">
+      <table>
+        <tr><th>Type</th><th>Default annual quota</th><th>Notes</th></tr>
+        <tr><td>Casual Leave</td><td>12 days</td><td rowspan="3">Quotas are managed by the admin on the Leave Policies page. Balance is deducted <b>only on approval</b> and re-checked at approval time — parallel requests can never overdraw it.</td></tr>
+        <tr><td>Sick Leave</td><td>8 days</td></tr>
+        <tr><td>Earned Leave</td><td>15 days</td></tr>
+        <tr><td>Work from home</td><td>No quota</td><td>A location change, not time off — same approval flow, no balance touched. A reason is required.</td></tr>
+      </table>
+    </div>
+    <p class="section-sub wide reveal">
+      A request can be a full day, a first/second <b>half day</b>, a date range, or hand-picked
+      <b>custom dates</b> — up to 31 per request; consecutive picks are combined and separate
+      blocks are filed as separate requests so each can be decided independently. Requests are
+      open for any date from today to <b>December 31 of the current year</b> — enforced in the
+      picker, the form and on the server.
+    </p>
+  </section>
+
+  <!-- ================= INSIDE ORBIT ================= -->
+  <section class="section tint" id="inside">
+    <div class="section-head reveal">
+      <p class="eyebrow">Inside Orbit</p>
+      <h2>Built carefully, where it counts</h2>
+      <p class="section-sub">The engineering decisions that make Orbit trustworthy — expand any of them.</p>
+    </div>
+
+    <div class="chips reveal" aria-label="Technology stack">
+      <span>React + Vite</span><span>Express</span><span>Supabase Postgres</span>
+      <span>JWT auth</span><span>bcrypt</span><span>Cloudflare Turnstile</span><span>Serverless-ready</span>
+    </div>
+
+    <div class="accordions">
+      <details class="acc reveal">
+        <summary>The event log is the source of truth</summary>
+        <div class="body">Worked time is always recomputed from stored check-in / pause / resume / check-out events; the on-screen timer is display-only, so it can't drift or be tampered with. Refreshing, switching devices or re-logging never loses a minute.</div>
+      </details>
+      <details class="acc reveal">
+        <summary>No cron dependency — days finalize themselves</summary>
+        <div class="body">Stale sessions auto-close on the next read, so the 8-hour verdict never depends on a scheduled job firing on time. A real scheduler can still call the same finalizer for punctual midnight closes — belt and suspenders, not a requirement.</div>
+      </details>
+      <details class="acc reveal">
+        <summary>One field builds the whole org chart</summary>
+        <div class="body">The entire hierarchy derives from each person's immediate manager. Upward and downward walks are cycle-safe and power announcement targeting, approvals scoping and team validation — there is no separate org chart to keep in sync.</div>
+      </details>
+      <details class="acc reveal">
+        <summary>Security posture</summary>
+        <div class="body">Identical error for wrong email vs. wrong password (no user enumeration); deleted users rejected even with valid tokens; password hashes never leave the server; expired sessions handled in exactly one place; sensitive profile fields (DOB, address, phone, ID numbers) only returned to authorized viewers; every role rule re-checked server-side on every request.</div>
+      </details>
+      <details class="acc reveal">
+        <summary>Balances deducted only on approval</summary>
+        <div class="body">Applying for leave never touches your balance — the deduction happens when the manager approves, and the balance is re-checked at that moment. Two overlapping requests can both sit pending, but they can never overdraw the quota together.</div>
+      </details>
+      <details class="acc reveal">
+        <summary>Precise announcement targeting</summary>
+        <div class="body">Four audience scopes — company-wide, per role, a manager's reporting subtree, or a named team. Authoring rights are stricter than receiving rights: managers can only target their own subtree and their own teams, and the server validates the audience on every send. Nothing is broadcast wider than intended.</div>
+      </details>
+      <details class="acc reveal">
+        <summary>Fast by design</summary>
+        <div class="body">No heavy UI frameworks — hand-rolled CSS and a lean bundle. Skeleton loaders, optimistic updates, lazy per-section data loading, an offline banner, haptic feedback on supported devices and reduced-motion support throughout.</div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ================= FAQ ================= -->
+  <section class="section" id="faq">
+    <div class="section-head reveal">
+      <p class="eyebrow">Good to know</p>
+      <h2>Frequently asked questions</h2>
+    </div>
+    <div class="accordions">
+      <details class="acc reveal">
+        <summary>How do I get an account?</summary>
+        <div class="body">Orbit accounts are created by your organization's HR admin — there's no public sign-up. Ask your admin (or the person who runs Orbit at your company) to add you, and you'll sign in with the email they registered.</div>
+      </details>
+      <details class="acc reveal">
+        <summary>Does signing in mark me present?</summary>
+        <div class="body">No. Attendance is recorded only by the timer — you must check in. When your day closes with ≥ 8 recorded hours it's marked <b>Present</b>; anything less becomes <b>Auto-leave</b>.</div>
+      </details>
+      <details class="acc reveal">
+        <summary>What happens if I forget to check out?</summary>
+        <div class="body">The session auto-closes at midnight with whatever was recorded, and the 8-hour verdict applies to that total. Nothing depends on you remembering.</div>
+      </details>
+      <details class="acc reveal">
+        <summary>Can I take half days or scattered dates?</summary>
+        <div class="body">Yes — first half or second half of a day, a date range, or custom dates anywhere in the current year, up to 31 per request. Consecutive picks are merged; separate blocks become separate requests so each can be decided independently.</div>
+      </details>
+      <details class="acc reveal">
+        <summary>What's the difference between leave and WFH?</summary>
+        <div class="body">Work-from-home is a location change, not time off — it never touches your leave balance. It still goes to your manager for approval, with a required reason so they have context.</div>
+      </details>
+      <details class="acc reveal">
+        <summary>Who approves my requests?</summary>
+        <div class="body">Your immediate manager sees every pending request in their approvals queue, with your identity, the dates and your remaining balance. You're notified as soon as they decide.</div>
+      </details>
+      <details class="acc reveal">
+        <summary>Who sees my personal details?</summary>
+        <div class="body">Sensitive profile fields (date of birth, address, phone, ID numbers) are only returned to authorized viewers — you and your admins. Password hashes are never sent anywhere, ever.</div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ================= CTA ================= -->
+  <section class="cta-band" id="get-started">
+    <div class="cta-inner reveal">
+      <h2>Ready to bring your team into Orbit?</h2>
+      <p>Accounts are provisioned by your organization's HR admin — if your company already uses
+         Orbit, ask them to add you. Setting Orbit up for a new organization? Get in touch and
+         we'll get you started.</p>
+      <div class="cta-actions">
+        <a class="btn inverse lg" href="#" data-signin>Sign in</a>
+        <a class="btn outline lg" href="mailto:contact@trulaoverseas.com?subject=Orbit%20access%20request">✉ Request access</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ================= FOOTER ================= -->
+<footer class="site-footer">
+  <div class="footer-brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 36 36"><path d="M18 9 27 18 18 27 9 18Z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M18 14 22 18 18 22 14 18Z" fill="currentColor"/></svg>
+    </span>
+    <span><strong>ORBIT</strong> · Workforce management, simplified.</span>
+  </div>
+  <nav aria-label="Footer">
+    <a href="#features">Features</a>
+    <a href="#roles">Roles</a>
+    <a href="#how">How it works</a>
+    <a href="#try">Try it</a>
+    <a href="#faq">FAQ</a>
+  </nav>
+  <p>© <span id="year"></span> Trula.ai — All rights reserved.</p>
+</footer>
+
+<button id="toTop" type="button" aria-label="Back to top">↑</button>
+
+<script src="app.js"></script>
+</body>
+</html>

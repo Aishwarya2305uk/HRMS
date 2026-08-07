@@ -105,15 +105,15 @@ const FORM_LINKS = {
 const ROLE_SECTIONS = {
   employee: ['dashboard', 'notifications', 'attendance', 'leaves', 'calendar', 'feedback', 'hrrequest'],
   manager: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'calendar', 'feedback', 'hrrequest'],
-  admin: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'people', 'allleaves', 'allattendance', 'leavepolicies', 'othersettings', 'org', 'calendar', 'feedback', 'hrrequest'],
+  admin: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'people', 'othersettings', 'allleaves', 'allattendance', 'leavepolicies', 'org', 'calendar', 'feedback', 'hrrequest'],
 }
 
 /** Sections tucked behind the sidebar's expandable "More" item instead of
  *  being listed directly. They stay in ROLE_SECTIONS (that still decides
  *  access); this only changes how the sidebar shows them.
  *  The "More" toggle renders where the first of these falls in sidebar order
- *  — for admin, just before Other Settings — and holds enough of the admin
- *  list that the rail fits without scrolling. */
+ *  — for admin, last, right after Other Settings — and holds enough of the
+ *  admin list that the rail fits without scrolling. */
 const MORE_SECTIONS = {
   admin: ['allleaves', 'allattendance', 'leavepolicies', 'org', 'calendar', 'feedback', 'hrrequest'],
 }

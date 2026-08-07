@@ -6,13 +6,13 @@ import {
   mapUser,
   safeUserJSON,
   profileUserJSON,
-  hashPassword,
   nextEmployeeId,
   findUserById,
+  newInviteToken,
+  INVITE_TTL_MS,
 } from '../store.js'
 import { isRunning } from '../services/attendance.js'
 import { dayKey } from '../utils/time.js'
-import { passwordPolicyError } from '../utils/password.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -288,19 +288,25 @@ router.get('/', async (_req, res, next) => {
 })
 
 /**
- * POST /api/employees — add a new employee.
- * Body: { name, email, password, role, designation, department, joiningDate, managerId, employmentType }
+ * POST /api/employees — invite a new employee (no password: they set their
+ * own when they register through the invite link).
+ * Body: { name, email, role, designation, department, joiningDate, managerId, employmentType }
  * The managerId is what wires this person into the org tree. employmentType
  * (optional) seeds leave_quotas/leave_balances from that policy's quotas —
  * left unassigned, the new hire starts with a zeroed leave balance until an
  * admin assigns one via their profile.
+ *
+ * Creates the account with status 'invited' and returns `inviteToken` — the
+ * ONE time the raw token is ever available (the DB stores only its hash), so
+ * the admin must copy the invite link now or regenerate it later via
+ * POST /:id/invite. The invited person completes registration at
+ * /signup?token=... (routes/auth.js), which activates the account.
  */
 router.post('/', async (req, res, next) => {
   try {
     const {
       name,
       email,
-      password,
       role = 'employee',
       designation = '',
       department = '',
@@ -309,14 +315,8 @@ router.post('/', async (req, res, next) => {
       employmentType = null,
     } = req.body || {}
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: 'Name, email and password are required.' })
-    }
-    // Same policy as the bootstrap admin (utils/password.js) — an admin must
-    // not be able to hand out weaker credentials than the system's own.
-    const passwordError = passwordPolicyError(password)
-    if (passwordError) {
-      return res.status(400).json({ error: passwordError })
+    if (!name || !email) {
+      return res.status(400).json({ error: 'Name and email are required.' })
     }
     if (!['employee', 'manager', 'admin'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role.' })
@@ -339,17 +339,20 @@ router.post('/', async (req, res, next) => {
       if (!employmentTypeRow) return res.status(400).json({ error: 'Selected employment type does not exist.' })
     }
     const quotas = JSON.stringify(employmentTypeRow?.quotas || {})
+    const invite = newInviteToken()
 
     const { rows } = await q(
-      `insert into users (name, email, employee_id, password_hash, role, designation, department,
-                          joining_date, manager_id, employment_type_id, leave_quotas, leave_balances)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+      `insert into users (name, email, employee_id, password_hash, status, invite_token_hash,
+                          invite_expires_at, role, designation, department, joining_date,
+                          manager_id, employment_type_id, leave_quotas, leave_balances)
+       values ($1, $2, $3, null, 'invited', $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
        returning *`,
       [
         String(name).trim(),
         normEmail,
         await nextEmployeeId(),
-        await hashPassword(String(password)),
+        invite.tokenHash,
+        new Date(Date.now() + INVITE_TTL_MS),
         role,
         String(designation).trim(),
         String(department).trim(),
@@ -363,7 +366,37 @@ router.post('/', async (req, res, next) => {
       ...safeUserJSON(mapUser(rows[0])),
       managerName: null,
       employmentTypeName: employmentTypeRow?.name ?? null,
+      inviteToken: invite.token,
     })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/employees/:id/invite — issue a fresh invite link for a pending
+ * account (the raw token from creation is shown only once, and links expire).
+ * Refused for active accounts: regenerating an invite for someone who already
+ * set a password would be an account-takeover vector, not a convenience.
+ */
+router.post('/:id/invite', async (req, res, next) => {
+  try {
+    if (!isValidId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid employee id.' })
+    }
+    const user = await findUserById(req.params.id)
+    if (!user) return res.status(404).json({ error: 'Employee not found.' })
+    if (user.status !== 'invited') {
+      return res.status(409).json({ error: `${user.name} has already registered their account.` })
+    }
+
+    const invite = newInviteToken()
+    await q('update users set invite_token_hash = $1, invite_expires_at = $2 where id = $3', [
+      invite.tokenHash,
+      new Date(Date.now() + INVITE_TTL_MS),
+      user.id,
+    ])
+    res.json({ inviteToken: invite.token })
   } catch (err) {
     next(err)
   }

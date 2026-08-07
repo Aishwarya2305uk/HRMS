@@ -129,7 +129,21 @@
   font-weight: 700;
 }
 .role-pill.admin { background: var(--primary-soft); color: var(--primary-700); }
-.role-pill.employee { background: var(--success-soft); color: var(--success); }
+.role-pill.employee { background: var(--success-soft); color: var(--success-text); }
+
+/* Account status in the People roster: active vs pending invite. */
+.status-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.status-pill.active { background: var(--success-soft); color: var(--success-text); }
+.status-pill.invited { background: var(--warning-soft); color: var(--warning-text); }
+.invite-cell { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* ---- Forms ---- */
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
@@ -183,7 +197,7 @@
   margin-bottom: 14px;
   border-radius: var(--r-md);
   background: var(--success-soft);
-  color: var(--success);
+  color: var(--success-text);
   font-size: var(--text-sm);
   font-weight: 600;
 }
@@ -195,7 +209,7 @@
   color: var(--text-muted);
   margin: 4px 0 16px;
 }
-.apply-summary.over { color: var(--danger); font-weight: 600; }
+.apply-summary.over { color: var(--danger-text); font-weight: 600; }
 
 /* ---- Requester identity strip inside the apply modals ---- */
 .apply-ident {
@@ -283,7 +297,7 @@
   color: inherit;
   cursor: pointer;
 }
-.when-chip__remove:hover { background: var(--danger-soft); color: var(--danger); }
+.when-chip__remove:hover { background: var(--danger-soft); color: var(--danger-text); }
 
 /* ---- Modal ---- */
 .modal-overlay {
@@ -305,7 +319,11 @@
   border-radius: var(--r-xl);
   box-shadow: var(--elev-2);
   padding: 24px;
-  animation: pop-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: modal-in 0.22s ease-out both;
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
 }
 .modal__head {
   display: flex;
@@ -403,7 +421,7 @@
 .doc-row__meta strong { font-size: var(--text-sm); overflow-wrap: anywhere; }
 .doc-row__meta em { font-style: normal; font-size: var(--text-xs); color: var(--text-muted); }
 .doc-row__actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.doc-row__delete:hover { color: var(--danger); background: var(--danger-soft); }
+.doc-row__delete:hover { color: var(--danger-text); background: var(--danger-soft); }
 
 .doc-confirm {
   display: flex;
@@ -493,7 +511,7 @@
   font-size: var(--text-sm);
   color: var(--text-muted);
 }
-.notif-section--urgent .notif-section__head h3 { color: var(--danger); }
+.notif-section--urgent .notif-section__head h3 { color: var(--danger-text); }
 
 .notif-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .notif-item {
@@ -531,7 +549,7 @@
   border-radius: var(--r-sm);
   flex-shrink: 0;
 }
-.notif-item__remove:hover { color: var(--danger); background: var(--danger-soft); }
+.notif-item__remove:hover { color: var(--danger-text); background: var(--danger-soft); }
 
 .notif-compose { display: flex; flex-direction: column; }
 
@@ -668,7 +686,7 @@
   background: var(--surface-sunken);
   color: var(--text-muted);
 }
-.settings-acc__state.is-set { background: var(--success-soft); color: var(--success); }
+.settings-acc__state.is-set { background: var(--success-soft); color: var(--success-text); }
 .settings-acc__chevron {
   flex: none;
   color: var(--text-muted);
@@ -736,7 +754,7 @@
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-weight: 600;
   padding: 10px 12px;
   background: var(--surface-sunken);
@@ -745,7 +763,8 @@
 }
 .table thead tr:first-child th:first-child { border-top-left-radius: var(--r-sm); }
 .table thead tr:first-child th:last-child { border-top-right-radius: var(--r-sm); }
-.table td { padding: 12px; border-bottom: 1px solid var(--surface-muted); vertical-align: middle; }
+.table td { padding: 13px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.table tbody tr:last-child td { border-bottom: none; }
 .table tbody tr { transition: background 0.15s; }
 .table tbody tr:hover { background: var(--surface-sunken); }
 .cell-name { display: flex; align-items: center; gap: 10px; }
@@ -792,9 +811,9 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   font-size: 2.1rem;
   border-radius: 50%;
 }
-.avatar.tint-indigo { background: linear-gradient(135deg, var(--primary), var(--primary-700)); }
-.avatar.tint-blue { background: linear-gradient(135deg, var(--accent), var(--primary-600)); }
-.avatar.tint-green { background: linear-gradient(135deg, var(--success-400), var(--success)); }
+.avatar.tint-indigo { background: var(--primary-700); }
+.avatar.tint-blue { background: var(--primary-600); }
+.avatar.tint-green { background: var(--success-text); }
 
 /* ---- Approvals ---- */
 .approval-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
@@ -963,9 +982,9 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   box-shadow: var(--elev-1);
-  transition: transform 0.18s var(--spring, ease), box-shadow 0.18s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.org-card:hover { transform: translateX(3px); box-shadow: var(--elev-2); }
+.org-card:hover { border-color: var(--border-strong); box-shadow: var(--elev-2); }
 .org-card.is-you { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
 .org-card__text { display: flex; flex-direction: column; min-width: 0; }
 .org-card__text strong { font-size: var(--text-sm); display: flex; align-items: center; gap: 7px; }
@@ -1018,7 +1037,7 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
 
 /* ---- Org list (flat roster — search results) ---- */
 .org-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.org-list .org-card:hover { transform: none; }
+.org-list .org-card:hover { border-color: var(--border-strong); }
 .org-list__manager {
   margin-left: auto;
   padding-left: 12px;
@@ -1136,9 +1155,9 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   text-align: left;
   border-radius: var(--r-md);
   box-shadow: var(--elev-1);
-  transition: transform 0.18s ease, box-shadow 0.18s;
+  transition: box-shadow 0.15s;
 }
-.org-chart-card:hover { box-shadow: var(--elev-2); transform: translateY(-2px); }
+.org-chart-card:hover { box-shadow: var(--elev-2); }
 
 /* Admin/manager tier — solid "org unit" box, matching the reference's Team
    boxes. Uses this app's existing role-tint colors rather than a literal
@@ -1174,12 +1193,12 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   align-items: center;
   gap: 7px;
   padding: 8px 12px;
-  background: var(--success);
+  background: var(--success-text);
   color: #fff;
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: 600;
 }
-.org-chart-card__head .status-dot { box-shadow: 0 0 0 2px var(--success); }
+.org-chart-card__head .status-dot { box-shadow: 0 0 0 2px var(--success-text); }
 .org-chart-card__body {
   display: flex;
   flex-direction: column;
@@ -1337,11 +1356,11 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   color: var(--text);
   background: var(--surface-muted);
   cursor: pointer;
-  transition: transform 0.15s var(--spring-soft, ease), box-shadow 0.15s;
+  transition: box-shadow 0.15s, filter 0.15s;
 }
 .cal-chip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cal-chip:hover { transform: translateY(-1px); box-shadow: var(--elev-1); }
-.cal-chip:active { transform: scale(0.97); }
+.cal-chip:hover { box-shadow: var(--elev-1); }
+.cal-chip:active { filter: brightness(0.95); }
 .cal-chip.mine { background: var(--primary-soft); color: var(--primary-700); }
 .cal-chip.more { justify-content: center; background: var(--surface-sunken); color: var(--text-muted); }
 
@@ -1363,7 +1382,7 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   font-size: 0.56rem;
   font-weight: 800;
   color: #fff;
-  background: linear-gradient(135deg, var(--accent), var(--primary-600));
+  background: var(--primary-600);
 }
 .cal-avatar.sm { width: 18px; height: 18px; font-size: 0.6rem; }
 
@@ -1535,7 +1554,7 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   box-shadow: var(--elev-3);
   border: 1px solid var(--border);
   border-left: 3px solid var(--text-faint);
-  animation: toast-in 0.34s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: toast-in 0.25s ease-out both;
 }
 .toast--success { border-left-color: var(--success); }
 .toast--error   { border-left-color: var(--danger); }
@@ -1575,7 +1594,7 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
 }
 .toast__close:hover { color: var(--text); background: var(--surface-sunken); }
 @keyframes toast-in {
-  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: none; }
 }
 @media (max-width: 620px) {
@@ -1592,8 +1611,8 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   justify-content: center;
   gap: 9px;
   padding: 9px 16px;
-  background: var(--warning-soft, #fef3c7);
-  color: var(--warning, #92400e);
+  background: var(--warning-soft);
+  color: var(--warning-text);
   font-size: var(--text-sm);
   font-weight: 600;
 }
@@ -1614,7 +1633,7 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   background: var(--surface-sunken);
   color: var(--text-faint);
 }
-.state__icon--error { background: var(--danger-soft, #fee2e2); color: var(--danger); }
+.state__icon--error { background: var(--danger-soft); color: var(--danger-text); }
 .state__title { font-size: var(--text-base); font-weight: 650; }
 .state__msg {
   font-size: var(--text-sm);
@@ -1665,8 +1684,8 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   padding: 10px 13px;
   margin-bottom: 12px;
   border-radius: var(--r-md);
-  background: var(--danger-soft, #fee2e2);
-  color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger-text);
   font-size: var(--text-sm);
   line-height: 1.45;
 }
@@ -1674,7 +1693,7 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   margin-left: auto;
   border: none;
   background: transparent;
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 700;
   text-decoration: underline;
   cursor: pointer;
@@ -1699,7 +1718,7 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
 /* ---- Field-level validation ---- */
 .field-error {
   font-size: var(--text-xs);
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
   margin: 2px 0 0;
   display: flex;
@@ -1726,7 +1745,7 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
 .leave-legend b.is-spent { color: var(--text-faint); font-weight: 600; font-size: 0.82em; }
 
 /* Rejection reason under a request. */
-.req__note { display: block; font-style: normal; font-size: var(--text-xs); color: var(--danger); margin-top: 2px; }
+.req__note { display: block; font-style: normal; font-size: var(--text-xs); color: var(--danger-text); margin-top: 2px; }
 
 /* ---- Disabled controls read as unavailable, not broken ---- */
 .btn-tactile:disabled { opacity: 0.55; cursor: not-allowed; transform: none !important; }

@@ -15,10 +15,9 @@ types.setTypeParser(1700, (v) => Number(v))
 types.setTypeParser(1082, (v) => v)
 
 /**
- * Cached pool — critical for serverless (e.g. Vercel functions), where each
- * invocation may reuse a warm container. Without caching, every cold start
- * opens new connections and quickly exhausts the pooler. The cache lives on
- * globalThis so it survives module re-evaluation.
+ * One shared pool for the whole (long-running) server process. Kept on
+ * globalThis so tooling that re-evaluates modules (watch mode, tests) never
+ * opens a second pool against Supabase's pooler.
  */
 const globalCache = globalThis
 globalCache._pgpool ??= { pool: null, bootstrapped: null }
@@ -33,8 +32,9 @@ export function getPool() {
   }
   cache.pool = new Pool({
     connectionString: DATABASE_URL,
-    // Keep the pool small — serverless spawns many isolated instances.
-    max: 5,
+    // A single long-running server owns these connections; ten is plenty for
+    // this workload while staying well inside Supabase's pooler limits.
+    max: 10,
     // Supabase's pooler presents a certificate chain outside Node's default
     // CA store; TLS is still used, we just skip chain verification.
     ssl: { rejectUnauthorized: false },
@@ -71,9 +71,8 @@ export async function tx(fn) {
 export async function connectDB() {
   const pool = getPool()
   if (!cache.bootstrapped) {
-    // Runs exactly once per process (later calls await the same promise), so
-    // this is safe for both the long-running server and serverless cold
-    // starts. Schema first (a fresh database gets its tables created), then
+    // Runs exactly once per process (later calls await the same promise).
+    // Schema first (a fresh database gets its tables created), then
     // leave policy before bootstrapAdmin: the admin is assigned a default
     // employment type, so that type must already exist.
     cache.bootstrapped = (async () => {

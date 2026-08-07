@@ -12,9 +12,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  * manager is added afterwards by that admin, through the People screen,
  * which is what wires them into the org tree.
  *
- * Called once per process from connectDB() so it applies automatically on
- * both the standalone server and the Vercel serverless function — no manual
- * seed step needed on a fresh deploy.
+ * Called once per process from connectDB() so it applies automatically when
+ * the server boots — no manual seed step needed on a fresh deploy.
  *
  * Never overwrites an existing admin: the env vars bootstrap the account
  * once, they are not a standing password-reset switch. To rotate the admin

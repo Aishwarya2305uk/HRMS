@@ -1,7 +1,7 @@
 /**
  * Time helpers. Day boundaries are computed in UTC so behavior is identical in
- * local dev and on serverless (which runs in UTC) — the whole app agrees on
- * what "today" and "end of day" mean.
+ * local dev and on the hosted server (which runs in UTC) — the whole app
+ * agrees on what "today" and "end of day" mean.
  */
 
 /** 'YYYY-MM-DD' key for the calendar day a Date falls in (UTC). */

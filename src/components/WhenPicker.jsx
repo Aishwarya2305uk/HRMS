@@ -25,6 +25,9 @@ export const MAX_CUSTOM_DATES = 31
 
 const todayStr = () => new Date().toISOString().slice(0, 10)
 
+/** Last selectable day — leave/WFH requests are limited to the current year. */
+export const yearEndStr = () => `${new Date().getFullYear()}-12-31`
+
 /**
  * The "when" card shared by the leave and WFH apply modals: a working-hours
  * window plus either a start–end DATE RANGE or CUSTOM DATES — individually
@@ -147,6 +150,7 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
               type="date"
               value={draftDate}
               min={todayStr()}
+              max={yearEndStr()}
               onChange={(e) => setDraftDate(e.target.value)}
               aria-invalid={Boolean(showError('dates'))}
               aria-describedby={showError('dates') ? `err-${idPrefix}-dates` : undefined}
@@ -196,6 +200,7 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
                 type="date"
                 value={startDate}
                 min={todayStr()}
+                max={yearEndStr()}
                 onFocus={() => setActiveEnd('start')}
                 onChange={(e) => {
                   setActiveEnd('start')
@@ -218,6 +223,7 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
                 type="date"
                 value={endDate}
                 min={startDate || todayStr()}
+                max={yearEndStr()}
                 disabled={half}
                 onFocus={() => setActiveEnd('end')}
                 onChange={(e) => {

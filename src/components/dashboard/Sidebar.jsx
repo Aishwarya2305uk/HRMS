@@ -34,8 +34,8 @@ export default function Sidebar({
   // Items flagged `more` live behind the expandable "More" toggle; items
   // flagged `foot` are pinned to the bottom by .emp__nav-gap. An item flagged
   // both (admin's Feedback / HR Request) goes under More — `more` wins.
-  // The More toggle slots in where the first `more` item falls in nav order,
-  // so direct items listed after it (admin's Other Settings) render below it.
+  // The More toggle slots in where the first `more` item falls in nav order —
+  // for admin that's after every direct item, so More sits last in the rail.
   const moreItems = nav.filter((i) => i.more)
   const footItems = nav.filter((i) => i.foot && !i.more)
   const isMain = (i) => !i.foot && !i.more

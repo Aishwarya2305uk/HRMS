@@ -12,37 +12,18 @@ import employmentTypeRoutes from './routes/employmentTypes.js'
 import documentRoutes from './routes/documents.js'
 import settingsRoutes from './routes/settings.js'
 
-/**
- * JSON body parsing that works BOTH as a standalone server and inside a Vercel
- * serverless function.
- *
- * On Vercel, the Node runtime already parses the request body and populates
- * req.body (consuming the underlying stream). If we then ran express.json() it
- * would read an empty, already-consumed stream and clobber req.body with {} —
- * making every POST look like it has no data. So: only run express.json() when
- * the body hasn't been parsed yet (i.e. the classic long-running server path).
- *
- * Limit raised from Express's 100kb default to fit the largest inline upload:
- * employee documents (routes/documents.js caps them at ~3MB decoded, ~4.2MB
- * as a base64 data URL); profile photos are far smaller (~1MB decoded).
- */
-function smartJson() {
-  const parser = express.json({ limit: '6mb' })
-  return (req, res, next) => {
-    if (req.body !== undefined && req.body !== null) return next()
-    parser(req, res, next)
-  }
-}
-
 /** Builds the Express app (routes only — no DB connection, no listen). */
 export function createApp() {
   const app = express()
-  // One proxy hop in front of us (Vercel rewrite / Render) — makes req.ip the
-  // real client address, which the login rate limiter keys on.
+  // One proxy hop in front of us (the Vercel rewrite / Render's edge) — makes
+  // req.ip the real client address, which the login rate limiter keys on.
   app.set('trust proxy', 1)
   app.use(securityHeaders)
   app.use(corsPolicy)
-  app.use(smartJson())
+  // Limit raised from Express's 100kb default to fit the largest inline
+  // upload: employee documents (routes/documents.js caps them at ~3MB
+  // decoded, ~4.2MB as a base64 data URL); profile photos are far smaller.
+  app.use(express.json({ limit: '6mb' }))
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }))
   app.use('/api/auth', authRoutes)

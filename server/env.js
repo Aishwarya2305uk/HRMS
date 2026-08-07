@@ -34,12 +34,12 @@ export const ADMIN_EMAIL = process.env.ADMIN_EMAIL?.trim().toLowerCase()
 export const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD?.trim()
 export const ADMIN_NAME = process.env.ADMIN_NAME?.trim() || 'Administrator'
 
-// Server-side reCAPTCHA v2 secret (never exposed to the client — the public
-// site key lives in the frontend build as VITE_RECAPTCHA_SITE_KEY instead).
-// Optional: if unset, login skips CAPTCHA verification entirely (see
-// routes/auth.js) rather than locking everyone out — same "warn and skip if
-// unconfigured" policy as the admin bootstrap above.
-export const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY?.trim()
+// Server-side Cloudflare Turnstile secret (never exposed to the client — the
+// public site key lives in the frontend build as VITE_TURNSTILE_SITE_KEY
+// instead). Optional: if unset, login skips CAPTCHA verification entirely
+// (see routes/auth.js) rather than locking everyone out — same "warn and skip
+// if unconfigured" policy as the admin bootstrap above.
+export const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY?.trim()
 
 // Comma-separated list of browser origins allowed to call the API cross-
 // origin (e.g. the Vercel frontend URL). Empty means "allow all" — fine for

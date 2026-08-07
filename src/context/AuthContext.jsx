@@ -77,6 +77,17 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  /**
+   * Sign in with a token+user the server already issued (e.g. the invite
+   * registration flow, whose /auth/register response includes both) —
+   * same end state as login() without a second credentials round-trip.
+   */
+  const adoptSession = useCallback((token, user) => {
+    setToken(token)
+    setUser(user)
+    setNotice('')
+  }, [])
+
   const logout = useCallback(() => {
     setToken(null)
     setUser(null)
@@ -105,10 +116,11 @@ export function AuthProvider({ children }) {
       notice,
       clearNotice,
       login,
+      adoptSession,
       logout,
       refreshUser,
     }),
-    [user, loading, notice, clearNotice, login, logout, refreshUser],
+    [user, loading, notice, clearNotice, login, adoptSession, logout, refreshUser],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

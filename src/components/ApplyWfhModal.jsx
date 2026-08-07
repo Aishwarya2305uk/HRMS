@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import Icon from './Icon'
 import Modal from './Modal'
 import Avatar from './Avatar'
-import WhenPicker, { DAY_PART_TIMES } from './WhenPicker'
+import WhenPicker, { DAY_PART_TIMES, yearEndStr } from './WhenPicker'
 import { useAuth } from '../context/AuthContext'
 import { leaves as leavesApi } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
@@ -47,13 +47,18 @@ export default function ApplyWfhModal({ onClose, onCreated }) {
 
   const errors = useMemo(() => {
     const e = {}
+    const yearEnd = yearEndStr()
     if (custom) {
       if (dates.length === 0) e.dates = 'Add at least one date.'
+      else if (dates.some((d) => d > yearEnd)) e.dates = 'Dates must fall within the current year.'
     } else {
       if (!startDate) e.startDate = 'Pick a start date.'
+      else if (startDate > yearEnd) e.startDate = 'Dates must fall within the current year.'
       if (!endDate) e.endDate = 'Pick an end date.'
       else if (startDate && endDate < startDate) {
         e.endDate = 'The end date can’t be before the start date.'
+      } else if (endDate > yearEnd) {
+        e.endDate = 'Dates must fall within the current year.'
       }
     }
     if (!startTime || !endTime) e.time = 'Pick the working hours.'

@@ -1,6 +1,6 @@
 /**
- * End-of-day finalizer as a standalone runner. On serverless the same logic
- * runs lazily on read (see services/attendance.js), so this is only needed for
+ * End-of-day finalizer as a standalone runner. The same logic also runs
+ * lazily on read (see services/attendance.js), so this is only needed for
  * deployments with a real scheduler.
  *
  *   node server/jobs/finalize.js        # one-off

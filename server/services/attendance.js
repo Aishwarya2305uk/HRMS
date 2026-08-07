@@ -2,11 +2,11 @@
  * Attendance engine: the event-log math over work_sessions rows, plus
  * finalization — the "end-of-day job", implemented
  * lazily. The requirements ask for a cron/scheduled task that closes open
- * sessions at midnight and applies the 8-hour rule. Serverless (Vercel) has
- * no always-on process, so instead we finalize *on read*: whenever
- * attendance data is fetched, any still-open session from a PAST day is
- * auto-closed first. This is idempotent and gives the same end result
- * without a background worker.
+ * sessions at midnight and applies the 8-hour rule. Rather than depend on a
+ * scheduler being configured, we finalize *on read*: whenever attendance
+ * data is fetched, any still-open session from a PAST day is auto-closed
+ * first. This is idempotent and gives the same end result without a
+ * background worker.
  *
  * A standalone runner (server/jobs/finalize.js) can also call this from cron
  * for deployments that do have a scheduler.

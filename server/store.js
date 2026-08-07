@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs'
+import crypto from 'node:crypto'
 import { q } from './db.js'
 import { cachedLeaveTypes, cachedEmploymentTypes } from './cache.js'
 
@@ -23,6 +24,8 @@ export function mapUser(r) {
     email: r.email,
     employeeId: r.employee_id,
     passwordHash: r.password_hash,
+    status: r.status ?? 'active',
+    inviteExpiresAt: r.invite_expires_at ?? null,
     role: r.role,
     designation: r.designation,
     department: r.department,
@@ -51,6 +54,7 @@ export function safeUserJSON(u) {
     employeeId: u.employeeId || null,
     name: u.name,
     email: u.email,
+    status: u.status ?? 'active',
     role: u.role,
     designation: u.designation,
     department: u.department,
@@ -100,7 +104,37 @@ export function hashPassword(plain) {
 }
 
 export function comparePassword(plain, passwordHash) {
+  // Invited accounts have no hash yet — bcrypt.compare would throw on null.
+  if (!passwordHash) return Promise.resolve(false)
   return bcrypt.compare(plain, passwordHash)
+}
+
+/**
+ * Invite tokens for admin-created accounts: the raw token lives only in the
+ * invite link the admin shares; the database stores its SHA-256 hash, so a
+ * leaked users table can't be turned into working invite links.
+ */
+export function newInviteToken() {
+  const token = crypto.randomBytes(32).toString('base64url')
+  return { token, tokenHash: hashInviteToken(token) }
+}
+
+export function hashInviteToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex')
+}
+
+/** How long an invite link stays valid. */
+export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+/** Look up a *pending, unexpired* invite by its raw token. Null otherwise. */
+export async function findPendingInviteByToken(token) {
+  if (!token || typeof token !== 'string' || token.length > 200) return null
+  const { rows } = await q(
+    `select * from users
+      where invite_token_hash = $1 and status = 'invited' and invite_expires_at > now()`,
+    [hashInviteToken(token)],
+  )
+  return rows[0] ? mapUser(rows[0]) : null
 }
 
 /**

@@ -46,7 +46,12 @@ create table users (
   name text not null,
   email text not null unique,
   employee_id text unique,
-  password_hash text not null,
+  -- Null while the account is a pending invite (status 'invited') — the
+  -- person sets their own password when they register via their invite link.
+  password_hash text,
+  status text not null default 'active' check (status in ('active','invited')),
+  invite_token_hash text,
+  invite_expires_at timestamptz,
   role text not null default 'employee' check (role in ('employee','manager','admin')),
   designation text not null default '',
   department text not null default '',
@@ -180,22 +185,43 @@ alter table app_settings enable row level security;
 `
 
 /**
+ * Idempotent catch-up DDL for databases created before a schema change —
+ * every statement is a no-op when the column/constraint already exists, so
+ * running it on each cold start is safe and keeps old databases current
+ * without a migration tool. Fresh installs get the same shape from
+ * SCHEMA_SQL directly.
+ */
+const MIGRATIONS_SQL = /* sql */ `
+-- Invite-based onboarding (2026-08): admin adds people without a password;
+-- they set their own when they register through their invite link.
+alter table users alter column password_hash drop not null;
+alter table users add column if not exists status text not null default 'active';
+alter table users add column if not exists invite_token_hash text;
+alter table users add column if not exists invite_expires_at timestamptz;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'users_status_check') then
+    alter table users add constraint users_status_check check (status in ('active','invited'));
+  end if;
+end $$;
+`
+
+/**
  * Creates the schema if this database doesn't have it yet (detected by the
- * presence of the users table). An advisory lock serializes concurrent cold
- * starts so only one instance runs the DDL; the others wait, re-check, and
- * find the tables already there.
+ * presence of the users table), or applies idempotent catch-up migrations if
+ * it does. An advisory lock serializes concurrent cold starts so only one
+ * instance runs the DDL; the others wait, re-check, and find the tables
+ * already there.
  */
 export async function ensureSchema(pool) {
-  const { rows } = await pool.query("select to_regclass('public.users') as users_table")
-  if (rows[0].users_table) return
-
   const client = await pool.connect()
   try {
     await client.query('select pg_advisory_lock(727270001)')
-    const again = await client.query("select to_regclass('public.users') as users_table")
-    if (!again.rows[0].users_table) {
+    const { rows } = await client.query("select to_regclass('public.users') as users_table")
+    if (!rows[0].users_table) {
       await client.query(SCHEMA_SQL)
       console.log('[db] empty database — created HRMS schema')
+    } else {
+      await client.query(MIGRATIONS_SQL)
     }
   } finally {
     try {

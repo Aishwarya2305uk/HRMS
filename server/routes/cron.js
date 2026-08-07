@@ -4,9 +4,10 @@ import { finalizeStaleSessions } from '../services/attendance.js'
 const router = Router()
 
 /**
- * GET /api/cron/finalize — end-of-day attendance finalizer, driven by Vercel
- * Cron (see vercel.json "crons"). Closes any still-open sessions from past
- * days and applies the 8-hour Present/Leave rule company-wide.
+ * GET /api/cron/finalize — end-of-day attendance finalizer, for any external
+ * scheduler (GitHub Actions, cron-job.org, a paid Render cron — see
+ * render.yaml). Closes any still-open sessions from past days and applies
+ * the 8-hour Present/Leave rule company-wide.
  *
  * Attendance is ALSO finalized lazily on read, so this cron is a belt-and-
  * suspenders backstop — the app is correct even without it.
