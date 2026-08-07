@@ -1,7 +1,8 @@
 import { Router } from 'express'
-import mongoose from 'mongoose'
+import { q } from '../db.js'
+import { cachedLeaveTypes, invalidate } from '../cache.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
-import { LeaveType } from '../models/LeaveType.js'
+import { isValidId, leaveTypeJSON } from '../store.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -21,7 +22,7 @@ async function generateKey(label) {
       .replace(/^-+|-+$/g, '') || 'type'
   let key = base
   let n = 2
-  while (await LeaveType.exists({ key })) {
+  while ((await q('select 1 from leave_types where key = $1', [key])).rows.length) {
     key = `${base}-${n}`
     n += 1
   }
@@ -31,8 +32,8 @@ async function generateKey(label) {
 /** GET /api/leave-types — every leave type, including retired ones. */
 router.get('/', async (_req, res, next) => {
   try {
-    const types = await LeaveType.find({}).sort({ createdAt: 1 })
-    res.json(types.map((t) => t.toJSONSafe()))
+    const rows = await cachedLeaveTypes()
+    res.json(rows.map(leaveTypeJSON))
   } catch (err) {
     next(err)
   }
@@ -46,8 +47,12 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: `Give it a name (max ${LABEL_MAX} characters).` })
     }
     const key = await generateKey(label)
-    const type = await LeaveType.create({ key, label, active: true })
-    res.status(201).json(type.toJSONSafe())
+    const { rows } = await q(
+      'insert into leave_types (key, label, active) values ($1, $2, true) returning *',
+      [key, label],
+    )
+    invalidate('leave_types')
+    res.status(201).json(leaveTypeJSON(rows[0]))
   } catch (err) {
     next(err)
   }
@@ -55,29 +60,35 @@ router.post('/', async (req, res, next) => {
 
 /**
  * PATCH /api/leave-types/:id — rename (label only — `key` is immutable once
- * created, since Leave documents reference it) and/or retire/reactivate.
+ * created, since leaves reference it) and/or retire/reactivate.
  */
 router.patch('/:id', async (req, res, next) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    if (!isValidId(req.params.id)) {
       return res.status(400).json({ error: 'Invalid leave type id.' })
     }
-    const type = await LeaveType.findById(req.params.id)
+    const { rows: found } = await q('select * from leave_types where id = $1', [req.params.id])
+    const type = found[0]
     if (!type) return res.status(404).json({ error: 'Leave type not found.' })
 
+    let label = type.label
+    let active = type.active
     if (req.body?.label !== undefined) {
-      const label = String(req.body.label).trim()
+      label = String(req.body.label).trim()
       if (!label || label.length > LABEL_MAX) {
         return res.status(400).json({ error: `Give it a name (max ${LABEL_MAX} characters).` })
       }
-      type.label = label
     }
     if (req.body?.active !== undefined) {
-      type.active = Boolean(req.body.active)
+      active = Boolean(req.body.active)
     }
 
-    await type.save()
-    res.json(type.toJSONSafe())
+    const { rows } = await q(
+      'update leave_types set label = $1, active = $2 where id = $3 returning *',
+      [label, active, req.params.id],
+    )
+    invalidate('leave_types')
+    res.json(leaveTypeJSON(rows[0]))
   } catch (err) {
     next(err)
   }

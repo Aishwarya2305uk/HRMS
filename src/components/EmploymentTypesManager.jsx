@@ -14,7 +14,7 @@ const NAME_MAX = 60
  * on that classification is granted.
  *
  * Editing quotas here is deliberately NOT retroactive: User.leaveQuotas is a
- * frozen snapshot taken when someone is assigned (see server/models/User.js)
+ * frozen snapshot taken when someone is assigned (users.leave_quotas)
  * — changing a policy's numbers only affects people assigned to it
  * afterward, never anyone already hired under the old ones.
  */

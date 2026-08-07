@@ -1,31 +1,40 @@
 import { Router } from 'express'
-import mongoose from 'mongoose'
+import { q } from '../db.js'
 import { requireAuth } from '../middleware/auth.js'
-import { User } from '../models/User.js'
-import { Document, MAX_DOC_DATA_URL_LENGTH, DOC_DATA_URL_RE } from '../models/Document.js'
+import { isValidId, documentJSON } from '../store.js'
 
 const router = Router()
 router.use(requireAuth)
 
+// ~3MB decoded (base64 inflates ~4/3). Stored inline as a data URL, same
+// approach as users.photo_url — no separate file store to operate.
+export const MAX_DOC_DATA_URL_LENGTH = 4_200_000
+
+/** Allowed upload formats — documents an HR file actually needs (ID proofs,
+ *  certificates, contracts), not arbitrary executables. */
+export const DOC_DATA_URL_RE =
+  /^data:(application\/pdf|image\/(png|jpe?g|webp)|application\/msword|application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet));base64,/i
+
 /**
  * The one access rule for an employee's documents (requirements: visible only
- * to the employee, their assigned manager, and admins). `owner` is the User
+ * to the employee, their assigned manager, and admins). `owner` is the user
  * whose file the document sits on.
  */
 function canViewDocuments(viewer, owner) {
   if (viewer.role === 'admin') return true
-  if (owner._id.toString() === viewer._id.toString()) return true
-  return Boolean(owner.managerId && owner.managerId.toString() === viewer._id.toString())
+  if (owner.id === viewer.id) return true
+  return Boolean(owner.manager_id && owner.manager_id === viewer.id)
 }
 
 /** Loads the owner and 403s/404s per the rule above. Returns null if a
  *  response was already sent. */
 async function loadAuthorizedOwner(req, res) {
-  if (!mongoose.Types.ObjectId.isValid(req.params.userId)) {
+  if (!isValidId(req.params.userId)) {
     res.status(400).json({ error: 'Invalid employee id.' })
     return null
   }
-  const owner = await User.findById(req.params.userId).select('managerId')
+  const { rows } = await q('select id, manager_id from users where id = $1', [req.params.userId])
+  const owner = rows[0]
   if (!owner) {
     res.status(404).json({ error: 'Employee not found.' })
     return null
@@ -43,10 +52,16 @@ router.get('/user/:userId', async (req, res, next) => {
   try {
     const owner = await loadAuthorizedOwner(req, res)
     if (!owner) return
-    const docs = await Document.find({ userId: owner._id })
-      .populate('uploadedById', 'name')
-      .sort({ createdAt: -1 })
-    res.json(docs.map((d) => d.toJSONSafe()))
+    const { rows } = await q(
+      `select d.id, d.user_id, d.name, d.mime_type, d.size, d.created_at,
+              u.name as uploaded_by_name
+         from documents d
+         left join users u on u.id = d.uploaded_by_id
+        where d.user_id = $1
+        order by d.created_at desc`,
+      [owner.id],
+    )
+    res.json(rows.map(documentJSON))
   } catch (err) {
     next(err)
   }
@@ -60,7 +75,7 @@ router.get('/user/:userId', async (req, res, next) => {
  */
 router.post('/user/:userId', async (req, res, next) => {
   try {
-    const isSelf = req.params.userId === req.user._id.toString()
+    const isSelf = req.params.userId === req.user.id
     if (!isSelf && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'You can only upload documents to your own file.' })
     }
@@ -84,16 +99,21 @@ router.post('/user/:userId', async (req, res, next) => {
     }
 
     const base64 = data.slice(data.indexOf(',') + 1)
-    const doc = await Document.create({
-      userId: owner._id,
-      name: trimmedName,
-      mimeType: data.slice(5, data.indexOf(';')),
-      size: Math.floor((base64.length * 3) / 4),
-      dataUrl: data,
-      uploadedById: req.user._id,
-    })
-    doc.uploadedById = req.user // so the response carries the uploader's name
-    res.status(201).json(doc.toJSONSafe())
+    const { rows } = await q(
+      `insert into documents (user_id, name, mime_type, size, data_url, uploaded_by_id)
+       values ($1, $2, $3, $4, $5, $6)
+       returning id, user_id, name, mime_type, size, created_at`,
+      [
+        owner.id,
+        trimmedName,
+        data.slice(5, data.indexOf(';')),
+        Math.floor((base64.length * 3) / 4),
+        data,
+        req.user.id,
+      ],
+    )
+    // so the response carries the uploader's name
+    res.status(201).json(documentJSON({ ...rows[0], uploaded_by_name: req.user.name }))
   } catch (err) {
     next(err)
   }
@@ -103,15 +123,22 @@ router.post('/user/:userId', async (req, res, next) => {
  *  Same visibility rule as the listing. */
 router.get('/:id/file', async (req, res, next) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    if (!isValidId(req.params.id)) {
       return res.status(400).json({ error: 'Invalid document id.' })
     }
-    const doc = await Document.findById(req.params.id).populate('userId', 'managerId')
+    const { rows } = await q(
+      `select d.*, u.id as owner_id, u.manager_id as owner_manager_id
+         from documents d
+         join users u on u.id = d.user_id
+        where d.id = $1`,
+      [req.params.id],
+    )
+    const doc = rows[0]
     if (!doc) return res.status(404).json({ error: 'Document not found.' })
-    if (!canViewDocuments(req.user, doc.userId)) {
+    if (!canViewDocuments(req.user, { id: doc.owner_id, manager_id: doc.owner_manager_id })) {
       return res.status(403).json({ error: 'You do not have access to this document.' })
     }
-    res.json({ id: doc._id.toString(), name: doc.name, mimeType: doc.mimeType, dataUrl: doc.dataUrl })
+    res.json({ id: doc.id, name: doc.name, mimeType: doc.mime_type, dataUrl: doc.data_url })
   } catch (err) {
     next(err)
   }
@@ -124,12 +151,11 @@ router.delete('/:id', async (req, res, next) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Only an admin can delete documents.' })
     }
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    if (!isValidId(req.params.id)) {
       return res.status(400).json({ error: 'Invalid document id.' })
     }
-    const doc = await Document.findById(req.params.id)
-    if (!doc) return res.status(404).json({ error: 'Document not found.' })
-    await doc.deleteOne()
+    const { rowCount } = await q('delete from documents where id = $1', [req.params.id])
+    if (!rowCount) return res.status(404).json({ error: 'Document not found.' })
     res.json({ id: req.params.id })
   } catch (err) {
     next(err)

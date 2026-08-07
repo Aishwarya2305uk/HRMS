@@ -4,7 +4,7 @@ import { apiFetch, setToken, getToken, ApiError, SESSION_EXPIRED_EVENT } from '.
 const AuthContext = createContext(null)
 
 /**
- * Auth provider backed by the Express + MongoDB API.
+ * Auth provider backed by the Express API.
  * - login()  -> POST /api/auth/login, stores JWT, sets user
  * - on mount -> if a token exists, GET /api/auth/me to restore the session
  * - listens for SESSION_EXPIRED_EVENT so an expired token signs the user out
@@ -63,7 +63,7 @@ export function AuthProvider({ children }) {
         auth: false,
         body: { email, password, captchaToken },
         // Longer than the default 15s: the Render backend may be cold-starting
-        // (service wake + Mongo connect + bootstraps) on the first request.
+        // (service wake + database connect + bootstraps) on the first request.
         timeoutMs: 25000,
       })
       setToken(token)

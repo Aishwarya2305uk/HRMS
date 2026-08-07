@@ -39,7 +39,7 @@ file to match, the same rule DESIGN.md applies to itself.
 | Frontend  | React 19 + Vite 8                         | No UI framework — hand-rolled CSS per page/component, no Tailwind/MUI/etc. |
 | Routing   | react-router-dom 7                        | 3 routes total (see [App shell & routing](#app-shell--routing)) |
 | Backend   | Express 5                                 | Shared app used by both a long-running server and a serverless function |
-| Database  | MongoDB via Mongoose                      | One database (`hrms`), 5 collections |
+| Database  | Supabase Postgres via `pg`                | One database (`postgres`), 9 tables |
 | Auth      | jsonwebtoken + bcryptjs                   | Stateless JWT bearer tokens; no session store |
 | Bot check | Google reCAPTCHA v2 (checkbox)            | Optional — both sides no-op when unconfigured |
 | Lint      | oxlint                                    | No test suite currently exists in the repo |
@@ -53,8 +53,8 @@ All exact versions are in [package.json](package.json).
 ```
 server/
   index.js            # long-running server entry (npm run server)
-  dev-memory.js        # same app against an in-memory MongoDB (npm run dev:mem)
-  db.js                # cached Mongoose connection + one-time bootstrapAdmin() call
+  db.js                # cached pg pool + tx() helper + one-time bootstrap calls
+  store.js              # row->JSON mappers (snake_case -> camelCase) + shared user helpers
   app.js                # createApp() — the shared Express app (routes, body parsing, error handler)
   env.js                # loads + exports every env var (.env.local, then .env)
   bootstrapAdmin.js    # creates the one seed admin account
@@ -62,7 +62,6 @@ server/
   seed.js               # one-off "connect once, bootstrap, exit" script
   jobs/finalize.js      # standalone end-of-day finalizer runner (for real cron schedulers)
   middleware/auth.js   # requireAuth, requireRole
-  models/               # User, WorkSession, Leave, Announcement, Team (Mongoose schemas)
   routes/               # auth, attendance, leaves, employees, announcements, teams, cron
   services/
     attendance.js       # 8h verdict, finalization, analytics summarization/bucketing
@@ -87,7 +86,7 @@ src/
     haptics.js            # Vibration API wrapper, no-ops where unsupported
     useAsyncData.js       # {data,error,loading,reload,setData} hook used throughout Portal.jsx
   components/            # ~28 components — see "Component inventory" below
-    dashboard/            # Sidebar, TopBar, QuickAccessTiles
+    dashboard/            # Sidebar, TopBar
     notifications/        # NotificationsPanel, ComposeAnnouncementForm
 ```
 
@@ -115,18 +114,19 @@ Two details make this dual-mode setup work:
   only runs `express.json({ limit: '2mb' })` when `req.body` is still
   `undefined`/`null`. The 2mb limit (vs. Express's 100kb default) exists to
   fit a compressed profile-photo data URL.
-- **DB connection caching (`server/db.js`)** — the Mongoose connection is
-  cached on `globalThis` (not a module-local variable), so it survives
-  module re-evaluation across warm serverless invocations. `maxPoolSize: 5`
-  keeps the pool small since serverless can spawn many isolated instances
-  hitting the same Atlas cluster. `bootstrapAdmin()` runs exactly once per
-  *connection* (inside the `.then()` of the first successful connect), so
-  it's safe on both cold starts and the long-running server.
-- **DNS resolution** — `server/db.js` points Node's resolver at `8.8.8.8`
-  and `1.1.1.1` before connecting, because some routers/VPNs answer plain
-  `nslookup`-style DNS but refuse the raw SRV query Node needs for
-  `mongodb+srv://` URLs — which fails with `querySrv ECONNREFUSED`.
-
+- **Reference-data cache (`server/cache.js`)** — leave types, employment
+  types, and app settings are served through a 30-second TTL read-through
+  cache; every mutating route invalidates its key immediately, so same-
+  process reads are never stale and other serverless instances catch up
+  within the TTL. Supabase is always the source of truth — per-user rows,
+  authorization checks, and write-path validation reads are never cached.
+- **DB connection caching (`server/db.js`)** — the pg Pool is cached on
+  `globalThis` (not a module-local variable), so it survives module
+  re-evaluation across warm serverless invocations. `max: 5` keeps the pool
+  small since serverless can spawn many isolated instances hitting the same
+  Supabase pooler. The bootstrap calls run exactly once per process (later
+  connectDB() calls await the same promise), so they're safe on both cold
+  starts and the long-running server.
 CORS is wide open: `app.use(cors())` with no options allow-lists every
 origin (the `cors` package's default). There is no rate limiting anywhere in
 the server.
@@ -158,8 +158,8 @@ route re-checks the role server-side** — there is no route that trusts the
 frontend's own routing.
 
 Passwords are hashed with `bcrypt`, cost factor `10`
-(`User.methods.setPassword`), and `passwordHash` is never included in any
-JSON shape sent to the client.
+(`hashPassword` in `server/store.js`), and `passwordHash` is never included
+in any JSON shape sent to the client.
 
 **On the frontend:** the token lives in `localStorage` under `hrms.token`
 (`src/lib/api.js`). `AuthContext` restores a session on mount by calling
@@ -173,8 +173,12 @@ independently.
 
 ## Data models
 
-Source of truth: `server/models/*.js`. All five collections live in one
-MongoDB database (`hrms`).
+Source of truth: `server/schema.js` (the DDL the server applies itself on a
+fresh database) plus `server/store.js` for the row->JSON shapes. All tables
+live in the `public` schema; every table has RLS enabled with no policies
+for the Supabase API roles, so the auto-generated Supabase Data API can't
+read anything. The Express server connects as the role in `DATABASE_URL`
+(the table owner), which is exempt from RLS.
 
 ### `users`
 
@@ -186,40 +190,40 @@ MongoDB database (`hrms`).
 | `role` | `employee \| manager \| admin` | default `employee` |
 | `designation`, `department` | String | free text |
 | `joiningDate` | Date | |
-| `managerId` | ObjectId ref `User`, nullable | **the single field that builds the org tree** |
+| `managerId` | uuid ref `users`, nullable | **the single field that builds the org tree** |
 | `photoUrl` | String, ≤ ~1.4M chars | compressed JPEG/PNG/WebP/GIF data URL; low-sensitivity, shown broadly |
 | `dob`, `address`, `phone`, `education`, `aadharNumber` | mixed | PII — only ever returned via `toProfileJSON()` to an authorized viewer |
 | `leaveBalances` | Mixed (`{ [leaveTypeKey]: remainingDays }`) | seeded from `config.js` quotas; deducted only on approval |
 
-Instance methods: `setPassword`/`comparePassword` (bcrypt),
+Helpers in `server/store.js`: `hashPassword`/`comparePassword` (bcrypt),
 `ensureLeaveBalances()` (fills gaps for any newly-added leave type),
-`toSafeJSON()` (public shape — id/name/email/role/designation/department/
+`safeUserJSON()` (public shape — id/name/email/role/designation/department/
 joiningDate/photoUrl/managerId/leaveBalances/leaveBalance-total/
-leaveQuotaTotal), `toProfileJSON()` (adds dob/address/phone/education/
-aadharNumber on top of `toSafeJSON()`).
+leaveQuotaTotal), `profileUserJSON()` (adds dob/address/phone/education/
+aadharNumber on top of `safeUserJSON()`).
 
 ### `work_sessions` — one per user per calendar day
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `userId` | ObjectId ref `User`, indexed | |
+| `userId` | uuid ref `users`, indexed | |
 | `date` | String `YYYY-MM-DD` | unique together with `userId` |
 | `events[]` | `{ type, at }[]` | `type` ∈ `check_in \| pause \| resume \| check_out \| auto_close`. **The event log is the only source of truth** — never a running counter. |
 | `status` | `active \| completed \| auto_closed` | |
 | `workedSeconds` | Number | finalized total, written once the day closes |
 | `dayStatus` | `present \| leave \| null` | 8h-rule verdict, written once the day closes |
 
-Module-level functions (not schema methods, so the finalizer/services can
-reuse them without a document instance): `computeWorkedSeconds(events, upto)`
+Module-level functions in `server/services/attendance.js`:
+`computeWorkedSeconds(events, upto)`
 and `isRunning(events)` — see [Core algorithms](#core-algorithms) for the
-exact logic. Instance method `toLiveJSON(now)` returns the API-facing live
+exact logic. `toLiveJSON(now)` returns the API-facing live
 view (see [shared response shapes](#shared-response-shapes)).
 
-### `leaves` — leave AND work-from-home requests share one collection
+### `leaves` — leave AND work-from-home requests share one table
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `userId` | ObjectId ref `User`, indexed | |
+| `userId` | uuid ref `users`, indexed | |
 | `kind` | `leave \| wfh`, indexed | default `leave` |
 | `type` | one of `config.js` → `LEAVE_TYPE_KEYS` (`casual\|sick\|earned`) | required only when `kind === 'leave'`; WFH has no quota-based type |
 | `startDate`, `endDate` | Date | inclusive range, stored at UTC midnight |
@@ -228,10 +232,10 @@ view (see [shared response shapes](#shared-response-shapes)).
 | `status` | `pending \| approved \| rejected`, indexed | |
 | `approverId`, `decidedAt`, `decisionComment` | mixed | set on manager decision |
 
-Balance is deducted **only on approval** of a `kind: 'leave'` doc, never at
+Balance is deducted **only on approval** of a `kind: 'leave'` row, never at
 submit time — a rejected or cancelled request costs nothing. `kind: 'wfh'`
 never touches any balance (it's a location change, not time off).
-`toJSONSafe()` is the client-facing shape.
+`leaveJSON()` (store.js) is the client-facing shape.
 
 ### `announcements`
 
@@ -240,28 +244,29 @@ never touches any balance (it's a location change, not time off).
 | `title` | String, ≤140 chars | |
 | `body` | String, ≤2000 chars | |
 | `type` | `announcement \| urgent`, indexed | |
-| `authorId` | ObjectId ref `User` | |
+| `authorId` | uuid ref `users` | |
 | `audienceScope` | `all \| role \| team \| group` | mutually exclusive — see [audience resolution](#announcement-audience-resolution) |
 | `audienceRole` | nullable | set only when scope is `role` |
-| `audienceRootId` | ObjectId ref `User`, nullable | set only when scope is `team` |
-| `audienceGroupId` | ObjectId ref `Team`, nullable | set only when scope is `group` |
-| `readBy[]` | ObjectId ref `User` | updated via `$addToSet`; never returned wholesale — routes compute a per-viewer `read` boolean instead |
+| `audienceRootId` | uuid ref `users`, nullable | set only when scope is `team` |
+| `audienceGroupId` | uuid ref `teams`, nullable | set only when scope is `group` |
+| `readBy[]` | uuid ref `users` | appended idempotently; never returned wholesale — routes compute a per-viewer `read` boolean instead |
 
 Indexed on `createdAt: -1` (list views are always newest-first).
-`toJSONSafe()` is the client-facing shape.
+`announcementJSON()` (store.js) is the client-facing shape.
 
 ### `teams` — a manager's own named sub-groups, for finer-grained targeting
 
 | Field | Type | Notes |
 | --- | --- | --- |
 | `name` | String, ≤60 chars | |
-| `managerId` | ObjectId ref `User`, indexed | the creating/owning manager |
-| `memberIds[]` | ObjectId ref `User` | validated server-side, on every create/edit, against the manager's own reporting subtree |
+| `managerId` | uuid ref `users`, indexed | the creating/owning manager |
+| `memberIds[]` | uuid ref `users` | validated server-side, on every create/edit, against the manager's own reporting subtree |
 
 A team can never contain someone outside its manager's existing subtree — it
 adds no reach beyond the whole-subtree `team`-scope broadcast that already
-exists, just a finer-grained subset of it. `toJSONSafe()` is the client
-shape; routes that populate members add a `members: [{id,name}]` array on top.
+exists, just a finer-grained subset of it. `teamJSON()` (store.js) is the
+client shape; routes that join members add a `members: [{id,name}]` array on
+top.
 
 ### Single source of truth for business constants (`server/config.js`)
 
@@ -850,7 +855,6 @@ One line each — see the file itself for props/behavior detail.
 | --- | --- | --- |
 | Shell | `dashboard/Sidebar.jsx` | Role-filtered nav, collapse toggle, account entry point |
 | Shell | `dashboard/TopBar.jsx` | Page title, search box (where applicable), notification bell, user menu |
-| Shell | `dashboard/QuickAccessTiles.jsx` | Dashboard-tab shortcut tiles into the other sections |
 | Attendance | `AttendanceCard.jsx` | The Zoho-style check-in timer widget (see below) |
 | Attendance | `AttendanceHistory.jsx` | Own attendance table (date/in/out/hours/status) |
 | Attendance | `AttendanceAnalytics.jsx` | KPI summary + weekly bar chart + 90-day heatmap (hand-rolled SVG, no chart library) |
@@ -913,7 +917,7 @@ See [.env.example](.env.example) for the template.
 
 | Variable | Required | Default | Effect if unset |
 | --- | --- | --- | --- |
-| `MONGODB_URL` | ✅ | — | `connectDB()` throws on first use |
+| `DATABASE_URL` | ✅ | — | `connectDB()` throws on first use |
 | `JWT_SECRET` | recommended | `'dev-only-insecure-secret-change-me'` | tokens are signed with a well-known dev secret |
 | `JWT_EXPIRES_IN` | – | `7d` | — |
 | `PORT` | – | `4000` | only used by the standalone server (`server/index.js`) |
@@ -943,10 +947,8 @@ From [package.json](package.json):
 | Script | Runs | Notes |
 | --- | --- | --- |
 | `npm run dev` | `vite` | frontend only, port 5173 |
-| `npm run server` | `node server/index.js` | backend only, against `MONGODB_URL`, port `PORT` (default 4000) |
-| `npm run dev:mem` | `node server/dev-memory.js` | backend against a throwaway in-memory MongoDB — no Atlas needed |
-| `npm run dev:all` | `concurrently ... server + dev` | both, against a real `MONGODB_URL` |
-| `npm run dev:all:mem` | `concurrently ... dev:mem + dev` | both, in-memory DB |
+| `npm run server` | `node server/index.js` | backend only, against `DATABASE_URL`, port `PORT` (default 4000) |
+| `npm run dev:all` | `concurrently ... server + dev` | both, against a real `DATABASE_URL` |
 | `npm run seed` | `server/seed.js` | connects once (triggering bootstrap), then exits — for pointing at a brand-new DB |
 | `npm run finalize` | `server/jobs/finalize.js` | one-off end-of-day finalizer run |
 | `npm run build` | `vite build` | production frontend bundle → `dist/` |

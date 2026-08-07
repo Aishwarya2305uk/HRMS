@@ -1,10 +1,15 @@
 import { Router } from 'express'
-import mongoose from 'mongoose'
+import { q, tx } from '../db.js'
+import { cachedLeaveTypes } from '../cache.js'
 import { requireAuth } from '../middleware/auth.js'
-import { User } from '../models/User.js'
-import { Leave } from '../models/Leave.js'
-import { LeaveType } from '../models/LeaveType.js'
-import { WorkSession } from '../models/WorkSession.js'
+import {
+  isValidId,
+  leaveJSON,
+  leaveTypeJSON,
+  ensureLeaveBalances,
+  saveLeaveBalances,
+  mapUser,
+} from '../store.js'
 import { finalizeStaleSessions } from '../services/attendance.js'
 import { dayKey, inclusiveDays, startOfDay, dateKeysInRange } from '../utils/time.js'
 
@@ -12,6 +17,12 @@ const router = Router()
 router.use(requireAuth)
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/
+
+/** The join every listing uses: requester identity attached to each leave row. */
+const LEAVE_WITH_USER = `
+  select l.*, u.name as employee_name, u.email as employee_email, u.employee_id as employee_code
+    from leaves l
+    join users u on u.id = l.user_id`
 
 /**
  * Shared "when" validation for leave and WFH applications: dates, the
@@ -71,7 +82,7 @@ const MAX_CUSTOM_DATES = 31
  * Custom-dates variant of parseWhen: the client sends `dates` (individual
  * 'YYYY-MM-DD' picks, not necessarily consecutive) instead of a start/end
  * range. Returns { error } or { ranges, dayPart, startTime, endTime,
- * totalDays } — one request doc is created per contiguous run so the
+ * totalDays } — one request row is created per contiguous run so the
  * existing single-range model, calendar and approval flow stay untouched.
  */
 function parseCustomWhen(body) {
@@ -107,12 +118,41 @@ function parseCustomWhen(body) {
   }
 }
 
+/** Insert one leave/WFH row and return it shaped, with the requester's identity attached. */
+async function insertRequest(user, fields) {
+  const { rows } = await q(
+    `insert into leaves (user_id, kind, type, start_date, end_date, day_part, start_time,
+                         end_time, days, reason, status)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
+     returning *`,
+    [
+      user.id,
+      fields.kind,
+      fields.type ?? null,
+      fields.startDate,
+      fields.endDate,
+      fields.dayPart,
+      fields.startTime,
+      fields.endTime,
+      fields.days,
+      fields.reason,
+    ],
+  )
+  // so the response carries name/email/employeeId
+  return leaveJSON({
+    ...rows[0],
+    employee_name: user.name,
+    employee_email: user.email,
+    employee_code: user.employeeId,
+  })
+}
+
 /** GET /api/leaves/config — active leave types (so the UI stays in sync with
  *  whatever admin currently has configured — see routes/leaveTypes.js). */
 router.get('/config', async (_req, res, next) => {
   try {
-    const types = await LeaveType.find({ active: true }).sort({ createdAt: 1 })
-    res.json({ types: types.map((t) => t.toJSONSafe()) })
+    const rows = await cachedLeaveTypes()
+    res.json({ types: rows.filter((t) => t.active).map(leaveTypeJSON) })
   } catch (err) {
     next(err)
   }
@@ -126,7 +166,11 @@ router.get('/config', async (_req, res, next) => {
 router.post('/', async (req, res, next) => {
   try {
     const { type, reason = '' } = req.body || {}
-    const leaveType = type ? await LeaveType.findOne({ key: type, active: true }) : null
+    const { rows: typeRows } = await q(
+      'select * from leave_types where key = $1 and active',
+      [String(type || '')],
+    )
+    const leaveType = typeRows[0]
     if (!leaveType) {
       return res.status(400).json({ error: 'Please choose a valid leave type.' })
     }
@@ -140,7 +184,7 @@ router.post('/', async (req, res, next) => {
     if (when.error) return res.status(400).json({ error: when.error })
     const totalDays = custom ? when.totalDays : when.days
 
-    await req.user.ensureLeaveBalances()
+    await ensureLeaveBalances(req.user)
     const remaining = Number(req.user.leaveBalances[type]) || 0
     if (totalDays > remaining) {
       return res.status(400).json({
@@ -148,25 +192,22 @@ router.post('/', async (req, res, next) => {
       })
     }
 
-    const ranges = custom
-      ? when.ranges
-      : [{ start: when.startKey, end: when.endKey }]
+    const ranges = custom ? when.ranges : [{ start: when.startKey, end: when.endKey }]
     const created = []
     for (const r of ranges) {
-      const leave = await Leave.create({
-        userId: req.user._id,
-        type,
-        startDate: startOfDay(r.start),
-        endDate: startOfDay(r.end),
-        dayPart: when.dayPart,
-        startTime: when.startTime,
-        endTime: when.endTime,
-        days: when.dayPart === 'full' ? inclusiveDays(r.start, r.end) : 0.5,
-        reason: String(reason).trim(),
-        status: 'pending',
-      })
-      leave.userId = req.user // so the response carries name/email/employeeId
-      created.push(leave.toJSONSafe())
+      created.push(
+        await insertRequest(req.user, {
+          kind: 'leave',
+          type,
+          startDate: startOfDay(r.start),
+          endDate: startOfDay(r.end),
+          dayPart: when.dayPart,
+          startTime: when.startTime,
+          endTime: when.endTime,
+          days: when.dayPart === 'full' ? inclusiveDays(r.start, r.end) : 0.5,
+          reason: String(reason).trim(),
+        }),
+      )
     }
     // Range mode keeps its original single-object shape; custom mode returns
     // the whole batch (one entry per contiguous run).
@@ -197,25 +238,21 @@ router.post('/wfh', async (req, res, next) => {
     const when = custom ? parseCustomWhen(req.body) : parseWhen(req.body)
     if (when.error) return res.status(400).json({ error: when.error })
 
-    const ranges = custom
-      ? when.ranges
-      : [{ start: when.startKey, end: when.endKey }]
+    const ranges = custom ? when.ranges : [{ start: when.startKey, end: when.endKey }]
     const created = []
     for (const r of ranges) {
-      const wfh = await Leave.create({
-        userId: req.user._id,
-        kind: 'wfh',
-        startDate: startOfDay(r.start),
-        endDate: startOfDay(r.end),
-        dayPart: when.dayPart,
-        startTime: when.startTime,
-        endTime: when.endTime,
-        days: when.dayPart === 'full' ? inclusiveDays(r.start, r.end) : 0.5,
-        reason: trimmedReason,
-        status: 'pending',
-      })
-      wfh.userId = req.user // so the response carries name/email/employeeId
-      created.push(wfh.toJSONSafe())
+      created.push(
+        await insertRequest(req.user, {
+          kind: 'wfh',
+          startDate: startOfDay(r.start),
+          endDate: startOfDay(r.end),
+          dayPart: when.dayPart,
+          startTime: when.startTime,
+          endTime: when.endTime,
+          days: when.dayPart === 'full' ? inclusiveDays(r.start, r.end) : 0.5,
+          reason: trimmedReason,
+        }),
+      )
     }
     res.status(201).json(custom ? created : created[0])
   } catch (err) {
@@ -226,35 +263,10 @@ router.post('/wfh', async (req, res, next) => {
 /** GET /api/leaves/mine — the current user's own applications (newest first). */
 router.get('/mine', async (req, res, next) => {
   try {
-    const leaves = await Leave.find({ userId: req.user._id })
-      .populate('userId', 'name email employeeId')
-      .sort({ createdAt: -1 })
-    res.json(leaves.map((l) => l.toJSONSafe()))
-  } catch (err) {
-    next(err)
-  }
-})
-
-/**
- * DELETE /api/leaves/:id — cancel one of the CURRENT USER's own PENDING
- * leave requests. Balance is never touched: it's only deducted on approval
- * (see /:id/approve below), so a pending request cancels for free.
- */
-router.delete('/:id', async (req, res, next) => {
-  try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ error: 'Invalid leave id.' })
-    }
-    const leave = await Leave.findById(req.params.id)
-    if (!leave) return res.status(404).json({ error: 'Leave request not found.' })
-    if (leave.userId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ error: 'You can only cancel your own leave requests.' })
-    }
-    if (leave.status !== 'pending') {
-      return res.status(409).json({ error: 'Only pending leave requests can be cancelled.' })
-    }
-    await leave.deleteOne()
-    res.json({ id: req.params.id })
+    const { rows } = await q(`${LEAVE_WITH_USER} where l.user_id = $1 order by l.created_at desc`, [
+      req.user.id,
+    ])
+    res.json(rows.map(leaveJSON))
   } catch (err) {
     next(err)
   }
@@ -269,26 +281,37 @@ router.get('/pending', async (req, res, next) => {
     if (!['manager', 'admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only managers can view approvals.' })
     }
-    const reports = await User.find({ managerId: req.user._id }).select('_id')
-    const ids = reports.map((r) => r._id)
-    const leaves = await Leave.find({ userId: { $in: ids }, status: 'pending' })
-      .populate('userId', 'name email employeeId')
-      .sort({ createdAt: 1 })
-    res.json(leaves.map((l) => l.toJSONSafe()))
+    const { rows } = await q(
+      `${LEAVE_WITH_USER} where u.manager_id = $1 and l.status = 'pending' order by l.created_at`,
+      [req.user.id],
+    )
+    res.json(rows.map(leaveJSON))
   } catch (err) {
     next(err)
   }
 })
 
-/** Shared guard: the acting user must be the leave owner's direct manager. */
-async function loadDecidableLeave(req) {
-  const leave = await Leave.findById(req.params.id).populate('userId', 'name email employeeId managerId')
+/**
+ * Shared guard: the acting user must be the leave owner's direct manager.
+ * Runs on the given client so approve can hold it inside its transaction.
+ */
+async function loadDecidableLeave(req, client) {
+  if (!isValidId(req.params.id)) {
+    throw Object.assign(new Error('Leave not found.'), { status: 404 })
+  }
+  const { rows } = await client.query(
+    `select l.*, u.manager_id as owner_manager_id
+       from leaves l
+       join users u on u.id = l.user_id
+      where l.id = $1`,
+    [req.params.id],
+  )
+  const leave = rows[0]
   if (!leave) throw Object.assign(new Error('Leave not found.'), { status: 404 })
   if (leave.status !== 'pending') {
     throw Object.assign(new Error('This leave has already been decided.'), { status: 409 })
   }
-  const ownerManagerId = leave.userId?.managerId?.toString()
-  const isDirectManager = ownerManagerId && ownerManagerId === req.user._id.toString()
+  const isDirectManager = leave.owner_manager_id && leave.owner_manager_id === req.user.id
   if (!isDirectManager) {
     throw Object.assign(
       new Error('You can only act on leaves of your direct reports.'),
@@ -298,56 +321,74 @@ async function loadDecidableLeave(req) {
   return leave
 }
 
+/** Re-select a decided leave with the requester's identity for the response. */
+async function shapedLeave(id) {
+  const { rows } = await q(`${LEAVE_WITH_USER} where l.id = $1`, [id])
+  return leaveJSON(rows[0])
+}
+
 /**
  * POST /api/leaves/:id/approve — approve. For kind: 'leave' this also deducts
  * the balance; kind: 'wfh' skips that entirely (a location change, not time
  * off — there's no balance to deduct from).
+ *
+ * The whole decision runs in ONE transaction: the conditional balance
+ * deduction and the pending -> approved flip commit together or not at all.
+ * The deduction's WHERE clause still requires the balance to cover the request
+ * at write time, so two simultaneous approvals can never overdraw.
  */
 router.post('/:id/approve', async (req, res, next) => {
   try {
-    const leave = await loadDecidableLeave(req)
-    const balancePath = `leaveBalances.${leave.type}`
+    const result = await tx(async (client) => {
+      const leave = await loadDecidableLeave(req, client)
 
-    if (leave.kind === 'leave') {
-      const employee = await User.findById(leave.userId._id)
-      // Normally the balance key already exists (seeded at hire / first
-      // request). Only persist the merge when it filled a missing key, so the
-      // common path never rewrites leaveBalances and can't clobber a
-      // concurrent deduction.
-      const hadKey = employee.leaveBalances?.[leave.type] !== undefined
-      await employee.ensureLeaveBalances()
-      if (!hadKey) await employee.save()
-
-      // Atomic conditional deduction: succeeds only if the balance STILL
-      // covers the request at write time, so two simultaneous approvals can
-      // never observe the same starting balance and overdraw it.
-      const deducted = await User.findOneAndUpdate(
-        { _id: employee._id, [balancePath]: { $gte: leave.days } },
-        { $inc: { [balancePath]: -leave.days } },
-        { new: true },
-      )
-      if (!deducted) {
-        const remaining = Number(employee.leaveBalances[leave.type]) || 0
-        return res.status(400).json({
-          error: `Cannot approve — employee only has ${remaining} day(s) of that leave left.`,
-        })
-      }
-    }
-
-    // Flip pending -> approved atomically as well; if a concurrent decision
-    // won the race, refund the deduction so the balance stays correct.
-    const decided = await Leave.findOneAndUpdate(
-      { _id: leave._id, status: 'pending' },
-      { status: 'approved', approverId: req.user._id, decidedAt: new Date() },
-      { new: true },
-    ).populate('userId', 'name email employeeId managerId')
-    if (!decided) {
       if (leave.kind === 'leave') {
-        await User.updateOne({ _id: leave.userId._id }, { $inc: { [balancePath]: leave.days } })
+        const { rows: userRows } = await client.query(
+          'select * from users where id = $1 for update',
+          [leave.user_id],
+        )
+        const employee = mapUser(userRows[0])
+        // Normally the balance key already exists (seeded at hire / first
+        // request) — ensure fills any gap from types added since.
+        const { changed } = await ensureLeaveBalances(employee)
+        if (changed) await saveLeaveBalances(employee.id, employee.leaveBalances, client)
+
+        // Conditional deduction: succeeds only if the balance STILL covers
+        // the request at write time.
+        const { rowCount } = await client.query(
+          `update users
+              set leave_balances = leave_balances ||
+                    jsonb_build_object($1::text, coalesce((leave_balances->>$1)::numeric, 0) - $2::numeric)
+            where id = $3
+              and coalesce((leave_balances->>$1)::numeric, 0) >= $2::numeric`,
+          [leave.type, leave.days, leave.user_id],
+        )
+        if (!rowCount) {
+          const remaining = Number(employee.leaveBalances[leave.type]) || 0
+          return {
+            status: 400,
+            error: `Cannot approve — employee only has ${remaining} day(s) of that leave left.`,
+          }
+        }
       }
-      return res.status(409).json({ error: 'This leave has already been decided.' })
-    }
-    res.json(decided.toJSONSafe())
+
+      const { rows: decided } = await client.query(
+        `update leaves
+            set status = 'approved', approver_id = $1, decided_at = now()
+          where id = $2 and status = 'pending'
+          returning id`,
+        [req.user.id, leave.id],
+      )
+      if (!decided.length) {
+        // A concurrent decision won the race — rolling back also undoes the
+        // deduction above.
+        throw Object.assign(new Error('This leave has already been decided.'), { status: 409 })
+      }
+      return { id: decided[0].id }
+    })
+
+    if (result.error) return res.status(result.status).json({ error: result.error })
+    res.json(await shapedLeave(result.id))
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })
     next(err)
@@ -357,26 +398,58 @@ router.post('/:id/approve', async (req, res, next) => {
 /** POST /api/leaves/:id/reject — reject (no balance change). Optional comment. */
 router.post('/:id/reject', async (req, res, next) => {
   try {
-    const leave = await loadDecidableLeave(req)
-    // Same atomic pending -> decided flip as approve: a plain save() here
-    // could silently overwrite a concurrent approval (without refunding the
-    // balance it deducted).
-    const decided = await Leave.findOneAndUpdate(
-      { _id: leave._id, status: 'pending' },
-      {
-        status: 'rejected',
-        approverId: req.user._id,
-        decidedAt: new Date(),
-        decisionComment: String(req.body?.comment || '').trim(),
-      },
-      { new: true },
-    ).populate('userId', 'name email employeeId managerId')
-    if (!decided) {
-      return res.status(409).json({ error: 'This leave has already been decided.' })
-    }
-    res.json(decided.toJSONSafe())
+    const decided = await tx(async (client) => {
+      const leave = await loadDecidableLeave(req, client)
+      // Same atomic pending -> decided flip as approve: a lost race means a
+      // concurrent approval already deducted — never silently overwrite it.
+      const { rows } = await client.query(
+        `update leaves
+            set status = 'rejected', approver_id = $1, decided_at = now(), decision_comment = $2
+          where id = $3 and status = 'pending'
+          returning id`,
+        [req.user.id, String(req.body?.comment || '').trim(), leave.id],
+      )
+      if (!rows.length) {
+        throw Object.assign(new Error('This leave has already been decided.'), { status: 409 })
+      }
+      return rows[0]
+    })
+    res.json(await shapedLeave(decided.id))
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })
+    next(err)
+  }
+})
+
+/**
+ * DELETE /api/leaves/:id — cancel one of the CURRENT USER's own PENDING
+ * leave requests. Balance is never touched: it's only deducted on approval
+ * (see /:id/approve above), so a pending request cancels for free.
+ */
+router.delete('/:id', async (req, res, next) => {
+  try {
+    if (!isValidId(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid leave id.' })
+    }
+    const { rows } = await q('select * from leaves where id = $1', [req.params.id])
+    const leave = rows[0]
+    if (!leave) return res.status(404).json({ error: 'Leave request not found.' })
+    if (leave.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'You can only cancel your own leave requests.' })
+    }
+    if (leave.status !== 'pending') {
+      return res.status(409).json({ error: 'Only pending leave requests can be cancelled.' })
+    }
+    // Guarded on status so a concurrent approval can't be cancelled from under
+    // its already-deducted balance.
+    const { rowCount } = await q("delete from leaves where id = $1 and status = 'pending'", [
+      leave.id,
+    ])
+    if (!rowCount) {
+      return res.status(409).json({ error: 'Only pending leave requests can be cancelled.' })
+    }
+    res.json({ id: req.params.id })
+  } catch (err) {
     next(err)
   }
 })
@@ -387,10 +460,8 @@ router.get('/all', async (req, res, next) => {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Admins only.' })
     }
-    const leaves = await Leave.find({})
-      .populate('userId', 'name email employeeId')
-      .sort({ createdAt: -1 })
-    res.json(leaves.map((l) => l.toJSONSafe()))
+    const { rows } = await q(`${LEAVE_WITH_USER} order by l.created_at desc`)
+    res.json(rows.map(leaveJSON))
   } catch (err) {
     next(err)
   }
@@ -404,9 +475,7 @@ router.get('/all', async (req, res, next) => {
  */
 router.get('/calendar', async (req, res, next) => {
   try {
-    const month = /^\d{4}-\d{2}$/.test(req.body?.month || req.query.month || '')
-      ? req.query.month
-      : dayKey().slice(0, 7)
+    const month = /^\d{4}-\d{2}$/.test(req.query.month || '') ? req.query.month : dayKey().slice(0, 7)
     const monthStart = startOfDay(`${month}-01`)
     const monthEnd = new Date(monthStart)
     monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1)
@@ -414,12 +483,14 @@ router.get('/calendar', async (req, res, next) => {
     // Approved leaves overlapping the month (company-wide). Deliberately
     // excludes kind: 'wfh' — working from home isn't an absence, so it stays
     // off the "who's out" calendar entirely (this endpoint's whole purpose).
-    const approved = await Leave.find({
-      kind: 'leave',
-      status: 'approved',
-      startDate: { $lt: monthEnd },
-      endDate: { $gte: monthStart },
-    }).populate('userId', 'name')
+    const { rows: approved } = await q(
+      `select l.*, u.name as employee_name
+         from leaves l
+         join users u on u.id = l.user_id
+        where l.kind = 'leave' and l.status = 'approved'
+          and l.start_date < $1 and l.end_date >= $2`,
+      [monthEnd, monthStart],
+    )
 
     // Build a per-day map: { 'YYYY-MM-DD': [{ name, type, self, ... }] }.
     // Every entry carries enough to render a full detail view on click
@@ -434,21 +505,21 @@ router.get('/calendar', async (req, res, next) => {
       ;(byDay[key] ??= []).push(entry)
     }
     for (const l of approved) {
-      const isSelf = l.userId?._id?.toString() === req.user._id.toString()
-      const keys = dateKeysInRange(dayKey(l.startDate), dayKey(l.endDate))
+      const isSelf = l.user_id === req.user.id
+      const keys = dateKeysInRange(dayKey(l.start_date), dayKey(l.end_date))
       for (const k of keys) {
         push(k, {
-          id: l._id.toString(),
-          name: l.userId?.name ?? 'Someone',
+          id: l.id,
+          name: l.employee_name ?? 'Someone',
           type: l.type,
           self: isSelf,
           kind: 'leave',
           status: 'approved',
-          startDate: dayKey(l.startDate),
-          endDate: dayKey(l.endDate),
+          startDate: dayKey(l.start_date),
+          endDate: dayKey(l.end_date),
           days: l.days,
-          createdAt: l.createdAt,
-          ...(isSelf ? { reason: l.reason, decisionComment: l.decisionComment || '' } : {}),
+          createdAt: l.created_at,
+          ...(isSelf ? { reason: l.reason, decisionComment: l.decision_comment || '' } : {}),
         })
       }
     }
@@ -456,39 +527,38 @@ router.get('/calendar', async (req, res, next) => {
     // The user's own pending/rejected leaves (so they show on their calendar).
     // Same kind: 'leave' exclusion as above — WFH requests live on the
     // Leaves page's own list, not this calendar.
-    const own = await Leave.find({
-      kind: 'leave',
-      userId: req.user._id,
-      status: { $in: ['pending', 'rejected'] },
-      startDate: { $lt: monthEnd },
-      endDate: { $gte: monthStart },
-    })
+    const { rows: own } = await q(
+      `select * from leaves
+        where kind = 'leave' and user_id = $1 and status in ('pending', 'rejected')
+          and start_date < $2 and end_date >= $3`,
+      [req.user.id, monthEnd, monthStart],
+    )
     for (const l of own) {
-      for (const k of dateKeysInRange(dayKey(l.startDate), dayKey(l.endDate))) {
+      for (const k of dateKeysInRange(dayKey(l.start_date), dayKey(l.end_date))) {
         push(k, {
-          id: l._id.toString(),
+          id: l.id,
           name: 'You',
           type: l.type,
           self: true,
           kind: l.status,
           status: l.status,
-          startDate: dayKey(l.startDate),
-          endDate: dayKey(l.endDate),
+          startDate: dayKey(l.start_date),
+          endDate: dayKey(l.end_date),
           days: l.days,
           reason: l.reason,
-          decisionComment: l.decisionComment || '',
-          createdAt: l.createdAt,
+          decisionComment: l.decision_comment || '',
+          createdAt: l.created_at,
         })
       }
     }
 
     // Attendance auto-leave days for the current user (<8h days).
-    await finalizeStaleSessions(req.user._id)
-    const leaveDays = await WorkSession.find({
-      userId: req.user._id,
-      dayStatus: 'leave',
-      date: { $gte: `${month}-01`, $lte: `${month}-31` },
-    }).select('date')
+    await finalizeStaleSessions(req.user.id)
+    const { rows: leaveDays } = await q(
+      `select date from work_sessions
+        where user_id = $1 and day_status = 'leave' and date between $2 and $3`,
+      [req.user.id, `${month}-01`, `${month}-31`],
+    )
     for (const s of leaveDays) {
       push(s.date, {
         id: `attendance-${s.date}`,

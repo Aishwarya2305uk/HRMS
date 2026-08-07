@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken'
 import { JWT_SECRET } from '../env.js'
-import { User } from '../models/User.js'
+import { findUserById } from '../store.js'
 
 /**
  * Verify the Bearer JWT and attach the current user to req.user.
@@ -14,7 +14,7 @@ export async function requireAuth(req, res, next) {
     if (!token) return res.status(401).json({ error: 'Not authenticated.' })
 
     const payload = jwt.verify(token, JWT_SECRET)
-    const user = await User.findById(payload.sub)
+    const user = await findUserById(String(payload.sub || ''))
     if (!user) return res.status(401).json({ error: 'Session no longer valid.' })
 
     req.user = user

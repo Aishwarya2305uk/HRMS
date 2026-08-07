@@ -187,9 +187,14 @@
   border-radius: var(--r-md);
   display: grid;
   place-items: center;
-  color: #fff;
-  background: linear-gradient(180deg, var(--primary), var(--primary-600));
+  /* light chip so the dark logo art reads against the dark rail */
+  background: #fff;
   box-shadow: var(--ring-primary);
+}
+.emp__logo .mark img {
+  width: 28px;
+  height: 28px;
+  display: block;
 }
 .emp__logo-text {
   display: flex;
@@ -685,44 +690,6 @@ button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
   0% { opacity: 0; transform: translateY(16px) scale(0.94); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
-
-/* ---------------- Quick access tiles ---------------- */
-.quick-tiles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-.quick-tile {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 11px 16px 11px 11px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  background: var(--surface-1);
-  box-shadow: var(--elev-1);
-  color: var(--text);
-  font-weight: 650;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  animation: pop-in 0.5s var(--spring) both;
-  animation-delay: var(--d, 0ms);
-  transition: transform 0.2s var(--spring), box-shadow 0.2s;
-}
-.quick-tile:hover { transform: translateY(-3px); box-shadow: var(--elev-2); }
-.quick-tile:active { transform: translateY(0) scale(0.97); }
-.quick-tile__icon {
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-}
-.quick-tile.tint-indigo .quick-tile__icon { background: var(--primary-soft); color: var(--primary-700); }
-.quick-tile.tint-blue .quick-tile__icon { background: var(--accent-soft); color: var(--primary-600); }
-.quick-tile.tint-green .quick-tile__icon { background: var(--success-soft); color: var(--success); }
-.quick-tile.tint-amber .quick-tile__icon { background: var(--warning-soft); color: var(--warning); }
 
 /* ---------------- Stat cards ---------------- */
 .stat-row {

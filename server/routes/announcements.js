@@ -1,9 +1,7 @@
 import { Router } from 'express'
-import mongoose from 'mongoose'
+import { q } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
-import { Announcement } from '../models/Announcement.js'
-import { User } from '../models/User.js'
-import { Team } from '../models/Team.js'
+import { isValidId, announcementJSON } from '../store.js'
 import { ancestorChain } from '../services/hierarchy.js'
 
 const router = Router()
@@ -14,18 +12,23 @@ const BODY_MAX = 2000
 const LIST_LIMIT = 100 // small internal user base — plenty of headroom, keeps the query bounded
 const ROLES = ['employee', 'manager', 'admin']
 
-/** Whether announcement `a` reaches `viewer` (the full req.user), whose upward chain is `chain`. */
+/** The joins every listing uses: author/root/group display names attached. */
+const ANNOUNCEMENT_WITH_NAMES = `
+  select a.*, au.name as author_name, ru.name as audience_root_name,
+         t.name as audience_group_name, t.member_ids as audience_group_member_ids
+    from announcements a
+    left join users au on au.id = a.author_id
+    left join users ru on ru.id = a.audience_root_id
+    left join teams t on t.id = a.audience_group_id`
+
+/** Whether announcement row `a` reaches `viewer` (req.user), whose upward chain is `chain`. */
 function matchesAudience(a, viewer, chain) {
-  if (a.audienceScope === 'all') return true
-  if (a.audienceScope === 'role') return a.audienceRole === viewer.role
-  if (a.audienceScope === 'group') {
-    const memberIds = a.audienceGroupId?.memberIds ?? []
-    return memberIds.some((id) => id.toString() === viewer._id.toString())
+  if (a.audience_scope === 'all') return true
+  if (a.audience_scope === 'role') return a.audience_role === viewer.role
+  if (a.audience_scope === 'group') {
+    return (a.audience_group_member_ids ?? []).includes(viewer.id)
   }
-  const rootId = a.audienceRootId?._id
-    ? a.audienceRootId._id.toString()
-    : a.audienceRootId?.toString()
-  return rootId ? chain.has(rootId) : false
+  return a.audience_root_id ? chain.has(a.audience_root_id) : false
 }
 
 /**
@@ -34,20 +37,15 @@ function matchesAudience(a, viewer, chain) {
  */
 router.get('/', async (req, res, next) => {
   try {
-    const [all, chain] = await Promise.all([
-      Announcement.find({})
-        .populate('authorId', 'name')
-        .populate('audienceRootId', 'name')
-        .populate('audienceGroupId', 'name memberIds')
-        .sort({ createdAt: -1 })
-        .limit(LIST_LIMIT),
-      ancestorChain(req.user._id),
+    const [{ rows: all }, chain] = await Promise.all([
+      q(`${ANNOUNCEMENT_WITH_NAMES} order by a.created_at desc limit ${LIST_LIMIT}`),
+      ancestorChain(req.user.id),
     ])
     const mine = all.filter((a) => matchesAudience(a, req.user, chain))
     res.json(
       mine.map((a) => ({
-        ...a.toJSONSafe(),
-        read: a.readBy.some((id) => id.toString() === req.user._id.toString()),
+        ...announcementJSON(a),
+        read: (a.read_by || []).includes(req.user.id),
       })),
     )
   } catch (err) {
@@ -61,13 +59,18 @@ router.get('/', async (req, res, next) => {
  */
 router.post('/read-all', async (req, res, next) => {
   try {
-    const [unread, chain] = await Promise.all([
-      Announcement.find({ readBy: { $ne: req.user._id } }).populate('audienceGroupId', 'memberIds'),
-      ancestorChain(req.user._id),
+    const [{ rows: unread }, chain] = await Promise.all([
+      q(`${ANNOUNCEMENT_WITH_NAMES} where not (a.read_by @> array[$1]::uuid[])`, [req.user.id]),
+      ancestorChain(req.user.id),
     ])
-    const ids = unread.filter((a) => matchesAudience(a, req.user, chain)).map((a) => a._id)
+    const ids = unread.filter((a) => matchesAudience(a, req.user, chain)).map((a) => a.id)
     if (ids.length) {
-      await Announcement.updateMany({ _id: { $in: ids } }, { $addToSet: { readBy: req.user._id } })
+      // The @> re-check makes the append idempotent under concurrent calls.
+      await q(
+        `update announcements set read_by = read_by || $1::uuid
+          where id = any($2) and not (read_by @> array[$1]::uuid[])`,
+        [req.user.id, ids],
+      )
     }
     res.json({ ok: true })
   } catch (err) {
@@ -86,25 +89,24 @@ router.use(requireRole('admin', 'manager'))
  */
 router.get('/audience-options', async (req, res, next) => {
   try {
-    const users = await User.find({}).select('name managerId')
-    const byId = new Map(users.map((u) => [u._id.toString(), u]))
+    const { rows: users } = await q('select id, name, manager_id from users')
+    const byId = new Map(users.map((u) => [u.id, u]))
 
     // For every user, walk their chain to the top; each ancestor's subtree
     // grows by one. Cheap in-memory pass since the whole roster is already
     // loaded (same scale assumption as the existing org-tree endpoint).
     const subtreeSize = new Map()
     for (const u of users) {
-      const seen = new Set([u._id.toString()])
-      let cursor = u.managerId ? u.managerId.toString() : null
+      const seen = new Set([u.id])
+      let cursor = u.manager_id
       while (cursor && !seen.has(cursor)) {
         subtreeSize.set(cursor, (subtreeSize.get(cursor) || 0) + 1)
         seen.add(cursor)
-        const next = byId.get(cursor)?.managerId
-        cursor = next ? next.toString() : null
+        cursor = byId.get(cursor)?.manager_id ?? null
       }
     }
 
-    const viewerId = req.user._id.toString()
+    const viewerId = req.user.id
     const managerIds =
       req.user.role === 'admin'
         ? [...subtreeSize.keys()]
@@ -122,9 +124,12 @@ router.get('/audience-options', async (req, res, next) => {
 
     // The caller's own named project teams — a finer-grained alternative to
     // broadcasting to the whole subtree above.
-    const ownTeams = await Team.find({ managerId: req.user._id }).select('name memberIds')
+    const { rows: ownTeams } = await q(
+      'select id, name, member_ids from teams where manager_id = $1',
+      [req.user.id],
+    )
     const groups = ownTeams
-      .map((t) => ({ id: t._id.toString(), name: t.name, size: t.memberIds.length }))
+      .map((t) => ({ id: t.id, name: t.name, size: (t.member_ids || []).length }))
       .sort((a, b) => a.name.localeCompare(b.name))
 
     res.json({
@@ -147,13 +152,12 @@ router.get('/audience-options', async (req, res, next) => {
  */
 router.get('/sent', async (req, res, next) => {
   try {
-    const filter = req.user.role === 'admin' ? {} : { authorId: req.user._id }
-    const items = await Announcement.find(filter)
-      .populate('authorId', 'name')
-      .populate('audienceRootId', 'name')
-      .sort({ createdAt: -1 })
-      .limit(LIST_LIMIT)
-    res.json(items.map((a) => a.toJSONSafe()))
+    const where = req.user.role === 'admin' ? '' : 'where a.author_id = $1'
+    const { rows } = await q(
+      `${ANNOUNCEMENT_WITH_NAMES} ${where} order by a.created_at desc limit ${LIST_LIMIT}`,
+      req.user.role === 'admin' ? [] : [req.user.id],
+    )
+    res.json(rows.map(announcementJSON))
   } catch (err) {
     next(err)
   }
@@ -193,6 +197,7 @@ router.post('/', async (req, res, next) => {
     let finalAudienceRole = null
     let finalRootId = null
     let finalGroupId = null
+    let groupName = null
 
     if (audienceScope === 'all' || audienceScope === 'role') {
       if (req.user.role !== 'admin') {
@@ -205,46 +210,48 @@ router.post('/', async (req, res, next) => {
         finalAudienceRole = audienceRole
       }
     } else if (audienceScope === 'team') {
-      if (!mongoose.Types.ObjectId.isValid(audienceRootId)) {
+      if (!isValidId(audienceRootId)) {
         return res.status(400).json({ error: 'Choose a valid team to target.' })
       }
       if (req.user.role === 'admin') {
-        const exists = await User.exists({ _id: audienceRootId })
-        if (!exists) return res.status(400).json({ error: 'Selected team no longer exists.' })
+        const { rows } = await q('select 1 from users where id = $1', [audienceRootId])
+        if (!rows.length) return res.status(400).json({ error: 'Selected team no longer exists.' })
       } else {
         const chain = await ancestorChain(audienceRootId)
-        if (!chain.has(req.user._id.toString())) {
+        if (!chain.has(req.user.id)) {
           return res.status(403).json({ error: 'You can only broadcast to your own team.' })
         }
       }
       finalRootId = audienceRootId
     } else {
       // audienceScope === 'group' — a named project team.
-      if (!mongoose.Types.ObjectId.isValid(audienceGroupId)) {
+      if (!isValidId(audienceGroupId)) {
         return res.status(400).json({ error: 'Choose a valid team to target.' })
       }
-      const group = await Team.findById(audienceGroupId)
+      const { rows } = await q('select * from teams where id = $1', [audienceGroupId])
+      const group = rows[0]
       if (!group) return res.status(400).json({ error: 'Selected team no longer exists.' })
-      if (req.user.role !== 'admin' && group.managerId.toString() !== req.user._id.toString()) {
+      if (req.user.role !== 'admin' && group.manager_id !== req.user.id) {
         return res.status(403).json({ error: 'You can only broadcast to teams you created.' })
       }
       finalGroupId = audienceGroupId
+      groupName = group.name
     }
 
-    const announcement = await Announcement.create({
-      title: cleanTitle,
-      body: cleanBody,
-      type,
-      authorId: req.user._id,
-      audienceScope,
-      audienceRole: finalAudienceRole,
-      audienceRootId: finalRootId,
-      audienceGroupId: finalGroupId,
-      readBy: [req.user._id], // the author has implicitly seen their own post
-    })
-    if (finalGroupId) await announcement.populate('audienceGroupId', 'name')
+    const { rows } = await q(
+      `insert into announcements (title, body, type, author_id, audience_scope, audience_role,
+                                  audience_root_id, audience_group_id, read_by)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, array[$4]::uuid[])
+       returning *`,
+      // read_by starts with the author — they've implicitly seen their own post.
+      [cleanTitle, cleanBody, type, req.user.id, audienceScope, finalAudienceRole, finalRootId, finalGroupId],
+    )
     console.log(`[announcements] ${req.user.email} posted "${cleanTitle}" (${audienceScope})`)
-    res.status(201).json({ ...announcement.toJSONSafe(), authorName: req.user.name, read: true })
+    res.status(201).json({
+      ...announcementJSON({ ...rows[0], audience_group_name: groupName }),
+      authorName: req.user.name,
+      read: true,
+    })
   } catch (err) {
     next(err)
   }
@@ -256,15 +263,16 @@ router.post('/', async (req, res, next) => {
  */
 router.delete('/:id', async (req, res, next) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    if (!isValidId(req.params.id)) {
       return res.status(400).json({ error: 'Invalid announcement id.' })
     }
-    const item = await Announcement.findById(req.params.id)
+    const { rows } = await q('select * from announcements where id = $1', [req.params.id])
+    const item = rows[0]
     if (!item) return res.status(404).json({ error: 'Announcement not found.' })
-    if (req.user.role !== 'admin' && item.authorId.toString() !== req.user._id.toString()) {
+    if (req.user.role !== 'admin' && item.author_id !== req.user.id) {
       return res.status(403).json({ error: 'You can only remove announcements you posted.' })
     }
-    await item.deleteOne()
+    await q('delete from announcements where id = $1', [req.params.id])
     console.log(`[announcements] ${req.user.email} removed announcement ${req.params.id}`)
     res.json({ id: req.params.id })
   } catch (err) {

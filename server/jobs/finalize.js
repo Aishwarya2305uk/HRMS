@@ -6,9 +6,8 @@
  *   node server/jobs/finalize.js        # one-off
  *   # or wire into cron just after midnight UTC
  */
-import mongoose from 'mongoose'
 import { pathToFileURL } from 'node:url'
-import { connectDB } from '../db.js'
+import { connectDB, closeDB } from '../db.js'
 import { finalizeStaleSessions } from '../services/attendance.js'
 
 export async function runFinalizer() {
@@ -21,7 +20,7 @@ const isMain = import.meta.url === pathToFileURL(process.argv[1]).href
 if (isMain) {
   connectDB()
     .then(runFinalizer)
-    .then(() => mongoose.disconnect())
+    .then(() => closeDB())
     .then(() => process.exit(0))
     .catch((err) => {
       console.error('[finalize] failed:', err.message)

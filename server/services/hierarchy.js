@@ -1,4 +1,4 @@
-import { User } from '../models/User.js'
+import { q } from '../db.js'
 
 /**
  * Every user id from `userId` up to the top of the reporting tree, INCLUDING
@@ -11,19 +11,19 @@ import { User } from '../models/User.js'
  *    -reports up to X)?
  *      (await ancestorChain(X)).has(M)
  *
- * Walks upward via managerId rather than downward from a root because a
+ * Walks upward via manager_id rather than downward from a root because a
  * viewer's chain to the top is a single path, while a root's full descendant
  * set can fan out arbitrarily — cheaper to walk the short direction and ask
  * "is X in it?" than to materialize every descendant of X.
  */
 export async function ancestorChain(userId) {
   const chain = new Set([String(userId)])
-  let cursor = await User.findById(userId).select('managerId')
-  while (cursor?.managerId) {
-    const id = String(cursor.managerId)
+  let { rows } = await q('select manager_id from users where id = $1', [userId])
+  while (rows[0]?.manager_id) {
+    const id = rows[0].manager_id
     if (chain.has(id)) break // corrupt-data cycle guard — never trust stored data blindly
     chain.add(id)
-    cursor = await User.findById(cursor.managerId).select('managerId')
+    ;({ rows } = await q('select manager_id from users where id = $1', [id]))
   }
   return chain
 }
@@ -41,13 +41,12 @@ export async function ancestorChain(userId) {
  * company size) rather than repeatedly querying one level at a time.
  */
 export async function descendantIds(managerId) {
-  const users = await User.find({}).select('_id managerId')
+  const { rows: users } = await q('select id, manager_id from users')
   const childrenOf = new Map()
   for (const u of users) {
-    if (!u.managerId) continue
-    const key = String(u.managerId)
-    if (!childrenOf.has(key)) childrenOf.set(key, [])
-    childrenOf.get(key).push(String(u._id))
+    if (!u.manager_id) continue
+    if (!childrenOf.has(u.manager_id)) childrenOf.set(u.manager_id, [])
+    childrenOf.get(u.manager_id).push(u.id)
   }
 
   const result = []

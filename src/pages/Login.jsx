@@ -7,7 +7,9 @@ export default function Login() {
       {/* Left: brand panel */}
       <aside className="auth__brand">
         <div className="brand__logo">
-          <span className="mark">◈</span>
+          <span className="mark">
+            <img src="/logo.svg" alt="" />
+          </span>
           <span className="brand__wordmark">
             <strong>ORBIT</strong>
             <em>by Trula.ai</em>

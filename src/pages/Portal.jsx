@@ -40,7 +40,6 @@ import DocumentsCard from '../components/DocumentsCard'
 import { SkeletonCard, ErrorState, InlineError } from '../components/States'
 import Sidebar from '../components/dashboard/Sidebar'
 import TopBar from '../components/dashboard/TopBar'
-import QuickAccessTiles from '../components/dashboard/QuickAccessTiles'
 import NotificationsPanel from '../components/notifications/NotificationsPanel'
 import NotificationsPage from '../components/notifications/NotificationsPage'
 
@@ -92,10 +91,9 @@ const FORM_LINKS = {
 /**
  * Portal is the ONE dashboard shell for every role (see App.jsx — both
  * /dashboard and /admin/dashboard render it). This table is the single place
- * that specifies which components each role gets: it drives the sidebar nav,
- * the dashboard's quick-access tiles, and (via `canAccess`/`isManager`
- * below) which content blocks render for a given tab. Order here is sidebar
- * order.
+ * that specifies which components each role gets: it drives the sidebar nav
+ * and (via `canAccess`/`isManager` below) which content blocks render for a
+ * given tab. Order here is sidebar order.
  */
 // Every role gets the dedicated Notifications page in the sidebar (the
 // topbar bell still opens the quick-glance drawer). Manager/admin ALSO keep
@@ -112,11 +110,12 @@ const ROLE_SECTIONS = {
 
 /** Sections tucked behind the sidebar's expandable "More" item instead of
  *  being listed directly. They stay in ROLE_SECTIONS (that still decides
- *  access + dashboard tiles); this only changes how the sidebar shows them.
+ *  access); this only changes how the sidebar shows them.
  *  The "More" toggle renders where the first of these falls in sidebar order
- *  — for admin, right after Other Settings. */
+ *  — for admin, just before Other Settings — and holds enough of the admin
+ *  list that the rail fits without scrolling. */
 const MORE_SECTIONS = {
-  admin: ['org', 'calendar', 'feedback', 'hrrequest'],
+  admin: ['allleaves', 'allattendance', 'leavepolicies', 'org', 'calendar', 'feedback', 'hrrequest'],
 }
 
 function canAccess(role, key) {
@@ -526,11 +525,6 @@ export default function Portal() {
         <div className="emp__content">
           {active === 'dashboard' && (
             <>
-              <QuickAccessTiles
-                items={nav.filter((n) => n.key !== 'dashboard' && !n.foot)}
-                onSelect={selectTab}
-              />
-
               <section className="stat-row">
                 {stats.map((s, i) => (
                   <article key={s.label} className={`card stat pop tint-${s.tint}`} style={{ '--d': `${i * 70}ms` }} tabIndex={0} {...tactile('light')}>

@@ -1,11 +1,14 @@
 import { Router } from 'express'
+import { q } from '../db.js'
 import { requireAuth } from '../middleware/auth.js'
-import { WorkSession, computeWorkedSeconds, isRunning } from '../models/WorkSession.js'
 import {
   finalizeStaleSessions,
   verdictFor,
   summarizeAttendance,
   bucketWeekly,
+  computeWorkedSeconds,
+  isRunning,
+  liveSessionJSON,
 } from '../services/attendance.js'
 import { dayKey } from '../utils/time.js'
 
@@ -18,46 +21,64 @@ router.use(requireAuth)
 
 /**
  * Load (or create) today's session for the current user, after first closing
- * any stale open sessions from previous days. Returns the live session doc.
+ * any stale open sessions from previous days. Returns the raw row.
  */
 async function getTodaySession(userId, { create = false } = {}) {
   await finalizeStaleSessions(userId)
   const date = dayKey()
-  let session = await WorkSession.findOne({ userId, date })
-  if (!session && create) {
-    session = await WorkSession.create({ userId, date, events: [], status: 'active' })
+  let { rows } = await q('select * from work_sessions where user_id = $1 and date = $2', [
+    userId,
+    date,
+  ])
+  if (!rows[0] && create) {
+    ;({ rows } = await q(
+      `insert into work_sessions (user_id, date) values ($1, $2)
+       on conflict (user_id, date) do update set user_id = excluded.user_id
+       returning *`,
+      [userId, date],
+    ))
   }
-  return session
+  return rows[0] ?? null
 }
 
 /** Append an event to today's session, enforcing valid state transitions. */
 async function appendEvent(userId, type) {
   const session = await getTodaySession(userId, { create: type === 'check_in' })
 
+  const events = [...(session?.events || [])]
   if (type === 'check_in') {
-    if (session.events.some((e) => e.type === 'check_in')) {
+    if (events.some((e) => e.type === 'check_in')) {
       throw httpError(409, 'You have already checked in today.')
     }
   } else {
     if (!session || session.status !== 'active') {
       throw httpError(409, 'You need to check in first.')
     }
-    const running = isRunning(session.events)
+    const running = isRunning(events)
     if (type === 'pause' && !running) throw httpError(409, 'Timer is not running.')
     if (type === 'resume' && running) throw httpError(409, 'Timer is already running.')
   }
 
-  session.events.push({ type, at: new Date() })
+  events.push({ type, at: new Date().toISOString() })
 
   // Manual check-out finalizes the day immediately (8h rule applies).
+  let workedSeconds = session.worked_seconds
+  let dayStatus = session.day_status
+  let status = session.status
   if (type === 'check_out') {
-    session.workedSeconds = computeWorkedSeconds(session.events, Date.now())
-    session.dayStatus = verdictFor(session.workedSeconds)
-    session.status = 'completed'
+    workedSeconds = computeWorkedSeconds(events, Date.now())
+    dayStatus = verdictFor(workedSeconds)
+    status = 'completed'
   }
 
-  await session.save()
-  return session
+  const { rows } = await q(
+    `update work_sessions
+       set events = $1, worked_seconds = $2, day_status = $3, status = $4
+     where id = $5
+     returning *`,
+    [JSON.stringify(events), workedSeconds, dayStatus, status, session.id],
+  )
+  return rows[0]
 }
 
 function httpError(status, message) {
@@ -69,7 +90,7 @@ function httpError(status, message) {
 /** GET /api/attendance/today — live status + elapsed seconds for today. */
 router.get('/today', async (req, res, next) => {
   try {
-    const session = await getTodaySession(req.user._id)
+    const session = await getTodaySession(req.user.id)
     if (!session) {
       return res.json({
         timerState: 'out',
@@ -80,7 +101,7 @@ router.get('/today', async (req, res, next) => {
         checkOutAt: null,
       })
     }
-    res.json(session.toLiveJSON())
+    res.json(liveSessionJSON(session))
   } catch (err) {
     next(err)
   }
@@ -97,8 +118,8 @@ router.post('/:action', async (req, res, next) => {
   try {
     const type = ACTIONS[req.params.action]
     if (!type) return res.status(404).json({ error: 'Unknown attendance action.' })
-    const session = await appendEvent(req.user._id, type)
-    res.json(session.toLiveJSON())
+    const session = await appendEvent(req.user.id, type)
+    res.json(liveSessionJSON(session))
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })
     next(err)
@@ -111,11 +132,12 @@ router.post('/:action', async (req, res, next) => {
  */
 router.get('/history', async (req, res, next) => {
   try {
-    await finalizeStaleSessions(req.user._id)
-    const sessions = await WorkSession.find({ userId: req.user._id })
-      .sort({ date: -1 })
-      .limit(60)
-    res.json(sessions.map((s) => s.toLiveJSON()))
+    await finalizeStaleSessions(req.user.id)
+    const { rows } = await q(
+      'select * from work_sessions where user_id = $1 order by date desc limit 60',
+      [req.user.id],
+    )
+    res.json(rows.map((s) => liveSessionJSON(s)))
   } catch (err) {
     next(err)
   }
@@ -130,15 +152,15 @@ router.get('/history', async (req, res, next) => {
  */
 router.get('/analytics', async (req, res, next) => {
   try {
-    await finalizeStaleSessions(req.user._id)
+    await finalizeStaleSessions(req.user.id)
     const to = dayKey()
     const from = dayKey(new Date(Date.now() - (ANALYTICS_WINDOW_DAYS - 1) * 86400000))
-    const sessions = await WorkSession.find({
-      userId: req.user._id,
-      date: { $gte: from, $lte: to },
-    }).sort({ date: 1 })
+    const { rows } = await q(
+      'select * from work_sessions where user_id = $1 and date between $2 and $3 order by date',
+      [req.user.id, from, to],
+    )
 
-    const daily = sessions.map((s) => s.toLiveJSON())
+    const daily = rows.map((s) => liveSessionJSON(s))
     const summary = summarizeAttendance(daily, { monthKey: to.slice(0, 7) })
     const weekly = bucketWeekly(daily)
 
@@ -159,15 +181,20 @@ router.get('/all', async (req, res, next) => {
     }
     const month = /^\d{4}-\d{2}$/.test(req.query.month || '') ? req.query.month : dayKey().slice(0, 7)
     await finalizeStaleSessions()
-    const sessions = await WorkSession.find({ date: { $gte: `${month}-01`, $lte: `${month}-31` } })
-      .populate('userId', 'name department')
-      .sort({ date: -1 })
+    const { rows } = await q(
+      `select s.*, u.name as employee_name, u.department as employee_department
+         from work_sessions s
+         left join users u on u.id = s.user_id
+        where s.date between $1 and $2
+        order by s.date desc`,
+      [`${month}-01`, `${month}-31`],
+    )
     res.json(
-      sessions.map((s) => ({
-        ...s.toLiveJSON(),
-        employeeId: s.userId?._id?.toString() ?? null,
-        employeeName: s.userId?.name ?? 'Unknown',
-        department: s.userId?.department ?? '',
+      rows.map((s) => ({
+        ...liveSessionJSON(s),
+        employeeId: s.user_id ?? null,
+        employeeName: s.employee_name ?? 'Unknown',
+        department: s.employee_department ?? '',
       })),
     )
   } catch (err) {

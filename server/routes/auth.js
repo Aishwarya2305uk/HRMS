@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import jwt from 'jsonwebtoken'
 import { JWT_SECRET, JWT_EXPIRES_IN, RECAPTCHA_SECRET_KEY } from '../env.js'
-import { User } from '../models/User.js'
+import { findUserByEmail, comparePassword, safeUserJSON } from '../store.js'
 import { requireAuth } from '../middleware/auth.js'
 import { loginLimiter } from '../middleware/security.js'
 
@@ -45,7 +45,7 @@ async function verifyCaptcha(token, remoteIp) {
 }
 
 function signToken(user) {
-  return jwt.sign({ sub: user._id.toString(), role: user.role }, JWT_SECRET, {
+  return jwt.sign({ sub: user.id, role: user.role }, JWT_SECRET, {
     expiresIn: JWT_EXPIRES_IN,
   })
 }
@@ -69,13 +69,13 @@ router.post('/login', loginLimiter, async (req, res) => {
       return res.status(400).json({ error: 'CAPTCHA verification failed. Please try again.' })
     }
 
-    const user = await User.findOne({ email: String(email).trim().toLowerCase() })
+    const user = await findUserByEmail(email)
     // Same generic message whether the email or password is wrong.
-    if (!user || !(await user.comparePassword(password))) {
+    if (!user || !(await comparePassword(password, user.passwordHash))) {
       return res.status(401).json({ error: 'Invalid email or password.' })
     }
 
-    return res.json({ token: signToken(user), user: user.toSafeJSON() })
+    return res.json({ token: signToken(user), user: safeUserJSON(user) })
   } catch (err) {
     console.error('[auth/login]', err)
     return res.status(500).json({ error: 'Something went wrong. Please try again.' })
@@ -84,7 +84,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 
 /** GET /api/auth/me — resolve the current user from the token (session check). */
 router.get('/me', requireAuth, (req, res) => {
-  res.json({ user: req.user.toSafeJSON() })
+  res.json({ user: safeUserJSON(req.user) })
 })
 
 export default router

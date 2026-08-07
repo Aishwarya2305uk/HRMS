@@ -1,8 +1,8 @@
 import { Router } from 'express'
-import mongoose from 'mongoose'
+import { q } from '../db.js'
+import { cachedEmploymentTypes, invalidate } from '../cache.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
-import { EmploymentType } from '../models/EmploymentType.js'
-import { User } from '../models/User.js'
+import { isValidId, employmentTypeJSON } from '../store.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -27,8 +27,8 @@ function sanitizeQuotas(input) {
 /** GET /api/employment-types — every employment type with its quota table. */
 router.get('/', async (_req, res, next) => {
   try {
-    const types = await EmploymentType.find({}).sort({ createdAt: 1 })
-    res.json(types.map((t) => t.toJSONSafe()))
+    const rows = await cachedEmploymentTypes()
+    res.json(rows.map(employmentTypeJSON))
   } catch (err) {
     next(err)
   }
@@ -41,8 +41,12 @@ router.post('/', async (req, res, next) => {
     if (!name || name.length > NAME_MAX) {
       return res.status(400).json({ error: `Give it a name (max ${NAME_MAX} characters).` })
     }
-    const type = await EmploymentType.create({ name, quotas: sanitizeQuotas(req.body?.quotas) })
-    res.status(201).json(type.toJSONSafe())
+    const { rows } = await q(
+      'insert into employment_types (name, quotas) values ($1, $2) returning *',
+      [name, JSON.stringify(sanitizeQuotas(req.body?.quotas))],
+    )
+    invalidate('employment_types')
+    res.status(201).json(employmentTypeJSON(rows[0]))
   } catch (err) {
     next(err)
   }
@@ -50,33 +54,38 @@ router.post('/', async (req, res, next) => {
 
 /**
  * PATCH /api/employment-types/:id — rename and/or replace the quota table.
- * Deliberately NOT retroactive: this only changes the policy document
- * itself. People already assigned this type keep their frozen
- * User.leaveQuotas snapshot from whenever they were assigned (see
- * models/User.js) — only future assignments see the new numbers.
+ * Deliberately NOT retroactive: this only changes the policy row itself.
+ * People already assigned this type keep their frozen users.leave_quotas
+ * snapshot from whenever they were assigned — only future assignments see
+ * the new numbers.
  */
 router.patch('/:id', async (req, res, next) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    if (!isValidId(req.params.id)) {
       return res.status(400).json({ error: 'Invalid employment type id.' })
     }
-    const type = await EmploymentType.findById(req.params.id)
+    const { rows: found } = await q('select * from employment_types where id = $1', [req.params.id])
+    const type = found[0]
     if (!type) return res.status(404).json({ error: 'Employment type not found.' })
 
+    let name = type.name
+    let quotas = type.quotas
     if (req.body?.name !== undefined) {
-      const name = String(req.body.name).trim()
+      name = String(req.body.name).trim()
       if (!name || name.length > NAME_MAX) {
         return res.status(400).json({ error: `Give it a name (max ${NAME_MAX} characters).` })
       }
-      type.name = name
     }
     if (req.body?.quotas !== undefined) {
-      type.quotas = sanitizeQuotas(req.body.quotas)
-      type.markModified('quotas')
+      quotas = sanitizeQuotas(req.body.quotas)
     }
 
-    await type.save()
-    res.json(type.toJSONSafe())
+    const { rows } = await q(
+      'update employment_types set name = $1, quotas = $2 where id = $3 returning *',
+      [name, JSON.stringify(quotas), req.params.id],
+    )
+    invalidate('employment_types')
+    res.json(employmentTypeJSON(rows[0]))
   } catch (err) {
     next(err)
   }
@@ -85,18 +94,20 @@ router.patch('/:id', async (req, res, next) => {
 /** DELETE /api/employment-types/:id — only when nobody is currently assigned it. */
 router.delete('/:id', async (req, res, next) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    if (!isValidId(req.params.id)) {
       return res.status(400).json({ error: 'Invalid employment type id.' })
     }
-    const inUse = await User.exists({ employmentType: req.params.id })
-    if (inUse) {
+    const { rows: inUse } = await q('select 1 from users where employment_type_id = $1 limit 1', [
+      req.params.id,
+    ])
+    if (inUse.length) {
       return res
         .status(409)
         .json({ error: 'People are currently assigned to this employment type — reassign them first.' })
     }
-    const type = await EmploymentType.findById(req.params.id)
-    if (!type) return res.status(404).json({ error: 'Employment type not found.' })
-    await type.deleteOne()
+    const { rowCount } = await q('delete from employment_types where id = $1', [req.params.id])
+    if (!rowCount) return res.status(404).json({ error: 'Employment type not found.' })
+    invalidate('employment_types')
     res.json({ id: req.params.id })
   } catch (err) {
     next(err)

@@ -1,5 +1,4 @@
-import { LeaveType } from './models/LeaveType.js'
-import { EmploymentType } from './models/EmploymentType.js'
+import { q } from './db.js'
 
 /** The exact keys/labels/quotas this app shipped with before policies became
  *  admin-configurable — used only to seed a sensible starting point. */
@@ -20,28 +19,32 @@ const DEFAULT_EMPLOYMENT_TYPES = [
 /**
  * Seeds a starting set of leave types + employment types on first connect —
  * same "create once, then it's entirely admin-owned" policy as
- * bootstrapAdmin(). Only runs when the respective collection is completely
+ * bootstrapAdmin(). Only runs when the respective table is completely
  * empty, so it never resurrects something an admin deliberately removed.
- *
- * Called from the same spots as bootstrapAdmin() (server/db.js and
- * server/dev-memory.js) so both the long-running server and the in-memory
- * dev path get a usable policy out of the box.
  */
 export async function bootstrapLeavePolicy() {
-  if ((await LeaveType.countDocuments()) === 0) {
-    try {
-      await LeaveType.insertMany(DEFAULT_LEAVE_TYPES, { ordered: false })
-      console.log('[bootstrap] seeded default leave types (casual, sick, earned)')
-    } catch (err) {
-      // Two cold starts can both see "empty" and race to seed; the unique
-      // `key` index rejects the loser's duplicates. Fine either way — the
-      // types exist. Anything else should still surface.
-      if (err?.code !== 11000) throw err
+  const { rows: ltCount } = await q('select count(*)::int as n from leave_types')
+  if (ltCount[0].n === 0) {
+    // Two cold starts can both see "empty" and race to seed; the unique
+    // `key` constraint plus on conflict do nothing lets the loser lose
+    // quietly — the types exist either way.
+    for (const t of DEFAULT_LEAVE_TYPES) {
+      await q('insert into leave_types (key, label) values ($1, $2) on conflict (key) do nothing', [
+        t.key,
+        t.label,
+      ])
     }
+    console.log('[bootstrap] seeded default leave types (casual, sick, earned)')
   }
 
-  if ((await EmploymentType.countDocuments()) === 0) {
-    await EmploymentType.insertMany(DEFAULT_EMPLOYMENT_TYPES)
+  const { rows: etCount } = await q('select count(*)::int as n from employment_types')
+  if (etCount[0].n === 0) {
+    for (const t of DEFAULT_EMPLOYMENT_TYPES) {
+      await q('insert into employment_types (name, quotas) values ($1, $2)', [
+        t.name,
+        JSON.stringify(t.quotas),
+      ])
+    }
     console.log('[bootstrap] seeded default employment types (Full-time, Intern, Part-time)')
   }
 }

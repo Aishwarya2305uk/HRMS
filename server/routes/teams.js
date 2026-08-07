@@ -1,8 +1,7 @@
 import { Router } from 'express'
-import mongoose from 'mongoose'
+import { q } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
-import { Team } from '../models/Team.js'
-import { User } from '../models/User.js'
+import { isValidId, teamJSON } from '../store.js'
 import { descendantIds } from '../services/hierarchy.js'
 
 const router = Router()
@@ -13,10 +12,15 @@ router.use(requireRole('admin', 'manager'))
 
 const NAME_MAX = 60
 
-function shapeTeam(team) {
+/** Attach `members` (id+name) resolved from member_ids. */
+async function shapeTeam(row) {
+  const { rows: members } = await q('select id, name from users where id = any($1)', [
+    row.member_ids || [],
+  ])
+  const byId = new Map(members.map((m) => [m.id, m.name]))
   return {
-    ...team.toJSONSafe(),
-    members: team.memberIds.map((m) => ({ id: m._id.toString(), name: m.name })),
+    ...teamJSON(row),
+    members: (row.member_ids || []).map((id) => ({ id, name: byId.get(id) ?? 'Unknown' })),
   }
 }
 
@@ -26,7 +30,7 @@ async function validateMembers(managerId, memberIds) {
     return 'Pick at least one team member.'
   }
   const ids = [...new Set(memberIds.map(String))]
-  if (ids.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+  if (ids.some((id) => !isValidId(id))) {
     return 'Invalid member id.'
   }
   const allowed = new Set(await descendantIds(managerId))
@@ -42,16 +46,12 @@ async function validateMembers(managerId, memberIds) {
  */
 router.get('/candidates', async (req, res, next) => {
   try {
-    const ids = await descendantIds(req.user._id)
-    const users = await User.find({ _id: { $in: ids } }).select('name designation department')
-    res.json(
-      users.map((u) => ({
-        id: u._id.toString(),
-        name: u.name,
-        designation: u.designation,
-        department: u.department,
-      })),
+    const ids = await descendantIds(req.user.id)
+    const { rows } = await q(
+      'select id, name, designation, department from users where id = any($1)',
+      [ids],
     )
+    res.json(rows)
   } catch (err) {
     next(err)
   }
@@ -60,10 +60,10 @@ router.get('/candidates', async (req, res, next) => {
 /** GET /api/teams/mine — the caller's own project teams, with member names. */
 router.get('/mine', async (req, res, next) => {
   try {
-    const teams = await Team.find({ managerId: req.user._id })
-      .populate('memberIds', 'name')
-      .sort({ name: 1 })
-    res.json(teams.map(shapeTeam))
+    const { rows } = await q('select * from teams where manager_id = $1 order by name', [
+      req.user.id,
+    ])
+    res.json(await Promise.all(rows.map(shapeTeam)))
   } catch (err) {
     next(err)
   }
@@ -76,16 +76,14 @@ router.post('/', async (req, res, next) => {
     if (!name || name.length > NAME_MAX) {
       return res.status(400).json({ error: `Give the team a name (max ${NAME_MAX} characters).` })
     }
-    const memberError = await validateMembers(req.user._id, req.body?.memberIds)
+    const memberError = await validateMembers(req.user.id, req.body?.memberIds)
     if (memberError) return res.status(400).json({ error: memberError })
 
-    const team = await Team.create({
-      name,
-      managerId: req.user._id,
-      memberIds: [...new Set(req.body.memberIds.map(String))],
-    })
-    await team.populate('memberIds', 'name')
-    res.status(201).json(shapeTeam(team))
+    const { rows } = await q(
+      'insert into teams (name, manager_id, member_ids) values ($1, $2, $3) returning *',
+      [name, req.user.id, [...new Set(req.body.memberIds.map(String))]],
+    )
+    res.status(201).json(await shapeTeam(rows[0]))
   } catch (err) {
     next(err)
   }
@@ -93,12 +91,13 @@ router.post('/', async (req, res, next) => {
 
 /** Shared guard: only the team's own manager may view/edit/delete it here. */
 async function loadOwnedTeam(req) {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+  if (!isValidId(req.params.id)) {
     throw Object.assign(new Error('Invalid team id.'), { status: 400 })
   }
-  const team = await Team.findById(req.params.id)
+  const { rows } = await q('select * from teams where id = $1', [req.params.id])
+  const team = rows[0]
   if (!team) throw Object.assign(new Error('Team not found.'), { status: 404 })
-  if (team.managerId.toString() !== req.user._id.toString()) {
+  if (team.manager_id !== req.user.id) {
     throw Object.assign(new Error('You can only manage teams you created.'), { status: 403 })
   }
   return team
@@ -109,22 +108,25 @@ router.patch('/:id', async (req, res, next) => {
   try {
     const team = await loadOwnedTeam(req)
 
+    let name = team.name
+    let memberIds = team.member_ids
     if (req.body?.name !== undefined) {
-      const name = String(req.body.name).trim()
+      name = String(req.body.name).trim()
       if (!name || name.length > NAME_MAX) {
         return res.status(400).json({ error: `Give the team a name (max ${NAME_MAX} characters).` })
       }
-      team.name = name
     }
     if (req.body?.memberIds !== undefined) {
-      const memberError = await validateMembers(req.user._id, req.body.memberIds)
+      const memberError = await validateMembers(req.user.id, req.body.memberIds)
       if (memberError) return res.status(400).json({ error: memberError })
-      team.memberIds = [...new Set(req.body.memberIds.map(String))]
+      memberIds = [...new Set(req.body.memberIds.map(String))]
     }
 
-    await team.save()
-    await team.populate('memberIds', 'name')
-    res.json(shapeTeam(team))
+    const { rows } = await q(
+      'update teams set name = $1, member_ids = $2 where id = $3 returning *',
+      [name, memberIds, req.params.id],
+    )
+    res.json(await shapeTeam(rows[0]))
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })
     next(err)
@@ -135,7 +137,7 @@ router.patch('/:id', async (req, res, next) => {
 router.delete('/:id', async (req, res, next) => {
   try {
     const team = await loadOwnedTeam(req)
-    await team.deleteOne()
+    await q('delete from teams where id = $1', [team.id])
     res.json({ id: req.params.id })
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })

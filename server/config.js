@@ -1,8 +1,8 @@
 /**
  * Single source of truth for HRMS business rules that aren't admin-managed
  * data. (Leave types and their quotas used to live here as fixed constants —
- * they're now admin-configurable records; see models/LeaveType.js and
- * models/EmploymentType.js.)
+ * they're now admin-configurable records; see the leave_types and
+ * employment_types tables.)
  */
 
 /**

@@ -158,7 +158,7 @@
   <p class="tag">Trula's internal Human Resource Management System — one fast, role-aware
   workspace for attendance, leave, announcements, and organization visibility.</p>
   <div class="chips">
-    <span>React 19 + Vite</span><span>Express 5</span><span>MongoDB</span><span>JWT auth</span><span>Serverless-ready</span>
+    <span>React 19 + Vite</span><span>Express 5</span><span>Supabase Postgres</span><span>JWT auth</span><span>Serverless-ready</span>
   </div>
 </header>
 
@@ -286,10 +286,10 @@
       <tr><td>Frontend</td><td>React 19 + Vite 8</td><td>Hand-rolled CSS per page — no UI framework, lean bundle</td></tr>
       <tr><td>Routing</td><td>react-router-dom 7</td><td>Three routes; one role-aware Portal shell renders every dashboard</td></tr>
       <tr><td>Backend</td><td>Express 5</td><td>One shared app serving both a long-running server and a Vercel serverless function</td></tr>
-      <tr><td>Database</td><td>MongoDB + Mongoose</td><td>Five collections: users, work_sessions, leaves, announcements, teams</td></tr>
+      <tr><td>Database</td><td>Supabase Postgres</td><td>Core tables: users, work_sessions, leaves, announcements, teams — schema self-provisions on first connect</td></tr>
       <tr><td>Auth</td><td>JWT + bcrypt</td><td>Stateless bearer tokens (7-day default); roles re-checked on every route</td></tr>
       <tr><td>Bot check</td><td>reCAPTCHA v2</td><td>Optional — the login page and server both no-op when unconfigured</td></tr>
-      <tr><td>Quality</td><td>oxlint</td><td>Fast linting; in-memory MongoDB mode for zero-setup local development</td></tr>
+      <tr><td>Quality</td><td>oxlint</td><td>Fast linting across the whole project</td></tr>
     </table></div>
 
     <h3 style="margin-top:22px">Design decisions worth knowing</h3>
@@ -305,15 +305,15 @@
     <h2>Running it locally</h2>
     <div class="cmds">
       <span class="cmd">npm install <i>install dependencies</i></span>
-      <span class="cmd">npm run dev:all:mem <i>frontend + API against an in-memory MongoDB (no setup)</i></span>
-      <span class="cmd">npm run dev:all <i>frontend + API against your configured MongoDB</i></span>
+      <span class="cmd">npm run dev:all <i>frontend + API against your Supabase Postgres database</i></span>
       <span class="cmd">npm run lint <i>oxlint over the project</i></span>
       <span class="cmd">npm run build <i>production build (deploys to Vercel with the serverless API)</i></span>
     </div>
     <p class="lede" style="margin-top:12px">
-      Configuration lives in <code>.env.local</code> — MongoDB URL, JWT secret, the seed admin
-      account, and optional reCAPTCHA keys. The first successful DB connection bootstraps the
-      admin user and the default leave and employment types.
+      Configuration lives in <code>.env.local</code> — Supabase Postgres connection string, JWT
+      secret, the seed admin account, and optional reCAPTCHA keys. The first successful DB
+      connection creates the schema and bootstraps the admin user and the default leave and
+      employment types.
     </p>
   </section>
 

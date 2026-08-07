@@ -1,5 +1,5 @@
-import { User } from './models/User.js'
-import { EmploymentType } from './models/EmploymentType.js'
+import { q } from './db.js'
+import { hashPassword, nextEmployeeId } from './store.js'
 import { ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_NAME } from './env.js'
 import { passwordPolicyError } from './utils/password.js'
 
@@ -18,7 +18,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  *
  * Never overwrites an existing admin: the env vars bootstrap the account
  * once, they are not a standing password-reset switch. To rotate the admin
- * password, sign in and change it (or update the document directly).
+ * password, sign in and change it (or update the row directly).
  */
 export async function bootstrapAdmin() {
   if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
@@ -38,31 +38,34 @@ export async function bootstrapAdmin() {
     return
   }
 
-  const existing = await User.findOne({ email: ADMIN_EMAIL })
-  if (existing) return
+  const { rows: existing } = await q('select id from users where email = $1', [ADMIN_EMAIL])
+  if (existing.length) return
 
   // The admin already gets a leave balance and can already apply for leave
   // today (no role gate on POST /leaves) — assign a default employment type
   // so that keeps working instead of silently landing on a zeroed policy.
-  const fullTime = await EmploymentType.findOne({ name: 'Full-time' })
+  const { rows: fullTimeRows } = await q(
+    "select id, quotas from employment_types where name = 'Full-time' limit 1",
+  )
+  const fullTime = fullTimeRows[0] ?? null
   const quotas = fullTime?.quotas || {}
 
-  const admin = new User({
-    name: ADMIN_NAME,
-    email: ADMIN_EMAIL,
-    role: 'admin',
-    employmentType: fullTime?._id ?? null,
-    leaveQuotas: quotas,
-    leaveBalances: { ...quotas },
-  })
-  await admin.setPassword(ADMIN_PASSWORD)
-  try {
-    await admin.save()
-    console.log(`[bootstrap] created initial admin account: ${ADMIN_EMAIL}`)
-  } catch (err) {
-    // Two cold starts can both see "no admin yet" and race to create one —
-    // the unique email index rejects the loser. That's fine, not a failure:
-    // the account exists either way. Anything else should still surface.
-    if (err?.code !== 11000) throw err
-  }
+  // Two cold starts can both see "no admin yet" and race to create one —
+  // on conflict do nothing lets the loser lose quietly: the account exists
+  // either way.
+  const { rowCount } = await q(
+    `insert into users (name, email, employee_id, password_hash, role, employment_type_id,
+                        leave_quotas, leave_balances)
+     values ($1, $2, $3, $4, 'admin', $5, $6, $6)
+     on conflict (email) do nothing`,
+    [
+      ADMIN_NAME,
+      ADMIN_EMAIL,
+      await nextEmployeeId(),
+      await hashPassword(ADMIN_PASSWORD),
+      fullTime?.id ?? null,
+      JSON.stringify(quotas),
+    ],
+  )
+  if (rowCount) console.log(`[bootstrap] created initial admin account: ${ADMIN_EMAIL}`)
 }

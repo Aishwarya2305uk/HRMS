@@ -1,9 +1,16 @@
 import { Router } from 'express'
-import mongoose from 'mongoose'
+import { q } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
-import { User } from '../models/User.js'
-import { EmploymentType } from '../models/EmploymentType.js'
-import { WorkSession, isRunning } from '../models/WorkSession.js'
+import {
+  isValidId,
+  mapUser,
+  safeUserJSON,
+  profileUserJSON,
+  hashPassword,
+  nextEmployeeId,
+  findUserById,
+} from '../store.js'
+import { isRunning } from '../services/attendance.js'
 import { dayKey } from '../utils/time.js'
 import { passwordPolicyError } from '../utils/password.js'
 
@@ -30,11 +37,13 @@ const PHOTO_DATA_URL_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i
  * @returns {Promise<Map<string, 'online'|'idle'|'offline'>>} keyed by user id
  */
 async function activityByUser() {
-  const sessions = await WorkSession.find({ date: dayKey() }).select('userId events status')
+  const { rows } = await q('select user_id, events, status from work_sessions where date = $1', [
+    dayKey(),
+  ])
   const map = new Map()
-  for (const s of sessions) {
+  for (const s of rows) {
     const open = s.status === 'active'
-    map.set(s.userId.toString(), !open ? 'offline' : isRunning(s.events) ? 'online' : 'idle')
+    map.set(s.user_id, !open ? 'offline' : isRunning(s.events) ? 'online' : 'idle')
   }
   return map
 }
@@ -43,27 +52,26 @@ async function activityByUser() {
  * GET /api/employees/org-tree — the whole reporting structure as a nested tree.
  * Admin only (org visibility for other roles is paused — restore by dropping
  * the requireRole below and re-adding 'org' to Portal's ROLE_SECTIONS). Built
- * purely from the managerId self-reference; roots are people with no manager
+ * purely from the manager_id self-reference; roots are people with no manager
  * (e.g. admins). Each node also carries a coarse `activity` state for the
  * presence dot.
  */
 router.get('/org-tree', requireRole('admin'), async (_req, res, next) => {
   try {
-    const [users, activity] = await Promise.all([
-      User.find({}).select('name designation department role managerId'),
+    const [{ rows: users }, activity] = await Promise.all([
+      q('select id, name, designation, department, role, manager_id from users'),
       activityByUser(),
     ])
     const nodes = new Map()
     for (const u of users) {
-      const id = u._id.toString()
-      nodes.set(id, {
-        id,
+      nodes.set(u.id, {
+        id: u.id,
         name: u.name,
         designation: u.designation,
         department: u.department,
         role: u.role,
-        managerId: u.managerId ? u.managerId.toString() : null,
-        activity: activity.get(id) ?? 'offline',
+        managerId: u.manager_id,
+        activity: activity.get(u.id) ?? 'offline',
         reports: [],
       })
     }
@@ -79,6 +87,19 @@ router.get('/org-tree', requireRole('admin'), async (_req, res, next) => {
   }
 })
 
+/** Load a user plus resolved manager/employment-type display names. */
+async function loadUserWithNames(id) {
+  const { rows } = await q(
+    `select u.*, m.name as manager_name, et.name as employment_type_name
+       from users u
+       left join users m on m.id = u.manager_id
+       left join employment_types et on et.id = u.employment_type_id
+      where u.id = $1`,
+    [id],
+  )
+  return rows[0] ?? null
+}
+
 /**
  * GET /api/employees/:id/profile — full personal profile (DOB, address,
  * phone, education, Aadhar) that org-tree/list endpoints deliberately omit.
@@ -86,23 +107,21 @@ router.get('/org-tree', requireRole('admin'), async (_req, res, next) => {
  */
 router.get('/:id/profile', async (req, res, next) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    if (!isValidId(req.params.id)) {
       return res.status(400).json({ error: 'Invalid employee id.' })
     }
-    const isSelf = req.params.id === req.user._id.toString()
+    const isSelf = req.params.id === req.user.id
     if (!isSelf && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'You do not have access to this resource.' })
     }
 
-    const target = await User.findById(req.params.id)
-      .populate('managerId', 'name')
-      .populate('employmentType', 'name')
+    const target = await loadUserWithNames(req.params.id)
     if (!target) return res.status(404).json({ error: 'Employee not found.' })
 
     res.json({
-      ...target.toProfileJSON(),
-      managerName: target.managerId?.name ?? null,
-      employmentTypeName: target.employmentType?.name ?? null,
+      ...profileUserJSON(mapUser(target)),
+      managerName: target.manager_name ?? null,
+      employmentTypeName: target.employment_type_name ?? null,
     })
   } catch (err) {
     next(err)
@@ -117,23 +136,28 @@ router.get('/:id/profile', async (req, res, next) => {
  */
 router.patch('/:id/profile', async (req, res, next) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    if (!isValidId(req.params.id)) {
       return res.status(400).json({ error: 'Invalid employee id.' })
     }
-    const isSelf = req.params.id === req.user._id.toString()
+    const isSelf = req.params.id === req.user.id
     if (!isSelf && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'You do not have access to this resource.' })
     }
 
-    const target = await User.findById(req.params.id)
-      .populate('managerId', 'name')
-      .populate('employmentType', 'name')
+    const target = await loadUserWithNames(req.params.id)
     if (!target) return res.status(404).json({ error: 'Employee not found.' })
-    const managerName = target.managerId?.name ?? null
+    const managerName = target.manager_name ?? null
     // May be overwritten below if employmentType actually changes.
-    let employmentTypeName = target.employmentType?.name ?? null
+    let employmentTypeName = target.employment_type_name ?? null
 
     const { dob, address, phone, education, aadharNumber, photoUrl, employmentType } = req.body || {}
+
+    const sets = []
+    const params = []
+    const set = (column, value) => {
+      params.push(value)
+      sets.push(`${column} = $${params.length}`)
+    }
 
     if (dob !== undefined) {
       if (dob) {
@@ -141,9 +165,9 @@ router.patch('/:id/profile', async (req, res, next) => {
         if (Number.isNaN(parsed.getTime()) || parsed > new Date()) {
           return res.status(400).json({ error: 'Enter a valid date of birth.' })
         }
-        target.dob = parsed
+        set('dob', parsed)
       } else {
-        target.dob = undefined
+        set('dob', null)
       }
     }
 
@@ -152,7 +176,7 @@ router.patch('/:id/profile', async (req, res, next) => {
       if (trimmed.length > 300) {
         return res.status(400).json({ error: 'Address must be under 300 characters.' })
       }
-      target.address = trimmed
+      set('address', trimmed)
     }
 
     if (phone !== undefined) {
@@ -160,7 +184,7 @@ router.patch('/:id/profile', async (req, res, next) => {
       if (trimmed && !PHONE_RE.test(trimmed)) {
         return res.status(400).json({ error: 'Enter a valid phone number.' })
       }
-      target.phone = trimmed
+      set('phone', trimmed)
     }
 
     if (education !== undefined) {
@@ -168,7 +192,7 @@ router.patch('/:id/profile', async (req, res, next) => {
       if (trimmed.length > 500) {
         return res.status(400).json({ error: 'Education must be under 500 characters.' })
       }
-      target.education = trimmed
+      set('education', trimmed)
     }
 
     if (aadharNumber !== undefined) {
@@ -176,7 +200,7 @@ router.patch('/:id/profile', async (req, res, next) => {
       if (digits && !AADHAR_RE.test(digits)) {
         return res.status(400).json({ error: 'Aadhar number must be exactly 12 digits.' })
       }
-      target.aadharNumber = digits
+      set('aadhar_number', digits)
     }
 
     if (photoUrl !== undefined) {
@@ -189,12 +213,12 @@ router.patch('/:id/profile', async (req, res, next) => {
           return res.status(400).json({ error: 'Unsupported image format.' })
         }
       }
-      target.photoUrl = trimmed
+      set('photo_url', trimmed)
     }
 
     // Employment classification — HR data, not a personal detail, so unlike
     // every field above this is admin-only even when editing your own
-    // profile. Only reseeds leaveQuotas/leaveBalances when the value
+    // profile. Only reseeds leave_quotas/leave_balances when the value
     // actually CHANGES (never on "field present but same as today"), so an
     // unrelated profile save can never silently reset someone's balance —
     // the frontend is expected to confirm this with the admin first, since
@@ -203,29 +227,36 @@ router.patch('/:id/profile', async (req, res, next) => {
       if (req.user.role !== 'admin') {
         return res.status(403).json({ error: 'Only an admin can change employment type.' })
       }
-      const currentId = target.employmentType?._id ? target.employmentType._id.toString() : null
+      const currentId = target.employment_type_id
       const nextId = employmentType || null
-      if (nextId && !mongoose.Types.ObjectId.isValid(nextId)) {
+      if (nextId && !isValidId(nextId)) {
         return res.status(400).json({ error: 'Invalid employment type id.' })
       }
       if (nextId !== currentId) {
-        let nextDoc = null
+        let nextType = null
         if (nextId) {
-          nextDoc = await EmploymentType.findById(nextId)
-          if (!nextDoc) return res.status(400).json({ error: 'Selected employment type does not exist.' })
+          const { rows } = await q('select * from employment_types where id = $1', [nextId])
+          nextType = rows[0]
+          if (!nextType) return res.status(400).json({ error: 'Selected employment type does not exist.' })
         }
-        const quotas = nextDoc?.quotas || {}
-        target.employmentType = nextId
-        target.leaveQuotas = { ...quotas }
-        target.leaveBalances = { ...quotas }
-        target.markModified('leaveQuotas')
-        target.markModified('leaveBalances')
-        employmentTypeName = nextDoc?.name ?? null
+        const quotas = JSON.stringify(nextType?.quotas || {})
+        set('employment_type_id', nextId)
+        set('leave_quotas', quotas)
+        set('leave_balances', quotas)
+        employmentTypeName = nextType?.name ?? null
       }
     }
 
-    await target.save()
-    res.json({ ...target.toProfileJSON(), managerName, employmentTypeName })
+    let updated = target
+    if (sets.length) {
+      params.push(req.params.id)
+      const { rows } = await q(
+        `update users set ${sets.join(', ')} where id = $${params.length} returning *`,
+        params,
+      )
+      updated = rows[0]
+    }
+    res.json({ ...profileUserJSON(mapUser(updated)), managerName, employmentTypeName })
   } catch (err) {
     next(err)
   }
@@ -237,15 +268,18 @@ router.use(requireRole('admin'))
 /** GET /api/employees — list everyone (admin view), with manager names. */
 router.get('/', async (_req, res, next) => {
   try {
-    const users = await User.find({})
-      .populate('managerId', 'name')
-      .populate('employmentType', 'name')
-      .sort({ createdAt: 1 })
+    const { rows } = await q(
+      `select u.*, m.name as manager_name, et.name as employment_type_name
+         from users u
+         left join users m on m.id = u.manager_id
+         left join employment_types et on et.id = u.employment_type_id
+        order by u.created_at`,
+    )
     res.json(
-      users.map((u) => ({
-        ...u.toSafeJSON(),
-        managerName: u.managerId?.name ?? null,
-        employmentTypeName: u.employmentType?.name ?? null,
+      rows.map((r) => ({
+        ...safeUserJSON(mapUser(r)),
+        managerName: r.manager_name ?? null,
+        employmentTypeName: r.employment_type_name ?? null,
       })),
     )
   } catch (err) {
@@ -257,7 +291,7 @@ router.get('/', async (_req, res, next) => {
  * POST /api/employees — add a new employee.
  * Body: { name, email, password, role, designation, department, joiningDate, managerId, employmentType }
  * The managerId is what wires this person into the org tree. employmentType
- * (optional) seeds leaveQuotas/leaveBalances from that policy's quotas —
+ * (optional) seeds leave_quotas/leave_balances from that policy's quotas —
  * left unassigned, the new hire starts with a zeroed leave balance until an
  * admin assigns one via their profile.
  */
@@ -288,40 +322,47 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid role.' })
     }
     const normEmail = String(email).trim().toLowerCase()
-    if (await User.findOne({ email: normEmail })) {
+    const { rows: emailTaken } = await q('select 1 from users where email = $1', [normEmail])
+    if (emailTaken.length) {
       return res.status(409).json({ error: 'An account with that email already exists.' })
     }
-    if (managerId && !(await User.findById(managerId))) {
+    if (managerId && !(await findUserById(managerId))) {
       return res.status(400).json({ error: 'Selected manager does not exist.' })
     }
-    let employmentTypeDoc = null
+    let employmentTypeRow = null
     if (employmentType) {
-      if (!mongoose.Types.ObjectId.isValid(employmentType)) {
+      if (!isValidId(employmentType)) {
         return res.status(400).json({ error: 'Invalid employment type.' })
       }
-      employmentTypeDoc = await EmploymentType.findById(employmentType)
-      if (!employmentTypeDoc) return res.status(400).json({ error: 'Selected employment type does not exist.' })
+      const { rows } = await q('select * from employment_types where id = $1', [employmentType])
+      employmentTypeRow = rows[0]
+      if (!employmentTypeRow) return res.status(400).json({ error: 'Selected employment type does not exist.' })
     }
-    const quotas = employmentTypeDoc?.quotas || {}
+    const quotas = JSON.stringify(employmentTypeRow?.quotas || {})
 
-    const user = new User({
-      name: String(name).trim(),
-      email: normEmail,
-      role,
-      designation: String(designation).trim(),
-      department: String(department).trim(),
-      joiningDate: joiningDate ? new Date(joiningDate) : undefined,
-      managerId: managerId || null,
-      employmentType: employmentTypeDoc?._id ?? null,
-      leaveQuotas: { ...quotas },
-      leaveBalances: { ...quotas },
-    })
-    await user.setPassword(String(password))
-    await user.save()
+    const { rows } = await q(
+      `insert into users (name, email, employee_id, password_hash, role, designation, department,
+                          joining_date, manager_id, employment_type_id, leave_quotas, leave_balances)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+       returning *`,
+      [
+        String(name).trim(),
+        normEmail,
+        await nextEmployeeId(),
+        await hashPassword(String(password)),
+        role,
+        String(designation).trim(),
+        String(department).trim(),
+        joiningDate ? new Date(joiningDate) : null,
+        managerId || null,
+        employmentTypeRow?.id ?? null,
+        quotas,
+      ],
+    )
     res.status(201).json({
-      ...user.toSafeJSON(),
+      ...safeUserJSON(mapUser(rows[0])),
       managerName: null,
-      employmentTypeName: employmentTypeDoc?.name ?? null,
+      employmentTypeName: employmentTypeRow?.name ?? null,
     })
   } catch (err) {
     next(err)
@@ -348,19 +389,22 @@ router.patch('/:id/role', async (req, res, next) => {
     if (!['employee', 'manager', 'admin'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role.' })
     }
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    if (!isValidId(req.params.id)) {
       return res.status(400).json({ error: 'Invalid employee id.' })
     }
-    if (req.params.id === req.user._id.toString()) {
+    if (req.params.id === req.user.id) {
       return res.status(400).json({ error: 'You cannot change your own role.' })
     }
 
-    const user = await User.findById(req.params.id)
+    const user = await findUserById(req.params.id)
     if (!user) return res.status(404).json({ error: 'Employee not found.' })
-    if (user.role === role) return res.json(user.toSafeJSON())
+    if (user.role === role) return res.json(safeUserJSON(user))
 
     if (role === 'employee') {
-      const reports = await User.countDocuments({ managerId: user._id })
+      const { rows } = await q('select count(*)::int as n from users where manager_id = $1', [
+        user.id,
+      ])
+      const reports = rows[0].n
       if (reports > 0) {
         return res.status(409).json({
           error: `${user.name} still manages ${reports} ${reports === 1 ? 'person' : 'people'} — reassign them to another manager first.`,
@@ -368,9 +412,11 @@ router.patch('/:id/role', async (req, res, next) => {
       }
     }
 
-    user.role = role
-    await user.save()
-    res.json(user.toSafeJSON())
+    const { rows } = await q('update users set role = $1 where id = $2 returning *', [
+      role,
+      user.id,
+    ])
+    res.json(safeUserJSON(mapUser(rows[0])))
   } catch (err) {
     next(err)
   }
@@ -383,30 +429,32 @@ router.patch('/:id/role', async (req, res, next) => {
 router.patch('/:id/manager', async (req, res, next) => {
   try {
     const { managerId } = req.body || {}
-    const user = await User.findById(req.params.id)
+    const user = await findUserById(req.params.id)
     if (!user) return res.status(404).json({ error: 'Employee not found.' })
 
     if (managerId) {
       if (managerId === req.params.id) {
         return res.status(400).json({ error: 'An employee cannot manage themselves.' })
       }
-      const manager = await User.findById(managerId)
+      const manager = await findUserById(managerId)
       if (!manager) return res.status(400).json({ error: 'Selected manager does not exist.' })
       // Walk up the proposed manager's chain to make sure we don't form a cycle.
       let cursor = manager
       const seen = new Set([req.params.id])
       while (cursor) {
-        if (seen.has(cursor._id.toString())) {
+        if (seen.has(cursor.id)) {
           return res.status(400).json({ error: 'That change would create a reporting loop.' })
         }
-        seen.add(cursor._id.toString())
-        cursor = cursor.managerId ? await User.findById(cursor.managerId) : null
+        seen.add(cursor.id)
+        cursor = cursor.managerId ? await findUserById(cursor.managerId) : null
       }
     }
 
-    user.managerId = managerId || null
-    await user.save()
-    res.json(user.toSafeJSON())
+    const { rows } = await q('update users set manager_id = $1 where id = $2 returning *', [
+      managerId || null,
+      user.id,
+    ])
+    res.json(safeUserJSON(mapUser(rows[0])))
   } catch (err) {
     next(err)
   }

@@ -34,9 +34,14 @@ export default function Sidebar({
   // Items flagged `more` live behind the expandable "More" toggle; items
   // flagged `foot` are pinned to the bottom by .emp__nav-gap. An item flagged
   // both (admin's Feedback / HR Request) goes under More — `more` wins.
-  const mainItems = nav.filter((i) => !i.foot && !i.more)
+  // The More toggle slots in where the first `more` item falls in nav order,
+  // so direct items listed after it (admin's Other Settings) render below it.
   const moreItems = nav.filter((i) => i.more)
   const footItems = nav.filter((i) => i.foot && !i.more)
+  const isMain = (i) => !i.foot && !i.more
+  const firstMore = nav.findIndex((i) => i.more)
+  const mainBefore = (firstMore === -1 ? nav : nav.slice(0, firstMore)).filter(isMain)
+  const mainAfter = firstMore === -1 ? [] : nav.slice(firstMore).filter(isMain)
   const activeInMore = moreItems.some((i) => i.key === active)
   // The More panel is a floating tile launcher (ClickUp-style): opens beside
   // the rail on desktop, above the bottom bar on mobile, and closes after any
@@ -57,8 +62,10 @@ export default function Sidebar({
       setMorePanelPos(null)
     } else {
       const r = e.currentTarget.getBoundingClientRect()
-      // Clamp so the panel never runs past the bottom of the viewport.
-      setMorePanelPos({ left: r.right + 14, top: Math.max(12, Math.min(r.top, window.innerHeight - 230)) })
+      // Clamp so the panel never runs past the bottom of the viewport —
+      // estimate its height from the 3-per-row tile grid.
+      const panelH = Math.ceil(moreItems.length / 3) * 95 + 40
+      setMorePanelPos({ left: r.right + 14, top: Math.max(12, Math.min(r.top, window.innerHeight - panelH)) })
     }
     setMoreOpen(true)
   }
@@ -93,7 +100,9 @@ export default function Sidebar({
   return (
     <aside className="emp__sidebar">
       <div className="emp__logo">
-        <span className="mark">◈</span>
+        <span className="mark">
+          <img src="/logo.svg" alt="" />
+        </span>
         <div className="emp__logo-text sidebar-label">
           <span>Orbit</span>
           <em>{CONSOLE_LABEL[role] ?? 'Workspace'}</em>
@@ -113,7 +122,7 @@ export default function Sidebar({
       </button>
 
       <nav className="emp__nav" aria-label="Main">
-        {mainItems.map((item) => renderItem(item))}
+        {mainBefore.map((item) => renderItem(item))}
         {moreItems.length > 0 && (
           <>
             <button
@@ -155,6 +164,7 @@ export default function Sidebar({
             )}
           </>
         )}
+        {mainAfter.map((item) => renderItem(item))}
         {footItems.length > 0 && <div className="emp__nav-gap" aria-hidden="true" />}
         {footItems.map((item) => renderItem(item))}
       </nav>

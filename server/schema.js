@@ -1,0 +1,207 @@
+/**
+ * HRMS Postgres schema, applied automatically the first time the server
+ * connects to an empty database (see connectDB in db.js). Point DATABASE_URL
+ * at a fresh Supabase project and the server provisions everything itself:
+ * tables → default leave policy → the one admin account from ADMIN_EMAIL /
+ * ADMIN_PASSWORD. No manual SQL or seed step.
+ *
+ * Every table has RLS enabled with NO policies, so Supabase's auto-generated
+ * Data API (anon/authenticated roles) can read nothing. The Express server
+ * connects as the role in DATABASE_URL — the default `postgres` role owns the
+ * tables and so is exempt from RLS. If you ever switch DATABASE_URL to a
+ * non-owner role, grant it table access and add policies for it first.
+ */
+
+const SCHEMA_SQL = /* sql */ `
+create extension if not exists pgcrypto;
+
+-- Shared updated_at maintenance for all tables.
+create or replace function set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at := now();
+  return new;
+end $$;
+alter function public.set_updated_at() set search_path = '';
+
+create table employment_types (
+  id uuid primary key default gen_random_uuid(),
+  name varchar(60) not null,
+  quotas jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table leave_types (
+  id uuid primary key default gen_random_uuid(),
+  key text not null unique,
+  label varchar(60) not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table users (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  email text not null unique,
+  employee_id text unique,
+  password_hash text not null,
+  role text not null default 'employee' check (role in ('employee','manager','admin')),
+  designation text not null default '',
+  department text not null default '',
+  joining_date timestamptz,
+  manager_id uuid references users(id) on delete set null,
+  employment_type_id uuid references employment_types(id) on delete set null,
+  photo_url text not null default '',
+  dob timestamptz,
+  address varchar(300) not null default '',
+  phone varchar(20) not null default '',
+  education varchar(500) not null default '',
+  aadhar_number varchar(12) not null default ''
+    check (aadhar_number = '' or aadhar_number ~ '^\\d{12}$'),
+  leave_balances jsonb not null default '{}'::jsonb,
+  leave_quotas jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index users_manager_id_idx on users (manager_id);
+
+create table teams (
+  id uuid primary key default gen_random_uuid(),
+  name varchar(60) not null,
+  manager_id uuid not null references users(id) on delete cascade,
+  member_ids uuid[] not null default '{}',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index teams_manager_id_idx on teams (manager_id);
+
+create table leaves (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  kind text not null default 'leave' check (kind in ('leave','wfh')),
+  type text check (kind <> 'leave' or type is not null),
+  start_date timestamptz not null,
+  end_date timestamptz not null,
+  day_part text not null default 'full' check (day_part in ('full','first','second')),
+  start_time text not null default '',
+  end_time text not null default '',
+  days numeric not null check (days >= 0.5),
+  reason text not null default '',
+  status text not null default 'pending' check (status in ('pending','approved','rejected')),
+  approver_id uuid references users(id) on delete set null,
+  decided_at timestamptz,
+  decision_comment text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index leaves_user_id_idx on leaves (user_id);
+create index leaves_status_idx on leaves (status);
+create index leaves_range_idx on leaves (start_date, end_date);
+
+create table work_sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  date text not null check (date ~ '^\\d{4}-\\d{2}-\\d{2}$'),
+  events jsonb not null default '[]'::jsonb,
+  status text not null default 'active' check (status in ('active','completed','auto_closed')),
+  worked_seconds integer not null default 0,
+  day_status text check (day_status in ('present','leave')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, date)
+);
+create index work_sessions_date_idx on work_sessions (date);
+create index work_sessions_open_idx on work_sessions (status, date);
+
+create table announcements (
+  id uuid primary key default gen_random_uuid(),
+  title varchar(140) not null,
+  body varchar(2000) not null,
+  type text not null default 'announcement' check (type in ('announcement','urgent')),
+  author_id uuid not null references users(id) on delete cascade,
+  audience_scope text not null check (audience_scope in ('all','role','team','group')),
+  audience_role text check (audience_role in ('employee','manager','admin')),
+  audience_root_id uuid references users(id) on delete set null,
+  audience_group_id uuid references teams(id) on delete set null,
+  read_by uuid[] not null default '{}',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index announcements_created_at_idx on announcements (created_at desc);
+
+create table documents (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  name varchar(200) not null,
+  mime_type text not null,
+  size integer not null check (size >= 0),
+  data_url text not null,
+  uploaded_by_id uuid references users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index documents_user_id_idx on documents (user_id);
+
+-- Enforced singleton.
+create table app_settings (
+  id smallint primary key default 1 check (id = 1),
+  feedback_form_url varchar(2048) not null default '',
+  hr_request_form_url varchar(2048) not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- updated_at triggers on every table.
+do $$
+declare t text;
+begin
+  foreach t in array array['employment_types','leave_types','users','teams','leaves',
+                           'work_sessions','announcements','documents','app_settings']
+  loop
+    execute format(
+      'create trigger %I before update on %I for each row execute function set_updated_at()',
+      t || '_set_updated_at', t);
+  end loop;
+end $$;
+
+-- Lock every table away from the Supabase Data API roles (anon/authenticated):
+-- RLS on, and deliberately NO policies for those roles.
+alter table employment_types enable row level security;
+alter table leave_types enable row level security;
+alter table users enable row level security;
+alter table teams enable row level security;
+alter table leaves enable row level security;
+alter table work_sessions enable row level security;
+alter table announcements enable row level security;
+alter table documents enable row level security;
+alter table app_settings enable row level security;
+`
+
+/**
+ * Creates the schema if this database doesn't have it yet (detected by the
+ * presence of the users table). An advisory lock serializes concurrent cold
+ * starts so only one instance runs the DDL; the others wait, re-check, and
+ * find the tables already there.
+ */
+export async function ensureSchema(pool) {
+  const { rows } = await pool.query("select to_regclass('public.users') as users_table")
+  if (rows[0].users_table) return
+
+  const client = await pool.connect()
+  try {
+    await client.query('select pg_advisory_lock(727270001)')
+    const again = await client.query("select to_regclass('public.users') as users_table")
+    if (!again.rows[0].users_table) {
+      await client.query(SCHEMA_SQL)
+      console.log('[db] empty database — created HRMS schema')
+    }
+  } finally {
+    try {
+      await client.query('select pg_advisory_unlock(727270001)')
+    } finally {
+      client.release()
+    }
+  }
+}

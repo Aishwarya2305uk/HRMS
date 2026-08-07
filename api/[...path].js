@@ -10,7 +10,7 @@
  * so behavior is identical in dev and on Vercel.
  *
  * Required env vars on Vercel (Project → Settings → Environment Variables):
- *   MONGODB_URL, JWT_SECRET   (and optionally JWT_EXPIRES_IN, CRON_SECRET)
+ *   DATABASE_URL, JWT_SECRET   (and optionally JWT_EXPIRES_IN, CRON_SECRET)
  */
 import { connectDB } from '../server/db.js'
 import { createApp } from '../server/app.js'

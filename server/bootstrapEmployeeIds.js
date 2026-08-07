@@ -1,19 +1,21 @@
-import { User } from './models/User.js'
+import { q } from './db.js'
+import { nextEmployeeId } from './store.js'
 
 /**
- * Backfills `employeeId` ("EMP001", ...) for users created before the field
- * existed. Runs on every connect (same spots as bootstrapAdmin: server/db.js
- * and dev-memory.js) but is a no-op once everyone has a code. Assigns in
- * createdAt order so the numbering matches hiring order; new users after
- * this get theirs from the pre-save hook in models/User.js.
+ * Backfills `employee_id` ("EMP001", ...) for users created before the field
+ * existed. Runs on every connect (from connectDB) but is a no-op once
+ * everyone has a code. Assigns in created_at order so the numbering matches
+ * hiring order; new users get theirs at insert time.
  */
 export async function bootstrapEmployeeIds() {
-  const missing = await User.find({
-    $or: [{ employeeId: null }, { employeeId: { $exists: false } }, { employeeId: '' }],
-  }).sort({ createdAt: 1 })
+  const { rows: missing } = await q(
+    "select id from users where employee_id is null or employee_id = '' order by created_at",
+  )
   if (missing.length === 0) return
 
-  // Sequentially — each save's pre-save hook reads the codes saved before it.
-  for (const user of missing) await user.save()
+  // Sequentially — each assignment must see the codes assigned before it.
+  for (const row of missing) {
+    await q('update users set employee_id = $1 where id = $2', [await nextEmployeeId(), row.id])
+  }
   console.log(`[bootstrap] assigned employee IDs to ${missing.length} existing user(s)`)
 }

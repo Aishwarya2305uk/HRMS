@@ -10,7 +10,7 @@ dotenv.config({ path: resolve(root, '.env.local') })
 dotenv.config({ path: resolve(root, '.env') })
 
 // dotenv keeps surrounding quotes off but tolerates `KEY = value` spacing.
-export const MONGODB_URL = process.env.MONGODB_URL?.trim()
+export const DATABASE_URL = process.env.DATABASE_URL?.trim()
 
 // In production a missing/weak JWT_SECRET is fatal: anyone who reads the
 // public dev fallback below could forge a valid token for any account, so

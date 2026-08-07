@@ -4,8 +4,8 @@ A fast, lean Human Resource Management System covering attendance, leave
 management, and organization visibility. Built to the spec in
 [HRMS_v1_Requirements.md](HRMS_v1_Requirements.md).
 
-**Stack:** React 19 + Vite (frontend) · Express 5 (API) · MongoDB / Mongoose ·
-JWT auth with backend-enforced RBAC.
+**Stack:** React 19 + Vite (frontend) · Express 5 (API) · Supabase Postgres
+(`pg`) · JWT auth with backend-enforced RBAC.
 
 ## Features
 
@@ -34,7 +34,7 @@ Copy the env template and fill in real values:
 cp .env.example .env.local
 ```
 
-At minimum set `MONGODB_URL`, `JWT_SECRET`, `ADMIN_EMAIL`, and
+At minimum set `DATABASE_URL`, `JWT_SECRET`, `ADMIN_EMAIL`, and
 `ADMIN_PASSWORD` — that admin account is the **only** one the app ever
 creates on its own. It self-provisions the first time the app connects to an
 empty database, no separate seed step required. Sign in with it at `/admin`
@@ -43,17 +43,10 @@ what wires up the org tree.
 
 ```bash
 npm install
-npm run dev:all         # API on :4000 + Vite on :5173, against MONGODB_URL
+npm run dev:all         # API on :4000 + Vite on :5173, against DATABASE_URL
 ```
 
 Open http://localhost:5173 (staff) or http://localhost:5173/admin.
-
-### Without a database yet
-
-`npm run dev:all:mem` runs the same app against a throwaway in-memory
-MongoDB (data is wiped on exit) — handy for trying the app before you have a
-real cluster. It uses the same `ADMIN_EMAIL` / `ADMIN_PASSWORD` bootstrap, so
-those still need to be set.
 
 `node server/jobs/finalize.js` runs the end-of-day attendance finalizer (also
 applied lazily on read, so it's optional on serverless).
@@ -70,7 +63,7 @@ statically and the Express API runs as a single serverless function
 
    | Variable         | Required | Notes                                                |
    | ---------------- | -------- | ----------------------------------------------------- |
-   | `MONGODB_URL`    | ✅       | MongoDB Atlas connection string                       |
+   | `DATABASE_URL`   | ✅       | Supabase Postgres connection string (transaction pooler, port 6543, for serverless) |
    | `JWT_SECRET`     | ✅       | long random string                                    |
    | `JWT_EXPIRES_IN` | –        | defaults to `7d`                                      |
    | `ADMIN_EMAIL`    | ✅       | creates the one initial admin account                 |
@@ -78,8 +71,8 @@ statically and the Express API runs as a single serverless function
    | `ADMIN_NAME`     | –        | defaults to "Administrator"                            |
    | `CRON_SECRET`    | –        | if set, protects the daily finalizer cron endpoint     |
 
-   In Atlas, allow Vercel's egress by adding `0.0.0.0/0` to the IP access list
-   (or Vercel's ranges).
+   Supabase's connection pooler accepts connections from anywhere by default —
+   no IP allowlist step needed.
 3. **First deploy provisions itself.** The very first request that connects
    to the database creates the `ADMIN_EMAIL` / `ADMIN_PASSWORD` admin
    automatically (see `server/bootstrapAdmin.js`) — nothing to run by hand.

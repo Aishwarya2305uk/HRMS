@@ -34,8 +34,8 @@ Backend:
 - Express.js
 
 Database:
-- MongoDB
-- Mongoose ODM
+- Supabase Postgres
+- node-postgres (pg) via the shared `q`/`tx` helpers in `server/db.js`
 
 Authentication:
 - JWT
@@ -174,60 +174,46 @@ Admin cannot bypass authentication.
 
 ---
 
-# MongoDB Security
+# Database Security (Postgres)
 
 Always use:
 
-- Mongoose
-- Schema Validation
-- Strict Mode
-- strictQuery
+- Parameterized queries ($1, $2, ...) — never string-interpolate user input into SQL
+- The shared `q`/`tx` helpers from `server/db.js`
+- Database constraints (NOT NULL, CHECK, UNIQUE, foreign keys) as the last line of defense
+- RLS enabled on every table with no policies for the Supabase Data API roles
 
 Never:
 
 - Use req.body directly
-- Trust client ObjectIds
-- Use eval()
-- Use $where
-- Use user input inside MongoDB operators
+- Trust client-supplied ids
+- Build SQL by concatenating strings
+- Interpolate identifiers (table/column names) from user input
 
-Always validate:
+Always validate ids before querying:
 
+```js
+isValidId(id) // uuid check from server/store.js
 ```
-mongoose.Types.ObjectId.isValid(id)
-```
-
-Reject malicious operators:
-
-- $gt
-- $lt
-- $ne
-- $or
-- $and
-- $regex
-- $where
-- $expr
 
 Whitelist allowed fields.
 
 Bad
 
 ```js
-User.findOne(req.body)
+q(`select * from users where email = '${req.body.email}'`)
 ```
 
 Good
 
 ```js
-User.findOne({
-    email: validated.email
-})
+q('select * from users where email = $1', [validated.email])
 ```
 
 Hide sensitive fields:
 
 ```
-password
+password_hash
 
 refreshToken
 
@@ -238,11 +224,11 @@ Use indexes for:
 
 - email
 - role
-- managerId
+- manager_id
 - leave status
 - attendance date
 
-Use MongoDB Transactions whenever multiple collections are modified.
+Use a transaction (`tx`) whenever multiple tables or rows are modified together.
 
 Example:
 
@@ -297,7 +283,7 @@ Never expose:
 
 - Stack traces
 - Internal errors
-- MongoDB errors
+- Database errors
 
 ---
 
@@ -313,7 +299,7 @@ Validate:
 - Employee Creation
 - Attendance Events
 - Manager Assignment
-- ObjectIds
+- Ids (uuids)
 
 Reject unknown fields.
 
@@ -559,7 +545,7 @@ Authentication:
 Never hardcode:
 
 - JWT Secret
-- Mongo URI
+- Database connection string
 - API Keys
 - SMTP Credentials
 - OAuth Secrets
@@ -608,8 +594,7 @@ Before every merge:
 - Remove unused packages
 - Update vulnerable dependencies
 - Keep Express updated
-- Keep Mongoose updated
-- Avoid deprecated MongoDB operators
+- Keep pg updated
 
 ---
 
@@ -629,7 +614,7 @@ Security tests must verify:
 
 - Authentication
 - Authorization
-- NoSQL Injection
+- SQL Injection
 - XSS
 - Broken Access Control
 
@@ -645,7 +630,7 @@ Every Pull Request must verify:
 
 ✅ Validation
 
-✅ NoSQL Injection Prevention
+✅ SQL Injection Prevention
 
 ✅ XSS Prevention
 
@@ -674,7 +659,7 @@ When generating code:
 - Never trust frontend validation.
 - Always validate all user input.
 - Always use Zod schemas.
-- Always use Mongoose models.
+- Always use parameterized SQL via the shared db helpers.
 - Prefer reusable middleware.
 - Explain security decisions briefly.
 - Refuse to generate intentionally insecure production code.
@@ -689,9 +674,9 @@ A feature is complete only if:
 
 ✅ Input validation complete
 
-✅ MongoDB queries secured
+✅ SQL queries parameterized
 
-✅ NoSQL Injection prevented
+✅ SQL Injection prevented
 
 ✅ Sensitive fields hidden
 

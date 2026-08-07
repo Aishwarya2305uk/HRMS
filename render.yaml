@@ -14,7 +14,7 @@ services:
     buildCommand: npm install
     startCommand: npm run server
     envVars:
-      - key: MONGODB_URL
+      - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
         sync: false
@@ -27,7 +27,7 @@ services:
       - key: ADMIN_NAME
         value: Administrator
 
-  # Runs server/jobs/finalize.js directly against MongoDB — no HTTP call, no
+  # Runs server/jobs/finalize.js directly against Postgres — no HTTP call, no
   # CRON_SECRET needed, since it's not going through the /api/cron/finalize
   # endpoint at all. Schedule matches vercel.json's cron (00:05 UTC daily).
   - type: cron
@@ -38,5 +38,5 @@ services:
     buildCommand: npm install
     startCommand: npm run finalize
     envVars:
-      - key: MONGODB_URL
+      - key: DATABASE_URL
         sync: false

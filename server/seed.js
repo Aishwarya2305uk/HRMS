@@ -3,18 +3,17 @@
  * server. connectDB() already runs bootstrapAdmin() on every fresh connect
  * (see db.js), so this script is really just "connect once, then exit" —
  * handy the first time you point at a brand new database, e.g. right after
- * setting MONGODB_URL for the first time.
+ * setting DATABASE_URL for the first time.
  *
- * Run with:  npm run seed   (uses MONGODB_URL, then disconnects)
+ * Run with:  npm run seed   (uses DATABASE_URL, then disconnects)
  */
-import mongoose from 'mongoose'
 import { pathToFileURL } from 'node:url'
-import { connectDB } from './db.js'
+import { connectDB, closeDB } from './db.js'
 
 const isMain = import.meta.url === pathToFileURL(process.argv[1]).href
 if (isMain) {
   connectDB()
-    .then(() => mongoose.disconnect())
+    .then(() => closeDB())
     .then(() => {
       console.log('[seed] done.')
       process.exit(0)

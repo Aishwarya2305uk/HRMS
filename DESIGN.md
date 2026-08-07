@@ -44,11 +44,11 @@ full out-of-scope list — do not casually add these without updating that doc.
 │  - role-aware sections  │ Bearer │    leaves, employees, cron)    │
 └─────────────────────────┘        │  - middleware/auth.js (RBAC)   │
                                     │  - services/ (attendance calc) │
-                                    │  - models/ (Mongoose)          │
+                                    │  - store.js (row mappers)      │
                                     └───────────────┬────────────────┘
                                                      │
                                             ┌────────▼────────┐
-                                            │   MongoDB Atlas  │
+                                            │ Supabase Postgres│
                                             └──────────────────┘
 ```
 
@@ -91,9 +91,10 @@ routes, and update this table.
 
 ---
 
-## 4. Data Model (MongoDB / Mongoose)
+## 4. Data Model (Supabase Postgres)
 
-Source of truth: `server/models/*.js`. Summarized here for quick reference —
+Source of truth: the Supabase migration history plus `server/store.js` (row
+shapes). Summarized here for quick reference —
 if these drift, trust the model files and fix this section.
 
 ### `users`
@@ -221,11 +222,11 @@ calls an endpoint that independently re-checks the role server-side.
 
 ## 8. Key Decisions & Rationale
 
-- **MongoDB over Postgres** (requirements doc suggested Postgres/MySQL): the
-  org tree and leave/session shapes are simple documents with no need for
-  joins beyond `managerId` population, and Mongoose's schema validation was
-  enough structure without the ops overhead of a relational server for a v1
-  this size.
+- **Supabase Postgres:** real foreign keys, check constraints, and a genuine
+  transaction around leave approval; the flexible per-leave-type maps
+  (leaveBalances/quotas, session event logs) are `jsonb`. The server
+  provisions its own schema on first connect (`server/schema.js`), so a
+  fresh database needs zero manual SQL.
 - **Single Vercel deployment, no separate backend host:** keeps ops to "push
   to GitHub," per the "fast and smooth" performance goal — no separate
   service to provision, monitor, or keep warm.

@@ -4,29 +4,8 @@
     {
       "name": "hrms-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 5173
-    },
-    {
-      "name": "hrms-fullstack",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:all:mem"],
-      "port": 5173
-    },
-    {
-      "name": "hrms-fullstack-alt",
-      "runtimeExecutable": "cmd",
-      "runtimeArgs": [
-        "/c",
-        "set API_PORT=4100&& set API_PROXY_TARGET=http://localhost:4100&& npm run dev:all:mem"
-      ],
-      "port": 5173
-    },
-    {
-      "name": "hrms-api-mem",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:mem"],
-      "port": 4000
+      "runtimeArgs": ["run", "dev", "--", "--port", "5190", "--strictPort"],
+      "port": 5190
     },
     {
       "name": "hrms-api",

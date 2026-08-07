@@ -18,10 +18,16 @@ const tintFor = (key, index) => TINTS[key] || TINT_PALETTE[index % TINT_PALETTE.
  */
 export default function LeaveBalanceCard({ user, types, onApply, loading, canApply = true, plain = false }) {
   const balances = user?.leaveBalances ?? {}
-  const quotaTotal = user?.leaveQuotaTotal ?? 0
   const remaining = types.reduce((s, t) => s + (Number(balances[t.key]) || 0), 0)
+  // The quota snapshot can be missing (accounts created before an employment
+  // type / policy was assigned) — never let the ring read "29 of 0 days"
+  // with an empty arc; fall back to the remaining total as the denominator.
+  const quotaTotal = Math.max(user?.leaveQuotaTotal ?? 0, remaining)
   const pct = quotaTotal ? Math.min(100, (remaining / quotaTotal) * 100) : 0
   const noneLeft = types.length > 0 && remaining === 0
+  // Zero remaining AND zero granted means leave was never allocated — a very
+  // different situation from having spent a real quota.
+  const neverGranted = noneLeft && quotaTotal === 0
 
   // `plain` drops the card chrome so this can sit as one section inside a
   // larger card (the Leaves tab's split "apply" card) — the parent then owns
@@ -78,7 +84,11 @@ export default function LeaveBalanceCard({ user, types, onApply, loading, canApp
             <p className="field-hint">Leave types couldn&apos;t load. Try refreshing the page.</p>
           )}
           {canApply && noneLeft && (
-            <p className="field-hint">You&apos;ve used all your leave for this year.</p>
+            <p className="field-hint">
+              {neverGranted
+                ? 'No leave has been allocated to your account yet — please contact your admin.'
+                : 'You’ve used all your leave for this year.'}
+            </p>
           )}
         </>
       )}
