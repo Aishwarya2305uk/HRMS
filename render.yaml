@@ -1,11 +1,19 @@
-# Render Blueprint — deploys the backend as a web service plus the daily
-# attendance finalizer as a separate Cron Job, since Vercel's `crons` config
-# (see vercel.json) only fires for functions deployed on Vercel itself.
+# Render Blueprint — deploys the backend as a web service.
 #
 # Usage: Render dashboard -> New -> Blueprint -> point at this repo. Render
-# reads this file and creates both services. Secrets (marked `sync: false`)
+# reads this file and creates the service. Secrets (marked `sync: false`)
 # are left blank in the YAML on purpose — you'll be prompted to fill them in
 # during the Blueprint setup, so nothing sensitive is committed here.
+#
+# End-of-day attendance finalization: the app finalizes lazily on read
+# (services/attendance.js), so no scheduler is REQUIRED for correctness.
+# Render's Cron Job service type has no free plan, so it's not part of this
+# blueprint. If you want a true nightly run anyway, either:
+#   - add a paid cron service here running `npm run finalize`, or
+#   - set CRON_SECRET on hrms-api and point any free scheduler (GitHub
+#     Actions, cron-job.org) at:
+#       GET https://<your-render-url>/api/cron/finalize
+#       Authorization: Bearer <CRON_SECRET>
 services:
   - type: web
     name: hrms-api
@@ -13,7 +21,10 @@ services:
     plan: free
     buildCommand: npm install
     startCommand: npm run server
+    healthCheckPath: /api/health
     envVars:
+      - key: NODE_ENV
+        value: production
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
@@ -26,17 +37,3 @@ services:
         sync: false
       - key: ADMIN_NAME
         value: Administrator
-
-  # Runs server/jobs/finalize.js directly against Postgres — no HTTP call, no
-  # CRON_SECRET needed, since it's not going through the /api/cron/finalize
-  # endpoint at all. Schedule matches vercel.json's cron (00:05 UTC daily).
-  - type: cron
-    name: hrms-finalize
-    runtime: node
-    plan: free
-    schedule: '5 0 * * *'
-    buildCommand: npm install
-    startCommand: npm run finalize
-    envVars:
-      - key: DATABASE_URL
-        sync: false
