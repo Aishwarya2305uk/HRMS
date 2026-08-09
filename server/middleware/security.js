@@ -63,3 +63,19 @@ export const inviteLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many attempts. Please wait 15 minutes and try again.' },
 })
+
+/**
+ * Brake on POST /auth/forgot, which triggers an outbound email per request.
+ * Unlike the limiters above, EVERY request counts (no skipSuccessfulRequests):
+ * the endpoint always answers 200 to avoid revealing whether an account
+ * exists, so "successful" here would mean unlimited — and each request is a
+ * potential email, making this a mail-bombing brake as much as an
+ * anti-enumeration one.
+ */
+export const forgotLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many reset requests. Please wait 15 minutes and try again.' },
+})

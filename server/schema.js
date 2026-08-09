@@ -52,6 +52,10 @@ create table users (
   status text not null default 'active' check (status in ('active','invited')),
   invite_token_hash text,
   invite_expires_at timestamptz,
+  -- Self-service password reset (same hashed-token scheme as invites: the raw
+  -- token exists only inside the emailed link).
+  reset_token_hash text,
+  reset_expires_at timestamptz,
   role text not null default 'employee' check (role in ('employee','manager','admin')),
   designation text not null default '',
   department text not null default '',
@@ -158,6 +162,26 @@ create table app_settings (
   updated_at timestamptz not null default now()
 );
 
+-- Append-only request/audit trail behind the admin System Logs page: one row
+-- per API call, 30-day retention (swept opportunistically — no cron on the
+-- free tier). Deliberately no updated_at / trigger: rows are never updated,
+-- and there is no write API — the audit trail must not be editable. Bodies,
+-- query strings and headers are never stored (see middleware/requestLog.js).
+create table request_logs (
+  id uuid primary key default gen_random_uuid(),
+  ts timestamptz not null default now(),
+  method varchar(10) not null,
+  path varchar(300) not null,
+  status integer not null check (status between 100 and 599),
+  duration_ms integer check (duration_ms >= 0),
+  user_email varchar(254),
+  user_role varchar(20),
+  ip varchar(64),
+  error_code varchar(30),
+  error_message varchar(500)
+);
+create index request_logs_ts_idx on request_logs (ts desc);
+
 -- updated_at triggers on every table.
 do $$
 declare t text;
@@ -182,6 +206,7 @@ alter table work_sessions enable row level security;
 alter table announcements enable row level security;
 alter table documents enable row level security;
 alter table app_settings enable row level security;
+alter table request_logs enable row level security;
 `
 
 /**
@@ -203,6 +228,29 @@ do $$ begin
     alter table users add constraint users_status_check check (status in ('active','invited'));
   end if;
 end $$;
+
+-- Self-service password reset (2026-08): emailed single-use link, hashed
+-- token at rest — same scheme as invite links above.
+alter table users add column if not exists reset_token_hash text;
+alter table users add column if not exists reset_expires_at timestamptz;
+
+-- Admin System Logs (2026-08): append-only request/audit trail, 30-day
+-- retention. Same shape and rationale as the SCHEMA_SQL definition above.
+create table if not exists request_logs (
+  id uuid primary key default gen_random_uuid(),
+  ts timestamptz not null default now(),
+  method varchar(10) not null,
+  path varchar(300) not null,
+  status integer not null check (status between 100 and 599),
+  duration_ms integer check (duration_ms >= 0),
+  user_email varchar(254),
+  user_role varchar(20),
+  ip varchar(64),
+  error_code varchar(30),
+  error_message varchar(500)
+);
+create index if not exists request_logs_ts_idx on request_logs (ts desc);
+alter table request_logs enable row level security;
 `
 
 /**

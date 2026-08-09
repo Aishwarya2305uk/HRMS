@@ -12,7 +12,11 @@ import {
   INVITE_TTL_MS,
 } from '../store.js'
 import { isRunning } from '../services/attendance.js'
+import { sendInviteEmail, appOrigin } from '../services/mailer.js'
 import { dayKey } from '../utils/time.js'
+
+/** The same /signup?token=... link the People modal shows, built server-side. */
+const inviteUrl = (req, token) => `${appOrigin(req)}/signup?token=${encodeURIComponent(token)}`
 
 const router = Router()
 router.use(requireAuth)
@@ -362,11 +366,20 @@ router.post('/', async (req, res, next) => {
         quotas,
       ],
     )
+    // Best-effort: a down SMTP server must not roll back the invite — the
+    // admin still gets the copyable link either way.
+    const inviteEmailSent = await sendInviteEmail({
+      to: normEmail,
+      name: String(name).trim(),
+      inviteUrl: inviteUrl(req, invite.token),
+    })
+
     res.status(201).json({
       ...safeUserJSON(mapUser(rows[0])),
       managerName: null,
       employmentTypeName: employmentTypeRow?.name ?? null,
       inviteToken: invite.token,
+      inviteEmailSent,
     })
   } catch (err) {
     next(err)
@@ -396,7 +409,12 @@ router.post('/:id/invite', async (req, res, next) => {
       new Date(Date.now() + INVITE_TTL_MS),
       user.id,
     ])
-    res.json({ inviteToken: invite.token })
+    const inviteEmailSent = await sendInviteEmail({
+      to: user.email,
+      name: user.name,
+      inviteUrl: inviteUrl(req, invite.token),
+    })
+    res.json({ inviteToken: invite.token, inviteEmailSent })
   } catch (err) {
     next(err)
   }

@@ -48,3 +48,18 @@ export const CORS_ORIGINS = (process.env.CORS_ORIGINS || '')
   .split(',')
   .map((v) => v.trim())
   .filter(Boolean)
+
+// Outbound mail (invite emails) via SMTP — see services/mailer.js. Optional:
+// with SMTP_HOST/SMTP_USER/SMTP_PASS unset the server warns once and skips
+// sending (the admin still gets the invite link to share by hand), same
+// "warn and skip if unconfigured" policy as Turnstile above.
+export const SMTP_HOST = process.env.SMTP_HOST?.trim()
+export const SMTP_PORT = Number(process.env.SMTP_PORT) || 465
+export const SMTP_USER = process.env.SMTP_USER?.trim()
+export const SMTP_PASS = process.env.SMTP_PASS
+export const SMTP_FROM = process.env.SMTP_FROM?.trim() || SMTP_USER
+
+// Public URL of the frontend, used to build invite links inside emails
+// (e.g. https://your-app.vercel.app). Falls back to the request's Origin
+// header, so local dev works without setting it.
+export const APP_URL = process.env.APP_URL?.trim().replace(/\/+$/, '')

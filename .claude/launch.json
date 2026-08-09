@@ -2,36 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "hrms-dev",
+      "name": "hrms",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--strictPort"],
-      "port": 5190,
-      "autoPort": true
-    },
-    {
-      "name": "hrms-api",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "server"],
-      "port": 4000
-    },
-    {
-      "name": "hrms-verify",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["C:/Users/sanja/AppData/Local/Temp/claude/C--Users-sanja-Documents-WORKSPACE-HRMS/ebd3cccc-359b-4984-898d-8043fa5b3934/scratchpad/dev-verify.mjs"],
-      "port": 5190,
-      "autoPort": true
-    },
-    {
-      "name": "orbit-site",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["--yes", "http-server", "orbit-site", "-p", "5195", "-c-1"],
-      "port": 5195
-    },
-    {
-      "name": "product-page",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["--yes", "http-server", "C:/Users/sanja/Documents/WORKSPACE", "-p", "5196", "-c-1"],
-      "port": 5196
+      "runtimeArgs": ["run", "dev:all"],
+      "port": 5190
     }
   ]
 }

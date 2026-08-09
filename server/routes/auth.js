@@ -8,11 +8,16 @@ import {
   safeUserJSON,
   hashPassword,
   findPendingInviteByToken,
+  findUserByResetToken,
+  newInviteToken,
+  hashInviteToken,
+  RESET_TTL_MS,
   mapUser,
 } from '../store.js'
 import { requireAuth } from '../middleware/auth.js'
-import { loginLimiter, inviteLimiter } from '../middleware/security.js'
+import { loginLimiter, inviteLimiter, forgotLimiter } from '../middleware/security.js'
 import { passwordPolicyError } from '../utils/password.js'
+import { sendPasswordResetEmail, appOrigin } from '../services/mailer.js'
 
 const router = Router()
 
@@ -202,6 +207,107 @@ router.post('/register', inviteLimiter, async (req, res, next) => {
 
     const activated = mapUser(rows[0])
     res.status(201).json({ token: signToken(activated), user: safeUserJSON(activated) })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/auth/forgot — public: request a password-reset email.
+ * Body: { email }
+ * ALWAYS answers the same 200, whether the email matched an account, matched
+ * a pending invite, or matched nothing — the response must not be an account-
+ * enumeration oracle. All the real work (mint token, store hash, send email)
+ * happens only for an active account, and even an SMTP failure doesn't change
+ * the response, just the server log. forgotLimiter caps the outbound mail.
+ */
+router.post('/forgot', forgotLimiter, async (req, res, next) => {
+  try {
+    const { email } = req.body || {}
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'Email is required.' })
+    }
+
+    const user = await findUserByEmail(email)
+    // Invited accounts have no password to reset — their path is the invite
+    // link. Silently skip (same response) rather than hint the email exists.
+    if (user && user.status === 'active' && user.passwordHash) {
+      // Reuses the invite token scheme: 256-bit raw token in the link only,
+      // SHA-256 hash at rest. A new request overwrites any previous token,
+      // so only the latest emailed link works.
+      const reset = newInviteToken()
+      await q('update users set reset_token_hash = $1, reset_expires_at = $2 where id = $3', [
+        reset.tokenHash,
+        new Date(Date.now() + RESET_TTL_MS),
+        user.id,
+      ])
+      await sendPasswordResetEmail({
+        to: user.email,
+        name: user.name,
+        resetUrl: `${appOrigin(req)}/reset-password?token=${encodeURIComponent(reset.token)}`,
+      })
+    }
+
+    res.json({
+      message: 'If that email belongs to an account, a reset link is on its way. Check your inbox.',
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * GET /api/auth/reset?token=... — public: resolve a reset link so the page
+ * can greet the person before they type a new password. Mirrors GET /invite:
+ * display fields only, one shared 404 for invalid/expired/used tokens.
+ */
+router.get('/reset', inviteLimiter, async (req, res, next) => {
+  try {
+    const user = await findUserByResetToken(req.query.token)
+    if (!user) {
+      return res.status(404).json({
+        error: 'This reset link is invalid or has expired — request a new one from the sign-in page.',
+      })
+    }
+    res.json({ name: user.name, email: user.email })
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
+ * POST /api/auth/reset — public: set a new password using a reset token.
+ * Body: { token, password }
+ * Burns the token (single-use, enforced by the WHERE clause even under a
+ * race) and signs the person straight in, like /register does.
+ */
+router.post('/reset', inviteLimiter, async (req, res, next) => {
+  try {
+    const { token, password } = req.body || {}
+
+    const user = await findUserByResetToken(token)
+    if (!user) {
+      return res.status(404).json({
+        error: 'This reset link is invalid or has expired — request a new one from the sign-in page.',
+      })
+    }
+
+    const passwordError = passwordPolicyError(password)
+    if (passwordError) return res.status(400).json({ error: passwordError })
+
+    const { rows } = await q(
+      `update users
+          set password_hash = $1, reset_token_hash = null, reset_expires_at = null
+        where id = $2 and reset_token_hash = $3
+        returning *`,
+      [await hashPassword(String(password)), user.id, hashInviteToken(token)],
+    )
+    if (!rows.length) {
+      return res.status(409).json({ error: 'This reset link was already used — request a new one.' })
+    }
+
+    const updated = mapUser(rows[0])
+    res.json({ token: signToken(updated), user: safeUserJSON(updated) })
   } catch (err) {
     next(err)
   }

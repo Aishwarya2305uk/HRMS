@@ -207,12 +207,6 @@
   min-height: 0;
   overflow-y: auto;
 }
-/* Elastic spacer between the main nav group and the foot group (Feedback /
-   HR Request) — pins the latter to the bottom of the rail. Collapses to
-   nothing once the item list is tall enough to scroll. */
-.emp__nav-gap {
-  flex: 1;
-}
 .nav-item {
   position: relative;
   display: flex;
@@ -394,42 +388,59 @@ button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
   transform: rotate(180deg);
 }
 
-/* ---------------- Collapsed rail (desktop only) ---------------- */
-.emp--collapsed .emp__sidebar {
-  padding-left: 10px;
-  padding-right: 10px;
-  transition: padding 0.28s ease;
-}
-.emp--collapsed .emp__logo {
-  justify-content: center;
-  padding: 6px 0 18px;
-}
-.emp--collapsed .nav-item {
-  justify-content: center;
-  padding: 11px 0;
-}
-.emp--collapsed .nav-item .nav-badge {
-  position: absolute;
-  top: 6px;
-  right: 14px;
-  width: 8px;
-  height: 8px;
-  min-width: 0;
-  padding: 0;
-  font-size: 0;
-  border-radius: 50%;
-  overflow: hidden;
-}
-.emp--collapsed .mini-profile {
-  justify-content: center;
-  padding: 10px 6px;
-}
-.emp--collapsed .sidebar-collapse-btn {
-  justify-content: center;
-  padding: 9px 0;
-}
-.emp--collapsed .sidebar-label {
+/* Scrim behind the phone nav drawer (rendered only while open — see
+   Sidebar.jsx). display:none outside the phone breakpoint, so a stale open
+   state can never dim a desktop screen. */
+.emp__nav-backdrop {
   display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: rgba(2, 6, 23, 0.48);
+  backdrop-filter: blur(2px);
+  animation: fade-in 0.22s ease both;
+}
+
+/* ---------------- Collapsed rail (desktop only) ----------------
+   Wrapped in min-width so the icons-only state can never bleed into the
+   phone drawer, which always shows full labels. */
+@media (min-width: 761px) {
+  .emp--collapsed .emp__sidebar {
+    padding-left: 10px;
+    padding-right: 10px;
+    transition: padding 0.28s ease;
+  }
+  .emp--collapsed .emp__logo {
+    justify-content: center;
+    padding: 6px 0 18px;
+  }
+  .emp--collapsed .nav-item {
+    justify-content: center;
+    padding: 11px 0;
+  }
+  .emp--collapsed .nav-item .nav-badge {
+    position: absolute;
+    top: 6px;
+    right: 14px;
+    width: 8px;
+    height: 8px;
+    min-width: 0;
+    padding: 0;
+    font-size: 0;
+    border-radius: 50%;
+    overflow: hidden;
+  }
+  .emp--collapsed .mini-profile {
+    justify-content: center;
+    padding: 10px 6px;
+  }
+  .emp--collapsed .sidebar-collapse-btn {
+    justify-content: center;
+    padding: 9px 0;
+  }
+  .emp--collapsed .sidebar-label {
+    display: none;
+  }
 }
 
 /* ---------------- Main ---------------- */
@@ -634,6 +645,11 @@ button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
   border-radius: 50%;
   background: var(--danger);
   box-shadow: 0 0 0 2px var(--surface-1);
+}
+/* Hamburger that opens the nav drawer — phone-only (see the 760px block). */
+.topbar-menu-btn {
+  display: none;
+  flex-shrink: 0;
 }
 .role-pill {
   font-size: var(--text-2xs);
@@ -855,6 +871,7 @@ button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
 /* ---------------- Leave balance ring ---------------- */
 .ring-wrap {
   display: flex;
+  flex-wrap: wrap; /* legend drops below the ring instead of overflowing on tiny screens */
   align-items: center;
   gap: 22px;
   margin: 4px 0 20px;
@@ -1002,38 +1019,55 @@ button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
 }
 @media (max-width: 760px) {
   .emp { grid-template-columns: 1fr; }
+  /* The rail becomes an off-canvas LEFT drawer: same markup, same styling —
+     logo, labeled items and profile intact — parked past the left edge until
+     the topbar hamburger opens it (Portal.jsx toggles .emp--nav-open on the
+     page root). Anchored top+bottom instead of height:100vh so mobile
+     browser chrome never clips the profile foot. */
   .emp__sidebar {
     position: fixed;
+    top: 0;
     bottom: 0;
-    top: auto;
+    left: 0;
     height: auto;
-    width: 100%;
-    flex-direction: row;
-    align-items: center;
-    padding: 8px;
-    border-right: none;
-    border-top: 1px solid var(--sb-border);
-    z-index: 20;
+    width: min(300px, 85vw);
+    transform: translateX(-100%);
+    transition: transform 0.28s var(--spring);
+    z-index: 40;
   }
-  .emp__logo, .emp__side-foot, .sidebar-collapse-btn { display: none; }
-  .emp__nav { flex-direction: row; width: 100%; justify-content: space-around; }
-  .nav-item { flex-direction: column; gap: 4px; font-size: var(--text-2xs); padding: 6px; }
-  /* Admin has too many sections for labeled items to fit un-scrolled — go
-     icon-only and let items share the width so nothing overflows or scrolls.
-     (The base rule's overflow-y:auto otherwise computes overflow-x to auto.)
-     Only the bar's direct items: the More popover keeps its labels. */
-  .emp[data-role='admin'] .emp__nav { overflow: hidden; }
-  .emp[data-role='admin'] .emp__nav > .nav-item { flex: 1 1 0; min-width: 0; padding: 6px 0; }
-  .emp[data-role='admin'] .emp__nav > .nav-item > .sidebar-label { display: none; }
-  /* On the bottom bar the tile panel pins above the bar (no anchor style is
-     set on mobile — see Sidebar.jsx's toggleMore). */
+  .emp--nav-open .emp__sidebar {
+    transform: translateX(0);
+    box-shadow: 12px 0 40px rgba(2, 6, 23, 0.45);
+  }
+  .emp__nav-backdrop { display: block; }
+  /* Icons-only collapse is a desktop affordance; the drawer is always full. */
+  .sidebar-collapse-btn { display: none; }
+  .topbar-menu-btn { display: grid; }
+
+  /* The More tile panel becomes a bottom sheet floating over the drawer
+     (no anchor style is set on phones — see Sidebar.jsx's toggleMore). */
   .nav-more__group {
-    bottom: 84px;
-    right: 10px;
+    left: 12px;
+    right: 12px;
+    bottom: 16px;
+    width: auto;
   }
-  .emp__content { padding: 20px 16px 90px; }
-  .emp__topbar { padding: 18px 16px; }
+
+  .emp__content { padding: 20px 16px 32px; }
+  .emp__topbar { padding: 14px 16px; gap: 12px; }
   .emp__topbar h1 { font-size: 20px; line-height: 28px; }
+
+  /* Comfortable thumb targets for controls that sit compact on desktop. */
+  .seg__btn { padding: 9px 12px; }
+  .mini-select { padding: 9px 28px 9px 10px; }
+  .link-btn { padding: 8px 10px; }
+}
+/* Small phones: tighten the stat cards so two-up still breathes at 320px. */
+@media (max-width: 520px) {
+  .stat-row { gap: 12px; }
+  .stat { padding: 14px; gap: 10px; }
+  .stat__icon { width: 40px; height: 40px; }
+  .stat__value { font-size: var(--text-lg); }
 }
 @media (max-width: 680px) {
   .topbar-search { display: none; }

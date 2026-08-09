@@ -1,5 +1,6 @@
 import express from 'express'
 import { securityHeaders, corsPolicy } from './middleware/security.js'
+import { requestLog } from './middleware/requestLog.js'
 import authRoutes from './routes/auth.js'
 import attendanceRoutes from './routes/attendance.js'
 import leaveRoutes from './routes/leaves.js'
@@ -11,6 +12,7 @@ import leaveTypeRoutes from './routes/leaveTypes.js'
 import employmentTypeRoutes from './routes/employmentTypes.js'
 import documentRoutes from './routes/documents.js'
 import settingsRoutes from './routes/settings.js'
+import systemLogRoutes from './routes/systemLogs.js'
 
 /** Builds the Express app (routes only — no DB connection, no listen). */
 export function createApp() {
@@ -26,6 +28,10 @@ export function createApp() {
   app.use(express.json({ limit: '6mb' }))
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }))
+  // Record every API call for the admin System Logs page. Mounted after the
+  // health ping (uptime monitors would flood the table) and before every real
+  // route, so nothing else escapes it.
+  app.use('/api', requestLog)
   app.use('/api/auth', authRoutes)
   app.use('/api/attendance', attendanceRoutes)
   app.use('/api/leaves', leaveRoutes)
@@ -37,6 +43,7 @@ export function createApp() {
   app.use('/api/employment-types', employmentTypeRoutes)
   app.use('/api/documents', documentRoutes)
   app.use('/api/settings', settingsRoutes)
+  app.use('/api/system-logs', systemLogRoutes)
 
   // Unknown /api route -> JSON 404. The method/path are logged server-side for
   // debugging but NOT reflected back in the response: echoing raw request input
@@ -52,6 +59,10 @@ export function createApp() {
   app.use((err, req, res, _next) => {
     const status = err.status || err.statusCode || 500
     console.error(`[api] ${req.method} ${req.originalUrl} ->`, err)
+    // The admin System Logs row gets the real reason (its audience is admins
+    // only); the HTTP response below still never carries internals.
+    res.locals.logDetail = err?.message
+
     // 4xx raised deliberately by our own routes carry user-safe copy; anything
     // else (including unexpected 500s) is replaced with a generic message.
     const safe =

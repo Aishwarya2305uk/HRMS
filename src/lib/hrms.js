@@ -46,6 +46,14 @@ export const invites = {
   register: (body) => apiFetch('/auth/register', { method: 'POST', body, auth: false }),
 }
 
+/** Self-service password reset (public, no auth): request the emailed link,
+ *  resolve it to the account it belongs to, then set the new password. */
+export const passwordReset = {
+  request: (email) => apiFetch('/auth/forgot', { method: 'POST', body: { email }, auth: false }),
+  lookup: (token) => apiFetch(`/auth/reset?token=${encodeURIComponent(token)}`, { auth: false }),
+  reset: (body) => apiFetch('/auth/reset', { method: 'POST', body, auth: false }),
+}
+
 /** Documents on an employee's HR file. Visibility (self / direct manager /
  *  admin), upload rights (self / admin) and deletion (admin only) are all
  *  enforced server-side — see server/routes/documents.js. */
@@ -91,6 +99,22 @@ export const leaveTypes = {
 export const appSettings = {
   get: () => apiFetch('/settings'),
   update: (body) => apiFetch('/settings', { method: 'PATCH', body }),
+}
+
+/** Admin-only: the System Logs page — one row per API call, kept 30 days
+ *  server-side. Filters become query params; empty/'all' values are omitted
+ *  so the URL only carries real constraints. */
+export const systemLogs = {
+  list: (filters = {}) => {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== null && value !== '' && value !== 'all') {
+        params.set(key, value)
+      }
+    }
+    const qs = params.toString()
+    return apiFetch(`/system-logs${qs ? `?${qs}` : ''}`)
+  },
 }
 
 /** Admin-only: manage employment classifications (Intern/Full-time/Part-time/custom) and their per-leave-type quotas. */

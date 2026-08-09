@@ -130,9 +130,7 @@ export default function LoginForm() {
           <label>
             <input type="checkbox" /> Remember me
           </label>
-          <a href="#reset" onClick={(e) => e.preventDefault()}>
-            Forgot password?
-          </a>
+          <Link to="/reset-password">Forgot password?</Link>
         </div>
 
         {REQUIRE_CAPTCHA && (

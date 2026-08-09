@@ -34,6 +34,7 @@ import AllAnnouncements from '../components/AllAnnouncements'
 import LeaveTypesManager from '../components/LeaveTypesManager'
 import EmploymentTypesManager from '../components/EmploymentTypesManager'
 import OtherSettingsManager from '../components/OtherSettingsManager'
+import SystemLogs from '../components/SystemLogs'
 import FormLinkModal from '../components/FormLinkModal'
 import Profile from '../components/Profile'
 import DocumentsCard from '../components/DocumentsCard'
@@ -71,13 +72,13 @@ const NAV_ITEMS = {
   allattendance: { label: 'All attendance', icon: 'list' },
   leavepolicies: { label: 'Leave Policies', icon: 'sliders' },
   othersettings: { label: 'Other Settings', icon: 'settings' },
+  systemlogs: { label: 'System Logs', icon: 'activity' },
   org: { label: 'Organization', icon: 'tree' },
   calendar: { label: 'Calendar', icon: 'calendar' },
-  // `foot: true` pins these below an elastic gap at the bottom of the sidebar.
-  // They don't open a section — selectTab intercepts them and opens the
+  // These don't open a section — selectTab intercepts them and opens the
   // admin-configured external form link (see FORM_LINKS / Other Settings).
-  feedback: { label: 'Feedback', icon: 'messageSquare', foot: true },
-  hrrequest: { label: 'HR Request', icon: 'lifeBuoy', foot: true },
+  feedback: { label: 'Feedback', icon: 'messageSquare' },
+  hrrequest: { label: 'HR Request', icon: 'lifeBuoy' },
 }
 
 /** Sidebar keys that open an admin-configured external form (embedded in a
@@ -105,7 +106,7 @@ const FORM_LINKS = {
 const ROLE_SECTIONS = {
   employee: ['dashboard', 'notifications', 'attendance', 'leaves', 'calendar', 'feedback', 'hrrequest'],
   manager: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'calendar', 'feedback', 'hrrequest'],
-  admin: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'people', 'othersettings', 'allleaves', 'allattendance', 'leavepolicies', 'org', 'calendar', 'feedback', 'hrrequest'],
+  admin: ['dashboard', 'notifications', 'attendance', 'leaves', 'approvals', 'announcements', 'people', 'othersettings', 'systemlogs', 'allleaves', 'allattendance', 'leavepolicies', 'org', 'calendar', 'feedback', 'hrrequest'],
 }
 
 /** Sections tucked behind the sidebar's expandable "More" item instead of
@@ -115,6 +116,10 @@ const ROLE_SECTIONS = {
  *  — for admin, last, right after Other Settings — and holds enough of the
  *  admin list that the rail fits without scrolling. */
 const MORE_SECTIONS = {
+  // Employees see every section directly — their list is short enough that
+  // nothing needs tucking away.
+  employee: [],
+  manager: ['feedback', 'hrrequest'],
   admin: ['allleaves', 'allattendance', 'leavepolicies', 'org', 'calendar', 'feedback', 'hrrequest'],
 }
 
@@ -134,7 +139,6 @@ function navFor(role, badges = {}) {
       icon: item.icon,
       badge: item.badgeKey ? badges[item.badgeKey] : undefined,
       badgeLabel: item.badgeLabel,
-      foot: item.foot,
       more: (MORE_SECTIONS[role] ?? []).includes(key),
     }
   })
@@ -173,6 +177,18 @@ export default function Portal() {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('hrms.sidebarCollapsed') === '1',
   )
+  // Phone-only nav drawer (opened by the topbar hamburger). Closed on every
+  // section pick so choosing a destination always reveals it.
+  const [navOpen, setNavOpen] = useState(false)
+  const closeNav = useCallback(() => setNavOpen(false), [])
+
+  // The open drawer overlays the page — freeze the page's own scroll under it.
+  useEffect(() => {
+    document.body.style.overflow = navOpen ? 'hidden' : ''
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [navOpen])
 
   function toggleCollapsed() {
     setCollapsed((c) => {
@@ -195,6 +211,7 @@ export default function Portal() {
   }
 
   function selectTab(key) {
+    setNavOpen(false)
     // Feedback / HR Request aren't sections — they pop up the external form
     // the admin configured under Other Settings, embedded in a modal.
     const link = FORM_LINKS[key]
@@ -220,7 +237,7 @@ export default function Portal() {
   const isManager = canAccess(role, 'approvals')
 
   // ---- Shared data (loaded up front, with visible failure states) ----
-  // Org-wide form links (Feedback / HR Request) — needed by the sidebar's foot
+  // Org-wide form links (Feedback / HR Request) — needed by those sidebar
   // items for every role, and edited in place on the admin Other Settings page.
   const settingsQ = useAsyncData(useCallback(() => appSettingsApi.get(), []))
   const configQ = useAsyncData(useCallback(() => leavesApi.config(), []))
@@ -424,6 +441,7 @@ export default function Portal() {
 
   /** Opens the profile page — your own (id omitted) or, for an admin, anyone else's. */
   function openProfile(id = null) {
+    setNavOpen(false) // reachable from the drawer's mini-profile
     setProfileTarget(id)
     setActive('profile')
   }
@@ -488,7 +506,11 @@ export default function Portal() {
   }
 
   return (
-    <div className={`emp${collapsed ? ' emp--collapsed' : ''}`} data-role={role} data-theme={theme || undefined}>
+    <div
+      className={`emp${collapsed ? ' emp--collapsed' : ''}${navOpen ? ' emp--nav-open' : ''}`}
+      data-role={role}
+      data-theme={theme || undefined}
+    >
       <Sidebar
         nav={nav}
         active={active}
@@ -500,6 +522,8 @@ export default function Portal() {
         collapsed={collapsed}
         onToggleCollapse={toggleCollapsed}
         onOpenProfile={() => openProfile(null)}
+        mobileOpen={navOpen}
+        onCloseMobile={closeNav}
       />
 
       {/* ---------------- Main ---------------- */}
@@ -507,6 +531,8 @@ export default function Portal() {
         <TopBar
           dateLabel={dateLabel}
           title={activeLabel}
+          onMenuClick={() => setNavOpen((o) => !o)}
+          menuOpen={navOpen}
           greeting={active === 'dashboard' ? `Good to see you, ${firstName}` : undefined}
           searchable={isSearchable}
           searchQuery={searchQuery}
@@ -735,6 +761,12 @@ export default function Portal() {
           {active === 'othersettings' && canAccess(role, 'othersettings') && (
             <div className="single-col">
               <OtherSettingsManager query={settingsQ} />
+            </div>
+          )}
+
+          {active === 'systemlogs' && canAccess(role, 'systemlogs') && (
+            <div className="single-col">
+              <SystemLogs />
             </div>
           )}
 

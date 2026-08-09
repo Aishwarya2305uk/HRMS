@@ -798,6 +798,49 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   cursor: pointer;
 }
 
+/* ---- System Logs (admin) ---- */
+.syslog__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+.syslog__sub { color: var(--text-muted); font-size: var(--text-sm); margin-top: 4px; max-width: 62ch; }
+.syslog__refresh { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; }
+.syslog__filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
+.syslog__search {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-1);
+  font-size: var(--text-xs);
+  width: 200px;
+}
+.syslog__count { margin-left: auto; font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; }
+.syslog__count b { color: var(--danger-text); font-weight: 700; }
+.syslog__table td { font-size: var(--text-xs); }
+.syslog__ts { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.syslog__user strong { font-size: var(--text-xs); overflow-wrap: anywhere; }
+.syslog__user em { display: block; font-style: normal; font-size: var(--text-2xs); color: var(--text-muted); text-transform: capitalize; }
+.syslog__anon { color: var(--text-faint); }
+.syslog__req {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-2xs);
+  overflow-wrap: anywhere;
+}
+.syslog-code {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.syslog-code.is-ok { background: var(--success-soft); color: var(--success-text); }
+.syslog-code.is-warn { background: var(--warning-soft); color: var(--warning-text); }
+.syslog-code.is-danger { background: var(--danger-soft); color: var(--danger-text); }
+.syslog__ms { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.syslog__err { color: var(--danger-text); font-size: var(--text-2xs); overflow-wrap: anywhere; }
+.syslog__err b {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.03em;
+}
+
 /* ---- Avatars (small/large + tinted) ---- */
 .avatar.sm {
   width: 32px;

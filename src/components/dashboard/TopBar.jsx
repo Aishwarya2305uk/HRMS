@@ -14,6 +14,8 @@ export default function TopBar({
   dateLabel,
   title,
   greeting,
+  onMenuClick,
+  menuOpen,
   searchable,
   searchQuery,
   onSearchChange,
@@ -29,6 +31,17 @@ export default function TopBar({
 }) {
   return (
     <header className="emp__topbar">
+      {/* Phone-only (CSS-hidden on desktop): opens the nav drawer. */}
+      <button
+        className="icon-btn topbar-menu-btn"
+        onClick={() => { haptic('light'); onMenuClick() }}
+        aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+        aria-expanded={menuOpen}
+        {...tactile('light')}
+      >
+        <Icon name="menu" size={18} />
+      </button>
+
       <div className="emp__topbar-left">
         <p className="emp__eyebrow">{dateLabel}</p>
         <h1>{greeting ?? title}</h1>

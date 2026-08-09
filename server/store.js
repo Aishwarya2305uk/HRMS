@@ -138,6 +138,25 @@ export async function findPendingInviteByToken(token) {
 }
 
 /**
+ * Password-reset tokens reuse the invite scheme wholesale (256-bit raw token
+ * only ever inside the emailed link, SHA-256 hash at rest) — just different
+ * columns and a much shorter life, since a reset link is acted on within
+ * minutes while an invite may sit in an inbox for days.
+ */
+export const RESET_TTL_MS = 60 * 60 * 1000 // 1 hour
+
+/** Look up an *active* account by an unexpired reset token. Null otherwise. */
+export async function findUserByResetToken(token) {
+  if (!token || typeof token !== 'string' || token.length > 200) return null
+  const { rows } = await q(
+    `select * from users
+      where reset_token_hash = $1 and status = 'active' and reset_expires_at > now()`,
+    [hashInviteToken(token)],
+  )
+  return rows[0] ? mapUser(rows[0]) : null
+}
+
+/**
  * Next unused "EMP###" code. Scans existing codes for the highest numeric
  * suffix rather than keeping a counter — user creation is rare and
  * admin-only, so a scan is simpler than a sequence to bootstrap. Pads to 3
