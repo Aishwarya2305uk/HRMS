@@ -281,18 +281,23 @@ router.get('/mine', async (req, res, next) => {
 })
 
 /**
- * GET /api/leaves/pending — a manager's approval queue: PENDING leaves from
- * their DIRECT REPORTS only. Backend-enforced so no one can peek at others'.
+ * GET /api/leaves/pending — the approval queue. A manager gets PENDING leaves
+ * from their DIRECT REPORTS only; an admin gets the whole org's pending queue
+ * (they may decide any request — see loadDecidableLeave). Backend-enforced so
+ * no one can peek at others'.
  */
 router.get('/pending', async (req, res, next) => {
   try {
     if (!['manager', 'admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only managers can view approvals.' })
     }
-    const { rows } = await q(
-      `${LEAVE_WITH_USER} where u.manager_id = $1 and l.status = 'pending' order by l.created_at`,
-      [req.user.id],
-    )
+    const { rows } =
+      req.user.role === 'admin'
+        ? await q(`${LEAVE_WITH_USER} where l.status = 'pending' order by l.created_at`)
+        : await q(
+            `${LEAVE_WITH_USER} where u.manager_id = $1 and l.status = 'pending' order by l.created_at`,
+            [req.user.id],
+          )
     res.json(rows.map(leaveJSON))
   } catch (err) {
     next(err)
@@ -300,8 +305,11 @@ router.get('/pending', async (req, res, next) => {
 })
 
 /**
- * Shared guard: the acting user must be the leave owner's direct manager.
- * Runs on the given client so approve can hold it inside its transaction.
+ * Shared guard: the acting user must be the leave owner's direct manager, or
+ * an admin — who may decide ANY pending request (this also covers requests
+ * that would otherwise be stuck: owners with no manager assigned, or whose
+ * manager has left). Runs on the given client so approve can hold it inside
+ * its transaction.
  */
 async function loadDecidableLeave(req, client) {
   if (!isValidId(req.params.id)) {
@@ -320,7 +328,7 @@ async function loadDecidableLeave(req, client) {
     throw Object.assign(new Error('This leave has already been decided.'), { status: 409 })
   }
   const isDirectManager = leave.owner_manager_id && leave.owner_manager_id === req.user.id
-  if (!isDirectManager) {
+  if (!isDirectManager && req.user.role !== 'admin') {
     throw Object.assign(
       new Error('You can only act on leaves of your direct reports.'),
       { status: 403 },

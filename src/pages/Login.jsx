@@ -1,4 +1,5 @@
 import LoginForm from '../components/LoginForm'
+import RotatingQuote from '../components/RotatingQuote'
 import './Auth.css'
 
 export default function Login() {
@@ -21,10 +22,7 @@ export default function Login() {
           <p>Attendance, leave and organization management in one place.</p>
         </div>
 
-        <blockquote className="brand__quote">
-          <p>&ldquo;Take care of your employees and they&apos;ll take care of your business.&rdquo;</p>
-          <cite>Richard Branson</cite>
-        </blockquote>
+        <RotatingQuote />
       </aside>
 
       {/* Right: form */}

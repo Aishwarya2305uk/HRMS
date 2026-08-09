@@ -6,10 +6,10 @@ import { formatRequestWindow } from '../lib/format'
 import { Skeleton, EmptyState, InlineError } from './States'
 
 /**
- * Manager approval queue — pending leaves AND work-from-home requests from
- * DIRECT REPORTS only (the server enforces this; the UI just renders what it
- * returns, mixed together and sorted oldest-first, so there's one queue to
- * check rather than two).
+ * Approval queue — pending leaves AND work-from-home requests, mixed together
+ * and sorted oldest-first so there's one queue to check rather than two.
+ * The server decides the scope: a manager sees DIRECT REPORTS only, an admin
+ * sees (and may decide) every pending request in the org.
  *
  * UX notes:
  *  - Approve/reject are per-row, and only the row being acted on shows a busy
@@ -63,7 +63,7 @@ export default function Approvals({
         <EmptyState
           icon="check"
           title="You're all caught up"
-          message="No leave requests from your team are waiting for a decision."
+          message="No leave requests are waiting for a decision."
         />
       ) : (
         <ul className="approval-list">
