@@ -18,7 +18,10 @@ export const leaves = {
   applyWfh: (body) => apiFetch('/leaves/wfh', { method: 'POST', body }),
   mine: () => apiFetch('/leaves/mine'),
   pending: () => apiFetch('/leaves/pending'),
-  cancel: (id) => apiFetch(`/leaves/${id}`, { method: 'DELETE' }),
+  /** Pending: removes the request. Approved (before it starts): flips it to
+   *  'cancelled' with the optional reason and refunds the balance. */
+  cancel: (id, reason) =>
+    apiFetch(`/leaves/${id}`, { method: 'DELETE', body: reason ? { reason } : undefined }),
   approve: (id) => apiFetch(`/leaves/${id}/approve`, { method: 'POST' }),
   reject: (id, comment) => apiFetch(`/leaves/${id}/reject`, { method: 'POST', body: { comment } }),
   all: () => apiFetch('/leaves/all'),

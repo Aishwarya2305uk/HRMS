@@ -16,7 +16,7 @@ import { useEffect, useRef } from 'react'
  *   drawer anchored to the right edge instead of a centered dialog (see
  *   .modal--right in Portal.css) — same a11y behavior either way.
  * @param {string} [className]  Extra class(es) on the dialog box itself, for
- *   variants that need their own sizing (e.g. .modal--form-link).
+ *   variants that need their own sizing (e.g. .modal--right).
  */
 export default function Modal({ titleId, label, onClose, children, placement = 'center', className }) {
   const ref = useRef(null)

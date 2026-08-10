@@ -340,20 +340,11 @@
 }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
-/* ---- Feedback / HR Request embedded-form popup (FormLinkModal.jsx) ---- */
-.modal--form-link {
-  width: min(720px, 100%);
-  display: flex;
-  flex-direction: column;
-}
-.form-modal__tools {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.form-modal__frame {
+/* ---- Feedback / HR Request embedded-form page (FormLinkSection.jsx) ---- */
+.form-page__frame {
   width: 100%;
-  height: min(64vh, 640px);
+  /* Fill the space below the topbar without ever collapsing or towering. */
+  height: clamp(420px, calc(100vh - 300px), 900px);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: #fff; /* forms flash white while loading — avoid a dark hole in dark themes */
@@ -483,14 +474,12 @@
    on narrow phones instead of overflowing sideways. */
 .notif-page { width: 100%; }
 .notif-page .attendance__head h2 { display: flex; align-items: center; gap: 10px; }
+/* One section under the next, full width — never side-by-side columns. */
 .notif-page__body {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 22px;
-  align-items: start;
 }
-.notif-page__body .notif-section--urgent,
-.notif-page__body .state--empty { grid-column: 1 / -1; }
 .notif-section { min-width: 0; }
 @media (max-width: 620px) {
   .notif-page__body { gap: 18px; }

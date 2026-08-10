@@ -18,7 +18,7 @@ export default function AllLeaves({ leaves, typeLabels, searchQuery = '' }) {
     return byStatus.filter((l) => l.employeeName?.toLowerCase().includes(q))
   }, [leaves, filter, searchQuery])
   const counts = useMemo(() => {
-    const c = { all: leaves.length, pending: 0, approved: 0, rejected: 0 }
+    const c = { all: leaves.length, pending: 0, approved: 0, rejected: 0, cancelled: 0 }
     for (const l of leaves) c[l.status]++
     return c
   }, [leaves])
@@ -28,7 +28,7 @@ export default function AllLeaves({ leaves, typeLabels, searchQuery = '' }) {
       <div className="attendance__head">
         <h2>All leaves</h2>
         <div className="seg">
-          {['all', 'pending', 'approved', 'rejected'].map((s) => (
+          {['all', 'pending', 'approved', 'rejected', 'cancelled'].map((s) => (
             <button
               key={s}
               className={`seg__btn${filter === s ? ' is-active' : ''}`}

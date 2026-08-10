@@ -10,13 +10,18 @@ const STATUS_HINT = {
   pending: 'Waiting on your manager',
   approved: 'Approved',
   rejected: 'Not approved',
+  cancelled: 'Cancelled by you',
 }
+
+/** Approved requests stay cancellable until the day they start. */
+const canCancelApproved = (r) => r.status === 'approved' && new Date(r.startDate) > new Date()
 
 /**
  * The current user's work-from-home requests with live status — same shape
- * and interactions as RecentLeaves (cancel while pending, rejection reason
- * surfaced), just for `kind: 'wfh'` entries, which never touch leave balance
- * and always carry a reason (required at apply time, so always shown here).
+ * and interactions as RecentLeaves (cancel while pending or before an
+ * approved one starts, rejection reason surfaced), just for `kind: 'wfh'`
+ * entries, which never touch leave balance and always carry a reason
+ * (required at apply time, so always shown here).
  */
 export default function WfhRequests({
   requests,
@@ -30,6 +35,7 @@ export default function WfhRequests({
   plain = false,
 }) {
   const [confirmingId, setConfirmingId] = useState(null)
+  const [cancelReason, setCancelReason] = useState('')
   const [busyId, setBusyId] = useState(null)
   const [rowError, setRowError] = useState({ id: null, message: '' })
 
@@ -37,10 +43,14 @@ export default function WfhRequests({
     setBusyId(request.id)
     setRowError({ id: null, message: '' })
     try {
-      await leavesApi.cancel(request.id)
+      const result = await leavesApi.cancel(
+        request.id,
+        request.status === 'approved' ? cancelReason.trim() : undefined,
+      )
       haptic('light')
       setConfirmingId(null)
-      onCancel?.(request.id)
+      setCancelReason('')
+      onCancel?.(result)
     } catch (err) {
       setRowError({ id: request.id, message: err.message })
     } finally {
@@ -119,16 +129,30 @@ export default function WfhRequests({
                 {r.status === 'rejected' && r.decisionComment && (
                   <p className="req__note">Reason: {r.decisionComment}</p>
                 )}
+                {r.status === 'cancelled' && r.cancelReason && (
+                  <p className="req__note">Cancelled: {r.cancelReason}</p>
+                )}
 
                 {rowError.id === r.id && <InlineError>{rowError.message}</InlineError>}
 
                 <div className="req__meta">
                   <span className="req__applied">Applied {formatDate(r.createdAt)}</span>
 
-                  {r.status === 'pending' &&
+                  {(r.status === 'pending' || canCancelApproved(r)) &&
                     (confirming ? (
                       <span className="req__confirm">
-                        <span>Cancel this request?</span>
+                        {r.status === 'approved' ? (
+                          <input
+                            type="text"
+                            placeholder="Reason (optional)"
+                            value={cancelReason}
+                            onChange={(e) => setCancelReason(e.target.value)}
+                            aria-label="Reason for cancelling this approved request (optional)"
+                            autoFocus
+                          />
+                        ) : (
+                          <span>Cancel this request?</span>
+                        )}
                         <button
                           type="button"
                           className="btn-tactile danger sm"
@@ -141,7 +165,7 @@ export default function WfhRequests({
                           type="button"
                           className="btn-tactile ghost sm"
                           disabled={busy}
-                          onClick={() => setConfirmingId(null)}
+                          onClick={() => { setConfirmingId(null); setCancelReason('') }}
                         >
                           Keep it
                         </button>
@@ -150,7 +174,7 @@ export default function WfhRequests({
                       <button
                         type="button"
                         className="req__cancel"
-                        onClick={() => setConfirmingId(r.id)}
+                        onClick={() => { setCancelReason(''); setConfirmingId(r.id) }}
                       >
                         <Icon name="x" size={13} />
                         Cancel

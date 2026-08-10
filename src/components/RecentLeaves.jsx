@@ -10,17 +10,22 @@ const STATUS_HINT = {
   pending: 'Waiting on your manager',
   approved: 'Approved — balance deducted',
   rejected: 'Not approved',
+  cancelled: 'Cancelled by you — balance returned',
 }
+
+/** Approved requests stay cancellable until the day they start. */
+const canCancelApproved = (l) => l.status === 'approved' && new Date(l.startDate) > new Date()
 
 /**
  * The current user's recent leave applications with live status.
  * Handles its own loading / error / empty presentation so the caller doesn't
  * have to duplicate that logic.
  *
- * A pending request can still be cancelled by its owner (no balance impact —
- * balance is only deducted on approval). Cancelling asks for confirmation
- * inline, in place, rather than a native confirm() dialog or a modal, so the
- * row itself carries the whole interaction.
+ * Cancelling is inline, in place (no confirm() dialog or modal) — the row
+ * itself carries the whole interaction. A pending request cancels for free
+ * (balance is only deducted on approval) and disappears; an APPROVED one can
+ * be cancelled any time before its start date, with an optional reason — the
+ * server flips it to 'cancelled' and refunds the balance (see onCancel).
  */
 export default function RecentLeaves({
   leaves,
@@ -36,6 +41,7 @@ export default function RecentLeaves({
 }) {
   const rows = limit ? leaves.slice(0, limit) : leaves
   const [confirmingId, setConfirmingId] = useState(null)
+  const [cancelReason, setCancelReason] = useState('')
   const [busyId, setBusyId] = useState(null)
   const [rowError, setRowError] = useState({ id: null, message: '' })
 
@@ -43,10 +49,14 @@ export default function RecentLeaves({
     setBusyId(leave.id)
     setRowError({ id: null, message: '' })
     try {
-      await leavesApi.cancel(leave.id)
+      const result = await leavesApi.cancel(
+        leave.id,
+        leave.status === 'approved' ? cancelReason.trim() : undefined,
+      )
       haptic('light')
       setConfirmingId(null)
-      onCancel?.(leave.id)
+      setCancelReason('')
+      onCancel?.(result)
     } catch (err) {
       setRowError({ id: leave.id, message: err.message })
     } finally {
@@ -110,16 +120,30 @@ export default function RecentLeaves({
                 {l.status === 'rejected' && l.decisionComment && (
                   <p className="req__note">Reason: {l.decisionComment}</p>
                 )}
+                {l.status === 'cancelled' && l.cancelReason && (
+                  <p className="req__note">Cancelled: {l.cancelReason}</p>
+                )}
 
                 {rowError.id === l.id && <InlineError>{rowError.message}</InlineError>}
 
                 <div className="req__meta">
                   <span className="req__applied">Applied {formatDate(l.createdAt)}</span>
 
-                  {l.status === 'pending' &&
+                  {(l.status === 'pending' || canCancelApproved(l)) &&
                     (confirming ? (
                       <span className="req__confirm">
-                        <span>Cancel this request?</span>
+                        {l.status === 'approved' ? (
+                          <input
+                            type="text"
+                            placeholder="Reason (optional)"
+                            value={cancelReason}
+                            onChange={(e) => setCancelReason(e.target.value)}
+                            aria-label="Reason for cancelling this approved leave (optional)"
+                            autoFocus
+                          />
+                        ) : (
+                          <span>Cancel this request?</span>
+                        )}
                         <button
                           type="button"
                           className="btn-tactile danger sm"
@@ -132,7 +156,7 @@ export default function RecentLeaves({
                           type="button"
                           className="btn-tactile ghost sm"
                           disabled={busy}
-                          onClick={() => setConfirmingId(null)}
+                          onClick={() => { setConfirmingId(null); setCancelReason('') }}
                         >
                           Keep it
                         </button>
@@ -141,7 +165,7 @@ export default function RecentLeaves({
                       <button
                         type="button"
                         className="req__cancel"
-                        onClick={() => setConfirmingId(l.id)}
+                        onClick={() => { setCancelReason(''); setConfirmingId(l.id) }}
                       >
                         <Icon name="x" size={13} />
                         Cancel

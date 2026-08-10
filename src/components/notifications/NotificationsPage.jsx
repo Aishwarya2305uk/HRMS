@@ -5,9 +5,10 @@ import NotificationsFeed from './NotificationsFeed'
 /**
  * Dedicated Notifications section — the sidebar's full-page counterpart to
  * the topbar bell's drawer (NotificationsPanel). Work notifications only:
- * approvals waiting on you, your requests (pending and decided), upcoming
- * time off and urgent admin messages. Regular announcements — and composing
- * them — live on the dedicated Announcements page instead.
+ * approvals waiting on you, your requests (pending and decided) and urgent
+ * admin messages. Regular announcements — and composing them — live on the
+ * dedicated Announcements page; upcoming time off lives on the Leaves tab's
+ * "Upcoming leaves" card.
  */
 export default function NotificationsPage({
   query,
@@ -16,7 +17,6 @@ export default function NotificationsPage({
   approvalsPending,
   myPendingLeaves,
   recentDecisions,
-  upcoming,
   typeLabels,
   currentUserId,
   role,
@@ -44,7 +44,6 @@ export default function NotificationsPage({
           approvalsPending={approvalsPending}
           myPendingLeaves={myPendingLeaves}
           recentDecisions={recentDecisions}
-          upcoming={upcoming}
           typeLabels={typeLabels}
           currentUserId={currentUserId}
           role={role}

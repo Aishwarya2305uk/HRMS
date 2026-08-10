@@ -232,6 +232,8 @@ export function leaveJSON(r) {
     approverId: r.approver_id || null,
     decidedAt: r.decided_at,
     decisionComment: r.decision_comment,
+    cancelReason: r.cancel_reason ?? '',
+    cancelledAt: r.cancelled_at ?? null,
     createdAt: r.created_at,
   }
 }

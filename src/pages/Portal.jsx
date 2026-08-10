@@ -20,6 +20,7 @@ import LeaveBalanceCard from '../components/LeaveBalanceCard'
 import RecentLeaves from '../components/RecentLeaves'
 import ApplyLeaveModal from '../components/ApplyLeaveModal'
 import WfhRequests from '../components/WfhRequests'
+import UpcomingLeaves from '../components/UpcomingLeaves'
 import WfhApplyCard from '../components/WfhApplyCard'
 import ApplyWfhModal from '../components/ApplyWfhModal'
 import Approvals from '../components/Approvals'
@@ -35,7 +36,7 @@ import LeaveTypesManager from '../components/LeaveTypesManager'
 import EmploymentTypesManager from '../components/EmploymentTypesManager'
 import OtherSettingsManager from '../components/OtherSettingsManager'
 import SystemLogs from '../components/SystemLogs'
-import FormLinkModal from '../components/FormLinkModal'
+import FormLinkSection from '../components/FormLinkSection'
 import Profile from '../components/Profile'
 import DocumentsCard from '../components/DocumentsCard'
 import { SkeletonCard, ErrorState, InlineError } from '../components/States'
@@ -75,15 +76,15 @@ const NAV_ITEMS = {
   systemlogs: { label: 'System Logs', icon: 'activity' },
   org: { label: 'Organization', icon: 'tree' },
   calendar: { label: 'Calendar', icon: 'calendar' },
-  // These don't open a section — selectTab intercepts them and opens the
-  // admin-configured external form link (see FORM_LINKS / Other Settings).
+  // Sections that embed the admin-configured external form inline
+  // (see FORM_LINKS / Other Settings / FormLinkSection.jsx).
   feedback: { label: 'Feedback', icon: 'messageSquare' },
   hrrequest: { label: 'HR Request', icon: 'lifeBuoy' },
 }
 
-/** Sidebar keys that open an admin-configured external form (embedded in a
- *  popup) instead of switching sections. The field names the settings
- *  record's key; the title heads the popup. */
+/** Sidebar keys whose section embeds an admin-configured external form
+ *  (FormLinkSection.jsx). The field names the settings record's key; the
+ *  title heads the page; the noun reads naturally in the not-set-up state. */
 const FORM_LINKS = {
   feedback: { field: 'feedbackFormUrl', noun: 'feedback form', title: 'Share your feedback' },
   hrrequest: { field: 'hrRequestFormUrl', noun: 'HR request form', title: 'Raise an HR request' },
@@ -166,8 +167,6 @@ export default function Portal() {
   const [showApply, setShowApply] = useState(false)
   const [showApplyWfh, setShowApplyWfh] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
-  // Which FORM_LINKS popup is open ('feedback' | 'hrrequest'), or null.
-  const [openFormKey, setOpenFormKey] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   // 'YYYY-MM' — which month the admin All Attendance view is browsing.
   const [attendanceMonth, setAttendanceMonth] = useState(() => new Date().toISOString().slice(0, 7))
@@ -212,24 +211,6 @@ export default function Portal() {
 
   function selectTab(key) {
     setNavOpen(false)
-    // Feedback / HR Request aren't sections — they pop up the external form
-    // the admin configured under Other Settings, embedded in a modal.
-    const link = FORM_LINKS[key]
-    if (link) {
-      const url = settingsQ.data?.[link.field]
-      if (url) {
-        setOpenFormKey(key)
-      } else if (settingsQ.error) {
-        toast.error('The form links couldn’t load — please refresh and try again.')
-      } else {
-        toast.error(
-          role === 'admin'
-            ? `No ${link.noun} link is set yet — add one under Other Settings.`
-            : `The ${link.noun} isn’t set up yet — please contact an admin.`,
-        )
-      }
-      return
-    }
     setActive(key)
     setSearchQuery('') // a filter from one section shouldn't silently apply to the next
   }
@@ -289,6 +270,31 @@ export default function Portal() {
     { enabled: active === 'profile' && Boolean(profileTarget ?? user?.id) },
   )
 
+  // Keep the work queues fresh without a manual refresh: a manager's new
+  // approvals and an employee's decided requests arrive on a 30s heartbeat,
+  // plus immediately when the tab regains focus. Silent by design — every
+  // consumer only shows a skeleton on FIRST load (data === null), so a
+  // background reload never flashes the UI.
+  const reloadMyLeaves = myLeavesQ.reload
+  const reloadPending = pendingQ.reload
+  const reloadAnnouncements = announcementsQ.reload
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return
+      reloadMyLeaves()
+      reloadAnnouncements()
+      if (isManager) reloadPending()
+    }
+    const id = setInterval(refresh, 30_000)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      clearInterval(id)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [reloadMyLeaves, reloadPending, reloadAnnouncements, isManager])
+
   const types = configQ.data?.types ?? EMPTY
   // /leaves/mine returns both kinds mixed (kind: 'leave' | 'wfh') — split them
   // for the two dedicated lists below, but keep counts like "pending requests"
@@ -304,23 +310,19 @@ export default function Portal() {
     [allMine],
   )
   // Work notifications for the Notifications page: decisions made on your
-  // requests in the last two weeks, and approved time off starting within a
-  // week — newest decision / soonest start first.
+  // requests in the last two weeks, newest first.
   const myRecentDecisions = useMemo(() => {
     const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000
     return allMine
       .filter((l) => l.status !== 'pending' && l.decidedAt && new Date(l.decidedAt).getTime() >= cutoff)
       .sort((a, b) => new Date(b.decidedAt) - new Date(a.decidedAt))
   }, [allMine])
+  // Approved time off that hasn't started yet, soonest first — the Leaves
+  // tab's "Upcoming leaves" card.
   const myUpcoming = useMemo(() => {
     const now = Date.now()
-    const horizon = now + 7 * 24 * 60 * 60 * 1000
     return allMine
-      .filter((l) => {
-        if (l.status !== 'approved' || !l.startDate) return false
-        const start = new Date(l.startDate).getTime()
-        return start >= now && start <= horizon
-      })
+      .filter((l) => l.status === 'approved' && l.startDate && new Date(l.startDate).getTime() >= now)
       .sort((a, b) => new Date(a.startDate) - new Date(b.startDate))
   }, [allMine])
   const unreadCount = useMemo(
@@ -384,9 +386,20 @@ export default function Portal() {
     )
   }
 
-  function onLeaveCancelled(id) {
-    myLeavesQ.setData((prev) => (prev ?? []).filter((l) => l.id !== id))
-    toast.success('Leave request cancelled.')
+  // Cancel outcomes differ by prior status: a pending request is deleted
+  // ({ id, removed: true }), an approved one comes back as the full leave now
+  // flipped to 'cancelled' — with its balance refunded, so the header stats
+  // need a fresh user.
+  function onLeaveCancelled(result) {
+    if (result?.removed) {
+      myLeavesQ.setData((prev) => (prev ?? []).filter((l) => l.id !== result.id))
+      toast.success('Leave request cancelled.')
+      return
+    }
+    myLeavesQ.setData((prev) => (prev ?? []).map((l) => (l.id === result.id ? result : l)))
+    toast.success('Approved leave cancelled — the days are back in your balance.')
+    refreshUser()
+    if (allLeavesQ.data !== null) allLeavesQ.reload()
   }
 
   // Same underlying list as leave (myLeavesQ) — /leaves/mine returns both
@@ -401,8 +414,12 @@ export default function Portal() {
     )
   }
 
-  function onWfhCancelled(id) {
-    myLeavesQ.setData((prev) => (prev ?? []).filter((l) => l.id !== id))
+  function onWfhCancelled(result) {
+    if (result?.removed) {
+      myLeavesQ.setData((prev) => (prev ?? []).filter((l) => l.id !== result.id))
+    } else {
+      myLeavesQ.setData((prev) => (prev ?? []).map((l) => (l.id === result.id ? result : l)))
+    }
     toast.success('Work-from-home request cancelled.')
   }
 
@@ -624,7 +641,6 @@ export default function Portal() {
               approvalsPending={pending}
               myPendingLeaves={myPendingLeaves}
               recentDecisions={myRecentDecisions}
-              upcoming={myUpcoming}
               typeLabels={typeLabels}
               currentUserId={user?.id}
               role={role}
@@ -663,8 +679,12 @@ export default function Portal() {
                 />
               </section>
 
+              {/* Approved time off that hasn't started yet — moved here from
+                  the Notifications feed, where it lived as "Coming up". */}
+              <UpcomingLeaves upcoming={myUpcoming} typeLabels={typeLabels} />
+
               {/* Lower card — request history: leave (left) and WFH (right). */}
-              <section className="card leaves-duo pop" style={{ '--d': '440ms' }}>
+              <section className="card leaves-duo pop" style={{ '--d': '510ms' }}>
                 <RecentLeaves
                   plain
                   title="Leave request history"
@@ -770,6 +790,24 @@ export default function Portal() {
             </div>
           )}
 
+          {/* Feedback / HR Request — the configured form, embedded as a full
+              in-app page (no popup). key remounts the iframe when hopping
+              between the two so stale form state never carries over. */}
+          {FORM_LINKS[active] && canAccess(role, active) && (
+            <div className="single-col">
+              <Section query={settingsQ} skeletonRows={4}>
+                <FormLinkSection
+                  key={active}
+                  title={FORM_LINKS[active].title}
+                  noun={FORM_LINKS[active].noun}
+                  url={settingsQ.data?.[FORM_LINKS[active].field] ?? ''}
+                  isAdmin={role === 'admin'}
+                  onOpenSettings={() => selectTab('othersettings')}
+                />
+              </Section>
+            </div>
+          )}
+
           {active === 'announcements' && canAccess(role, 'announcements') && (
             <Section query={sentAnnouncementsQ} skeletonRows={5}>
               <AllAnnouncements
@@ -798,14 +836,6 @@ export default function Portal() {
         <ApplyWfhModal
           onClose={() => setShowApplyWfh(false)}
           onCreated={onWfhCreated}
-        />
-      )}
-
-      {openFormKey && settingsQ.data?.[FORM_LINKS[openFormKey].field] && (
-        <FormLinkModal
-          title={FORM_LINKS[openFormKey].title}
-          url={settingsQ.data[FORM_LINKS[openFormKey].field]}
-          onClose={() => setOpenFormKey(null)}
         />
       )}
 

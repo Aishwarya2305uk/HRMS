@@ -98,10 +98,14 @@ create table leaves (
   end_time text not null default '',
   days numeric not null check (days >= 0.5),
   reason text not null default '',
-  status text not null default 'pending' check (status in ('pending','approved','rejected')),
+  -- 'cancelled' = an APPROVED request withdrawn by its owner before the start
+  -- date (pending ones are deleted outright instead — nothing to keep).
+  status text not null default 'pending' check (status in ('pending','approved','rejected','cancelled')),
   approver_id uuid references users(id) on delete set null,
   decided_at timestamptz,
   decision_comment text not null default '',
+  cancel_reason varchar(300) not null default '',
+  cancelled_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -233,6 +237,21 @@ end $$;
 -- token at rest — same scheme as invite links above.
 alter table users add column if not exists reset_token_hash text;
 alter table users add column if not exists reset_expires_at timestamptz;
+
+-- Cancellable approved leaves (2026-08): owners may withdraw an approved
+-- request before it starts — kept as status 'cancelled' with their reason,
+-- balance refunded (see DELETE /api/leaves/:id).
+alter table leaves add column if not exists cancel_reason varchar(300) not null default '';
+alter table leaves add column if not exists cancelled_at timestamptz;
+do $$ begin
+  if exists (select 1 from pg_constraint
+              where conname = 'leaves_status_check'
+                and pg_get_constraintdef(oid) not like '%cancelled%') then
+    alter table leaves drop constraint leaves_status_check;
+    alter table leaves add constraint leaves_status_check
+      check (status in ('pending','approved','rejected','cancelled'));
+  end if;
+end $$;
 
 -- Admin System Logs (2026-08): append-only request/audit trail, 30-day
 -- retention. Same shape and rationale as the SCHEMA_SQL definition above.

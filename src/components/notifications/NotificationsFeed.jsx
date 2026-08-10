@@ -98,10 +98,11 @@ function LeaveRow({ leave, typeLabels, showName, showDecidedTime }) {
 
 /**
  * The notification feed itself — urgent admin messages plus work items
- * (approvals queue for managers/admins, own pending requests, decisions on
- * those requests and upcoming approved time off). Pure rendering, shared by
- * the topbar drawer (NotificationsPanel) and the dedicated sidebar page
- * (NotificationsPage); marking-as-read stays with those surfaces.
+ * (approvals queue for managers/admins, own pending requests and decisions
+ * on those requests; upcoming time off lives on the Leaves tab instead).
+ * Pure rendering, shared by the topbar drawer (NotificationsPanel) and the
+ * dedicated sidebar page (NotificationsPage); marking-as-read stays with
+ * those surfaces.
  *
  * `showAnnouncements` keeps regular announcements in the drawer's quick
  * glance, while the full page leaves them to the dedicated Announcements
@@ -119,16 +120,12 @@ export default function NotificationsFeed({
   onViewLeaves,
   showAnnouncements = true,
   recentDecisions = [],
-  upcoming = [],
 }) {
   const items = query.data ?? []
   const urgent = items.filter((a) => a.type === 'urgent')
   const normal = showAnnouncements ? items.filter((a) => a.type !== 'urgent') : []
   const hasPendingWork =
-    approvalsPending.length > 0 ||
-    myPendingLeaves.length > 0 ||
-    recentDecisions.length > 0 ||
-    upcoming.length > 0
+    approvalsPending.length > 0 || myPendingLeaves.length > 0 || recentDecisions.length > 0
   const isEmpty =
     !query.loading && !query.error && urgent.length === 0 && normal.length === 0 && !hasPendingWork
 
@@ -197,18 +194,6 @@ export default function NotificationsFeed({
         >
           {recentDecisions.slice(0, 5).map((l) => (
             <LeaveRow key={l.id} leave={l} typeLabels={typeLabels} showDecidedTime />
-          ))}
-        </NotifSection>
-      )}
-
-      {upcoming.length > 0 && (
-        <NotifSection
-          title="Coming up"
-          icon="calendar"
-          action={{ label: 'View all', onClick: onViewLeaves }}
-        >
-          {upcoming.slice(0, 5).map((l) => (
-            <LeaveRow key={l.id} leave={l} typeLabels={typeLabels} />
           ))}
         </NotifSection>
       )}

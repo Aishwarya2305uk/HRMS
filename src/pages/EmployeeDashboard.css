@@ -995,6 +995,15 @@ button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
+/* Reason field when cancelling an APPROVED request (optional but offered). */
+.req__confirm input {
+  flex: 1 1 150px;
+  min-width: 0;
+  padding: 8px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  font-size: var(--text-xs);
+}
 .status {
   font-size: var(--text-2xs);
   font-weight: 600;
@@ -1006,6 +1015,7 @@ button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
 .status.pending { background: var(--warning-soft); color: var(--warning-text); }
 .status.approved { background: var(--success-soft); color: var(--success-text); }
 .status.rejected { background: var(--danger-soft); color: var(--danger-text); }
+.status.cancelled { background: var(--surface-sunken); color: var(--text-muted); }
 .status.auto-leave { background: var(--accent-soft); color: var(--primary-600); }
 .status.present { background: var(--success-soft); color: var(--success-text); }
 

@@ -438,9 +438,13 @@ router.post('/:id/reject', async (req, res, next) => {
 })
 
 /**
- * DELETE /api/leaves/:id — cancel one of the CURRENT USER's own PENDING
- * leave requests. Balance is never touched: it's only deducted on approval
- * (see /:id/approve above), so a pending request cancels for free.
+ * DELETE /api/leaves/:id — cancel one of the CURRENT USER's own requests.
+ *  - pending: deleted outright (free — balance is only deducted on approval).
+ *    Response: { id, removed: true }.
+ *  - approved, not yet started: flips to 'cancelled' (kept for the record,
+ *    with the owner's optional reason from the body) and refunds the balance
+ *    for kind 'leave' in the same transaction. Response: the updated leave.
+ * Once the start date arrives, an approved request can no longer be cancelled.
  */
 router.delete('/:id', async (req, res, next) => {
   try {
@@ -453,19 +457,56 @@ router.delete('/:id', async (req, res, next) => {
     if (leave.user_id !== req.user.id) {
       return res.status(403).json({ error: 'You can only cancel your own leave requests.' })
     }
-    if (leave.status !== 'pending') {
-      return res.status(409).json({ error: 'Only pending leave requests can be cancelled.' })
+
+    if (leave.status === 'pending') {
+      // Guarded on status so a concurrent approval can't be cancelled from
+      // under its already-deducted balance.
+      const { rowCount } = await q("delete from leaves where id = $1 and status = 'pending'", [
+        leave.id,
+      ])
+      if (!rowCount) {
+        return res.status(409).json({ error: 'This request was just decided — refresh to see its status.' })
+      }
+      return res.json({ id: req.params.id, removed: true })
     }
-    // Guarded on status so a concurrent approval can't be cancelled from under
-    // its already-deducted balance.
-    const { rowCount } = await q("delete from leaves where id = $1 and status = 'pending'", [
-      leave.id,
-    ])
-    if (!rowCount) {
-      return res.status(409).json({ error: 'Only pending leave requests can be cancelled.' })
+
+    if (leave.status !== 'approved') {
+      return res.status(409).json({ error: 'Only pending or approved requests can be cancelled.' })
     }
-    res.json({ id: req.params.id })
+
+    const reason = String(req.body?.reason || '').trim().slice(0, 300)
+    const cancelled = await tx(async (client) => {
+      // Atomic flip, guarded so it only succeeds while STILL approved and the
+      // leave hasn't started — losing a race (or cancelling too late) must
+      // never trigger the refund below.
+      const { rows: flipped } = await client.query(
+        `update leaves
+            set status = 'cancelled', cancel_reason = $1, cancelled_at = now()
+          where id = $2 and status = 'approved' and start_date > now()
+          returning id`,
+        [reason, leave.id],
+      )
+      if (!flipped.length) {
+        throw Object.assign(
+          new Error('An approved request can only be cancelled before its start date.'),
+          { status: 409 },
+        )
+      }
+      // Give the days back — approval deducted them (kind 'wfh' never did).
+      if (leave.kind === 'leave') {
+        await client.query(
+          `update users
+              set leave_balances = leave_balances ||
+                    jsonb_build_object($1::text, coalesce((leave_balances->>$1)::numeric, 0) + $2::numeric)
+            where id = $3`,
+          [leave.type, leave.days, leave.user_id],
+        )
+      }
+      return flipped[0]
+    })
+    res.json(await shapedLeave(cancelled.id))
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message })
     next(err)
   }
 })
