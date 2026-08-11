@@ -16,6 +16,8 @@ export const leaves = {
   config: () => apiFetch('/leaves/config'),
   apply: (body) => apiFetch('/leaves', { method: 'POST', body }),
   applyWfh: (body) => apiFetch('/leaves/wfh', { method: 'POST', body }),
+  /** "Count this short attendance day as present" — body { date, reason }. */
+  regularize: (body) => apiFetch('/leaves/regularize', { method: 'POST', body }),
   mine: () => apiFetch('/leaves/mine'),
   pending: () => apiFetch('/leaves/pending'),
   /** Pending: removes the request. Approved (before it starts): flips it to

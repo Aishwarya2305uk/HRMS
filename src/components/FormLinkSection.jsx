@@ -27,9 +27,11 @@ export default function FormLinkSection({ title, url, noun, isAdmin, onOpenSetti
   }
 
   return (
-    <section className="card pop" style={{ '--d': '120ms' }}>
-      <div className="attendance__head">
-        <h2>{title}</h2>
+    // No card box: a slim toolbar row, then the form fills the rest of the
+    // screen (the topbar already carries the page title).
+    <section className="form-page pop" style={{ '--d': '80ms' }}>
+      <div className="form-page__bar">
+        <p className="form-page__hint">If the form doesn’t load below, open it in a new tab.</p>
         <a className="link-btn" href={url} target="_blank" rel="noopener noreferrer">
           <Icon name="externalLink" size={14} />
           Open in new tab
@@ -45,7 +47,6 @@ export default function FormLinkSection({ title, url, noun, isAdmin, onOpenSetti
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
         referrerPolicy="no-referrer"
       />
-      <p className="field-hint">If the form doesn’t load here, use “Open in new tab”.</p>
     </section>
   )
 }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Icon from './Icon'
 import { leaves as leavesApi } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
-import { formatRequestWindow } from '../lib/format'
+import { formatRequestWindow, requestLabel } from '../lib/format'
 import { Skeleton, EmptyState, InlineError } from './States'
 
 /**
@@ -84,8 +84,7 @@ export default function Approvals({
                         </em>
                       )}
                       <em>
-                        {l.kind === 'wfh' ? 'Work from home' : typeLabels[l.type] ?? l.type} ·{' '}
-                        {formatRequestWindow(l)}
+                        {requestLabel(l, typeLabels)} · {formatRequestWindow(l)}
                       </em>
                     </div>
                   </div>

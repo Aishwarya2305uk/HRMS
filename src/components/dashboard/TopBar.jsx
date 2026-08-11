@@ -29,6 +29,8 @@ export default function TopBar({
   onLogout,
   onOpenProfile,
 }) {
+  const currentTheme = THEMES.find((t) => t.key === (theme || '')) ?? THEMES[0]
+
   return (
     <header className="emp__topbar">
       {/* Phone-only (CSS-hidden on desktop): opens the nav drawer. */}
@@ -99,20 +101,33 @@ export default function TopBar({
               <Icon name="palette" size={14} />
               Theme
             </span>
-            <div className="user-menu__swatches">
-              {THEMES.map((t) => (
-                <button
-                  key={t.key || 'default'}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={t.key === (theme || '')}
-                  className={`theme-swatch${t.key === (theme || '') ? ' is-selected' : ''}`}
-                  style={{ background: t.swatch }}
-                  title={t.label}
-                  aria-label={`${t.label} theme`}
-                  onClick={() => { haptic('light'); onThemeChange(t.key) }}
-                />
-              ))}
+            <div className="user-menu__theme-picker">
+              {/* Live preview of the selected accent. */}
+              <span
+                className="theme-dot"
+                style={{ background: currentTheme.swatch }}
+                aria-hidden="true"
+              />
+              {/* Options can't nest a chip element, but they do take a text
+                  color — each shows a dot glyph + its name in the theme's own
+                  color, on the app-wide white dropdown background. */}
+              <select
+                className="mini-select user-menu__theme-select"
+                value={theme || ''}
+                onChange={(e) => { haptic('light'); onThemeChange(e.target.value) }}
+                aria-label="Workspace theme"
+                style={{ color: currentTheme.swatch, fontWeight: 600 }}
+              >
+                {THEMES.map((t) => (
+                  <option
+                    key={t.key || 'default'}
+                    value={t.key}
+                    style={{ color: t.swatch, fontWeight: 600 }}
+                  >
+                    ● {t.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

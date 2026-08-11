@@ -281,6 +281,70 @@ router.get('/mine', async (req, res, next) => {
 })
 
 /**
+ * POST /api/leaves/regularize — "I checked out early by mistake": ask your
+ * manager to count a short (auto-leave) attendance day as present.
+ * Body: { date: 'YYYY-MM-DD', reason }. Reason is required — the manager is
+ * being asked to overrule the 8-hour rule and needs to know why. One open
+ * request per day; approval flips that work_sessions row's day_status to
+ * 'present' (see /:id/approve).
+ */
+router.post('/regularize', async (req, res, next) => {
+  try {
+    const dateKey = String(req.body?.date || '').slice(0, 10)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res.status(400).json({ error: 'A valid date is required.' })
+    }
+    if (dateKey > dayKey()) {
+      return res.status(400).json({ error: 'Only days that already happened can be regularized.' })
+    }
+    const reason = String(req.body?.reason || '').trim().slice(0, 500)
+    if (!reason) {
+      return res.status(400).json({ error: 'Please add a short reason — your manager sees it with the request.' })
+    }
+
+    // Close any stale open sessions first so a past day carries its verdict
+    // before we judge whether it needs fixing.
+    await finalizeStaleSessions(req.user.id)
+    const { rows: sessions } = await q(
+      'select * from work_sessions where user_id = $1 and date = $2',
+      [req.user.id, dateKey],
+    )
+    const session = sessions[0]
+    if (!session || session.status === 'active') {
+      return res.status(400).json({ error: 'That day has no finished attendance to fix yet.' })
+    }
+    if (session.day_status === 'present') {
+      return res.status(409).json({ error: 'That day already counts as present.' })
+    }
+
+    const { rows: dupes } = await q(
+      `select 1 from leaves
+        where user_id = $1 and kind = 'regularize' and start_date = $2
+          and status in ('pending', 'approved')`,
+      [req.user.id, startOfDay(dateKey)],
+    )
+    if (dupes.length) {
+      return res.status(409).json({ error: 'A fix request for that day is already open.' })
+    }
+
+    const created = await insertRequest(req.user, {
+      kind: 'regularize',
+      type: null,
+      startDate: startOfDay(dateKey),
+      endDate: startOfDay(dateKey),
+      dayPart: 'full',
+      startTime: '',
+      endTime: '',
+      days: 1,
+      reason,
+    })
+    res.status(201).json(created)
+  } catch (err) {
+    next(err)
+  }
+})
+
+/**
  * GET /api/leaves/pending — the approval queue. A manager gets PENDING leaves
  * from their DIRECT REPORTS only; an admin gets the whole org's pending queue
  * (they may decide any request — see loadDecidableLeave). Backend-enforced so
@@ -386,6 +450,16 @@ router.post('/:id/approve', async (req, res, next) => {
             error: `Cannot approve — employee only has ${remaining} day(s) of that leave left.`,
           }
         }
+      }
+
+      if (leave.kind === 'regularize') {
+        // The whole point of this request kind: the short day now counts as
+        // worked. Committed together with the approval below or not at all.
+        await client.query(
+          `update work_sessions set day_status = 'present'
+            where user_id = $1 and date = $2`,
+          [leave.user_id, dayKey(leave.start_date)],
+        )
       }
 
       const { rows: decided } = await client.query(

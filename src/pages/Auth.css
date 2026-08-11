@@ -295,6 +295,10 @@
 }
 
 .btn-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
   width: 100%;
   padding: 13px 16px;
   border: none;
@@ -306,6 +310,22 @@
   cursor: pointer;
   box-shadow: var(--elev-1);
   transition: background 0.15s, box-shadow 0.15s, filter 0.12s;
+}
+/* In-button busy spinner (sign-in and friends). */
+.btn-spinner {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: btn-spin 0.7s linear infinite;
+}
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-spinner { animation-duration: 1.6s; }
 }
 .btn-primary:hover {
   background: var(--primary-600);

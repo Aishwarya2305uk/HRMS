@@ -2,6 +2,14 @@
 
 const pad = (n) => String(n).padStart(2, '0')
 
+/** What a leave/WFH/attendance-fix request is called, wherever one renders
+ *  (approval queues, notifications, admin tables). */
+export function requestLabel(request, typeLabels = {}) {
+  if (request.kind === 'wfh') return 'Work from home'
+  if (request.kind === 'regularize') return 'Attendance fix'
+  return typeLabels[request.type] ?? request.type
+}
+
 /** Seconds -> "HH:MM:SS" for the live timer. */
 export function formatElapsed(totalSeconds) {
   const s = Math.max(0, Math.floor(totalSeconds))

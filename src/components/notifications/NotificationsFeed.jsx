@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import Icon from '../Icon'
 import { Skeleton, EmptyState, InlineError } from '../States'
-import { formatRelativeTime, formatRequestWindow } from '../../lib/format'
+import { formatRelativeTime, formatRequestWindow, requestLabel } from '../../lib/format'
 import { announcements as announcementsApi } from '../../lib/hrms'
 import { haptic } from '../../lib/haptics'
 
@@ -76,7 +76,7 @@ const STATUS_LABEL = { pending: 'Pending', approved: 'Approved', rejected: 'Reje
 
 /** One leave/WFH request row — pending queues, decisions, upcoming time off. */
 function LeaveRow({ leave, typeLabels, showName, showDecidedTime }) {
-  const label = leave.kind === 'wfh' ? 'Work from home' : typeLabels[leave.type] ?? leave.type
+  const label = requestLabel(leave, typeLabels)
   return (
     <li className="notif-item notif-item--pending">
       <div className="notif-item__head">

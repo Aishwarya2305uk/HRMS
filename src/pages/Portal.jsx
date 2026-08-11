@@ -147,6 +147,10 @@ function navFor(role, badges = {}) {
 
 const thisMonthKey = () => new Date().toISOString().slice(0, 7)
 
+/** Per-user, per-device "last looked at notifications" watermark (same
+ *  localStorage pattern as the theme and sidebar-collapse prefs). */
+const notifSeenKey = (userId) => `hrms.notifSeen.${userId ?? 'anon'}`
+
 /** Stable identity for "no data yet" so memos don't recompute every render. */
 const EMPTY = []
 
@@ -176,6 +180,23 @@ export default function Portal() {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('hrms.sidebarCollapsed') === '1',
   )
+  // When this user last opened a notifications surface (bell drawer or the
+  // Notifications page). Announcements carry real server-side read tracking;
+  // request decisions and newly-arrived approvals don't — for those, the
+  // red-dot logic below compares timestamps against this watermark.
+  const [notifSeenAt, setNotifSeenAt] = useState(
+    () => Number(localStorage.getItem(notifSeenKey(user?.id))) || 0,
+  )
+  useEffect(() => {
+    setNotifSeenAt(Number(localStorage.getItem(notifSeenKey(user?.id))) || 0)
+  }, [user?.id])
+
+  function markNotificationsSeen() {
+    const ts = Date.now()
+    localStorage.setItem(notifSeenKey(user?.id), String(ts))
+    setNotifSeenAt(ts)
+  }
+
   // Phone-only nav drawer (opened by the topbar hamburger). Closed on every
   // section pick so choosing a destination always reveals it.
   const [navOpen, setNavOpen] = useState(false)
@@ -211,6 +232,7 @@ export default function Portal() {
 
   function selectTab(key) {
     setNavOpen(false)
+    if (key === 'notifications') markNotificationsSeen()
     setActive(key)
     setSearchQuery('') // a filter from one section shouldn't silently apply to the next
   }
@@ -278,11 +300,15 @@ export default function Portal() {
   const reloadMyLeaves = myLeavesQ.reload
   const reloadPending = pendingQ.reload
   const reloadAnnouncements = announcementsQ.reload
+  const reloadHistory = historyQ.reload
   useEffect(() => {
     const refresh = () => {
       if (document.visibilityState !== 'visible') return
       reloadMyLeaves()
       reloadAnnouncements()
+      // An approved attendance fix flips a history day to Present — keep the
+      // table on the same clock as the request lists.
+      reloadHistory()
       if (isManager) reloadPending()
     }
     const id = setInterval(refresh, 30_000)
@@ -293,15 +319,18 @@ export default function Portal() {
       window.removeEventListener('focus', refresh)
       document.removeEventListener('visibilitychange', refresh)
     }
-  }, [reloadMyLeaves, reloadPending, reloadAnnouncements, isManager])
+  }, [reloadMyLeaves, reloadPending, reloadAnnouncements, reloadHistory, isManager])
 
   const types = configQ.data?.types ?? EMPTY
-  // /leaves/mine returns both kinds mixed (kind: 'leave' | 'wfh') — split them
-  // for the two dedicated lists below, but keep counts like "pending requests"
-  // computed from the unsplit set, so a pending WFH request counts too.
+  // /leaves/mine returns every kind mixed ('leave' | 'wfh' | 'regularize') —
+  // split for the dedicated lists below, but keep counts like "pending
+  // requests" computed from the unsplit set, so any pending kind counts.
   const allMine = myLeavesQ.data ?? EMPTY
-  const myLeaves = useMemo(() => allMine.filter((l) => l.kind !== 'wfh'), [allMine])
+  const myLeaves = useMemo(() => allMine.filter((l) => l.kind === 'leave'), [allMine])
   const myWfh = useMemo(() => allMine.filter((l) => l.kind === 'wfh'), [allMine])
+  // Attendance-fix requests render inside the attendance history table, not
+  // the leave lists.
+  const myRegularize = useMemo(() => allMine.filter((l) => l.kind === 'regularize'), [allMine])
   const history = historyQ.data ?? EMPTY
   const pending = pendingQ.data ?? EMPTY
   const announcementsList = announcementsQ.data ?? EMPTY
@@ -329,6 +358,23 @@ export default function Portal() {
     () => announcementsList.filter((a) => !a.read).length,
     [announcementsList],
   )
+  // ClickUp-style "something new" red dot: unread announcements plus anything
+  // newer than the seen watermark — decisions on your own requests (approved/
+  // rejected) and, for managers, requests that just arrived in their queue.
+  // The 30s heartbeat keeps the underlying queries fresh, so the dot appears
+  // on its own — no page refresh.
+  const newDecisionCount = useMemo(
+    () =>
+      myRecentDecisions.filter((l) => l.decidedAt && new Date(l.decidedAt).getTime() > notifSeenAt)
+        .length,
+    [myRecentDecisions, notifSeenAt],
+  )
+  const newApprovalCount = useMemo(
+    () =>
+      pending.filter((l) => l.createdAt && new Date(l.createdAt).getTime() > notifSeenAt).length,
+    [pending, notifSeenAt],
+  )
+  const notifCount = unreadCount + newDecisionCount + newApprovalCount
 
   const typeLabels = useMemo(
     () => Object.fromEntries(types.map((t) => [t.key, t.label])),
@@ -351,7 +397,6 @@ export default function Portal() {
   // Depend on `reload` (stable) rather than the query object (new every
   // render) — otherwise this callback's identity churns and re-triggers the
   // child's load effect on a loop.
-  const reloadHistory = historyQ.reload
   const refreshAfterAttendance = useCallback(() => {
     reloadHistory()
     // Analytics is lazy-loaded (only once the Attendance tab has been
@@ -414,6 +459,11 @@ export default function Portal() {
     )
   }
 
+  function onRegularizeCreated(item) {
+    myLeavesQ.setData((prev) => [item, ...(prev ?? [])])
+    toast.success('Fix request sent — your manager has been notified.')
+  }
+
   function onWfhCancelled(result) {
     if (result?.removed) {
       myLeavesQ.setData((prev) => (prev ?? []).filter((l) => l.id !== result.id))
@@ -443,11 +493,16 @@ export default function Portal() {
   const onApprovalDecided = useCallback(
     (id, outcome, employeeName, kind) => {
       pendingQ.setData((prev) => (prev ?? []).filter((l) => l.id !== id))
-      const noun = kind === 'wfh' ? 'work-from-home request' : 'leave'
+      const noun =
+        kind === 'wfh'
+          ? 'work-from-home request'
+          : kind === 'regularize'
+            ? 'attendance fix — that day now counts as present'
+            : 'leave'
       toast.success(
         outcome === 'approved'
-          ? `Approved ${employeeName}'s ${noun}.${kind === 'wfh' ? '' : ' Their balance has been updated.'}`
-          : `Rejected ${employeeName}'s ${noun}.`,
+          ? `Approved ${employeeName}'s ${noun}.${kind === 'leave' ? ' Their balance has been updated.' : ''}`
+          : `Rejected ${employeeName}'s ${noun.split(' — ')[0]}.`,
       )
       // A decision changes company-wide data; refresh anything already on screen.
       if (allLeavesQ.data !== null) allLeavesQ.reload()
@@ -504,7 +559,7 @@ export default function Portal() {
     day: 'numeric',
     month: 'long',
   })
-  const nav = navFor(role, { notifications: unreadCount, approvals: pending.length })
+  const nav = navFor(role, { notifications: notifCount, approvals: pending.length })
   // 'profile' is deliberately not part of `nav` (see ROLE_SECTIONS) — it's
   // reached via the account menu or a People row, not a sidebar item — so it
   // needs its own title here instead of falling back to "Dashboard".
@@ -519,6 +574,7 @@ export default function Portal() {
   const isSearchable = active in SEARCHABLE_TABS
 
   function openNotifications() {
+    markNotificationsSeen()
     setShowNotifications(true)
   }
 
@@ -555,7 +611,7 @@ export default function Portal() {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           searchPlaceholder={SEARCHABLE_TABS[active]}
-          notificationCount={unreadCount}
+          notificationCount={notifCount}
           onBellClick={openNotifications}
           theme={theme}
           onThemeChange={changeTheme}
@@ -656,7 +712,11 @@ export default function Portal() {
                 {analyticsQ.data && <AttendanceAnalytics data={analyticsQ.data} />}
               </Section>
               <Section query={historyQ} skeletonRows={5}>
-                <AttendanceHistory rows={history} />
+                <AttendanceHistory
+                  rows={history}
+                  regularize={myRegularize}
+                  onRegularized={onRegularizeCreated}
+                />
               </Section>
             </div>
           )}

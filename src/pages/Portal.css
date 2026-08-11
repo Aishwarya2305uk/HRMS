@@ -340,14 +340,36 @@
 }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
-/* ---- Feedback / HR Request embedded-form page (FormLinkSection.jsx) ---- */
+/* ---- Feedback / HR Request embedded-form page (FormLinkSection.jsx) ----
+   Not a card: a slim toolbar, then the frame covers the remaining screen —
+   the page shouldn't scroll to reach the form; the form scrolls inside. */
+.form-page {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.form-page__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.form-page__hint {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
 .form-page__frame {
   width: 100%;
-  /* Fill the space below the topbar without ever collapsing or towering. */
-  height: clamp(420px, calc(100vh - 300px), 900px);
+  /* Viewport minus topbar + content padding + toolbar row (approx). */
+  height: calc(100dvh - 235px);
+  min-height: 420px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: #fff; /* forms flash white while loading — avoid a dark hole in dark themes */
+}
+@media (max-width: 760px) {
+  .form-page__frame { height: calc(100dvh - 185px); }
 }
 
 /* ---- Right-docked drawer variant (see Modal.jsx's `placement` prop) ---- */

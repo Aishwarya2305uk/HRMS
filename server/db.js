@@ -38,7 +38,11 @@ export function getPool() {
     // Supabase's pooler presents a certificate chain outside Node's default
     // CA store; TLS is still used, we just skip chain verification.
     ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: 8000,
+    // Generous on purpose: a paused/cold Supabase project can take >8s to
+    // wake on the FIRST connection, and a short timeout here made startup
+    // die with "Connection terminated due to connection timeout" even though
+    // the very next attempt would succeed.
+    connectionTimeoutMillis: 20000,
   })
   return cache.pool
 }

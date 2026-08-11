@@ -5,6 +5,13 @@
    ============================================================ */
 
 :root {
+  /* The UI is light-only by design. Without this, browsers on a dark-mode
+     OS render NATIVE form controls dark — most visibly the options list
+     that pops out of a <select>, which would open dark gray against our
+     white dropdowns. Pinning the scheme keeps every control (and its
+     popup) light regardless of the OS setting. */
+  color-scheme: light;
+
   /* --- Surfaces --- */
   --surface-0: #f8fafc;   /* app background (deepest layer) */
   --surface-1: #ffffff;   /* raised cards */
@@ -177,6 +184,17 @@ select,
 textarea {
   font-family: inherit;
   font-size: 1rem;
+}
+
+/* Every dropdown face and its option list on white, everywhere — including
+   any select a component forgets to class (the styled ones already sit on
+   --surface-1, which is the same white). */
+select {
+  background-color: #fff;
+}
+select option {
+  background-color: #fff;
+  color: var(--text);
 }
 
 /* ---- Reusable elevation utilities ---- */

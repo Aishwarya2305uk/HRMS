@@ -89,7 +89,9 @@ create index teams_manager_id_idx on teams (manager_id);
 create table leaves (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references users(id) on delete cascade,
-  kind text not null default 'leave' check (kind in ('leave','wfh')),
+  -- 'regularize' = "count this auto-leave attendance day as present" — no
+  -- dates off, no balance; approval flips the work_sessions row instead.
+  kind text not null default 'leave' check (kind in ('leave','wfh','regularize')),
   type text check (kind <> 'leave' or type is not null),
   start_date timestamptz not null,
   end_date timestamptz not null,
@@ -250,6 +252,18 @@ do $$ begin
     alter table leaves drop constraint leaves_status_check;
     alter table leaves add constraint leaves_status_check
       check (status in ('pending','approved','rejected','cancelled'));
+  end if;
+end $$;
+
+-- Attendance regularization (2026-08): kind 'regularize' asks the manager to
+-- count an early-checkout / auto-leave day as present.
+do $$ begin
+  if exists (select 1 from pg_constraint
+              where conname = 'leaves_kind_check'
+                and pg_get_constraintdef(oid) not like '%regularize%') then
+    alter table leaves drop constraint leaves_kind_check;
+    alter table leaves add constraint leaves_kind_check
+      check (kind in ('leave','wfh','regularize'));
   end if;
 end $$;
 

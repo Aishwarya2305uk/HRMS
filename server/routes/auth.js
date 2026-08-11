@@ -43,28 +43,33 @@ async function verifyCaptcha(token, remoteIp) {
     return true
   }
   if (!token) return false
-  try {
-    const params = new URLSearchParams({ secret: TURNSTILE_SECRET_KEY, response: token })
-    if (remoteIp) params.set('remoteip', remoteIp)
-    // Bounded so a slow Cloudflare response can't eat the client's whole login
-    // timeout — a stalled verification fails the login within 5s instead.
-    const res = await fetch(TURNSTILE_VERIFY_URL, {
-      method: 'POST',
-      body: params,
-      signal: AbortSignal.timeout(5000),
-    })
-    const data = await res.json()
-    if (data.success !== true) {
-      // error-codes make misconfiguration (wrong secret, hostname mismatch)
-      // diagnosable from the server logs instead of a generic login failure.
-      console.warn('[auth/login] Turnstile rejected the token:', data['error-codes'] ?? [])
-      return false
+  const params = new URLSearchParams({ secret: TURNSTILE_SECRET_KEY, response: token })
+  if (remoteIp) params.set('remoteip', remoteIp)
+  // Two attempts: one flaky-network timeout shouldn't fail a login. Only
+  // NETWORK errors retry — a "not verified" answer from Cloudflare is final —
+  // and persistent unreachability still fails closed after the second try.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      // Bounded so a slow Cloudflare response can't eat the client's whole
+      // login timeout — each attempt gets 6s, worst case 12s total.
+      const res = await fetch(TURNSTILE_VERIFY_URL, {
+        method: 'POST',
+        body: params,
+        signal: AbortSignal.timeout(6000),
+      })
+      const data = await res.json()
+      if (data.success !== true) {
+        // error-codes make misconfiguration (wrong secret, hostname mismatch)
+        // diagnosable from the server logs instead of a generic login failure.
+        console.warn('[auth/login] Turnstile rejected the token:', data['error-codes'] ?? [])
+        return false
+      }
+      return true
+    } catch (err) {
+      console.error(`[auth/login] Turnstile verify attempt ${attempt} failed:`, err.message)
     }
-    return true
-  } catch (err) {
-    console.error('[auth/login] Turnstile verification request failed:', err)
-    return false
   }
+  return false
 }
 
 function signToken(user) {

@@ -142,6 +142,7 @@ export default function LoginForm() {
           className="btn-primary"
           disabled={submitting || (REQUIRE_CAPTCHA && !captchaToken)}
         >
+          {submitting && <span className="btn-spinner" aria-hidden="true" />}
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
