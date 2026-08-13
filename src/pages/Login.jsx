@@ -18,7 +18,7 @@ export default function Login() {
         </div>
 
         <div className="brand__intro">
-          <h1>Workforce management, simplified.</h1>
+          <h1>Your whole workforce, in one orbit.</h1>
           <p>Attendance, leave and organization management in one place.</p>
         </div>
 
