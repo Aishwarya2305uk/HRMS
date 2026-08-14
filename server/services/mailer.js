@@ -20,6 +20,15 @@ const transporter = mailerConfigured
       port: SMTP_PORT,
       secure: SMTP_PORT === 465, // 465 is implicit TLS; 587/25 upgrade via STARTTLS
       auth: { user: SMTP_USER, pass: SMTP_PASS },
+      // Fail fast when the SMTP host is unreachable. Some hosts (e.g. Render's
+      // free tier) silently drop outbound SMTP traffic, and nodemailer's
+      // default 2-minute connection timeout would hold the invite response
+      // long past the frontend's 15s abort (src/lib/api.js) — the send must
+      // lose quickly so the admin gets the copyable-link fallback instead of
+      // a "took too long" error.
+      connectionTimeout: 7000,
+      greetingTimeout: 5000,
+      socketTimeout: 10000,
     })
   : null
 
