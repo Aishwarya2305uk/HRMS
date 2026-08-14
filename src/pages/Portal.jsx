@@ -644,7 +644,7 @@ export default function Portal() {
               )}
 
               <div className="emp__grid">
-                <AttendanceCard onChange={refreshAfterAttendance} />
+                <AttendanceCard onChange={refreshAfterAttendance} settings={settingsQ.data} />
                 <LeaveBalanceCard
                   user={user}
                   types={types}
@@ -707,7 +707,7 @@ export default function Portal() {
 
           {active === 'attendance' && (
             <div className="single-col">
-              <AttendanceCard onChange={refreshAfterAttendance} />
+              <AttendanceCard onChange={refreshAfterAttendance} settings={settingsQ.data} />
               <Section query={analyticsQ} skeletonRows={4}>
                 {analyticsQ.data && <AttendanceAnalytics data={analyticsQ.data} />}
               </Section>

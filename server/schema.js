@@ -164,6 +164,10 @@ create table app_settings (
   id smallint primary key default 1 check (id = 1),
   feedback_form_url varchar(2048) not null default '',
   hr_request_form_url varchar(2048) not null default '',
+  -- Which attendance methods employees see (admin-toggled, Other Settings):
+  -- the live check-in timer, and the one-tap full-day "Check in for today".
+  attendance_timer_enabled boolean not null default false,
+  attendance_quick_checkin_enabled boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -284,6 +288,12 @@ create table if not exists request_logs (
 );
 create index if not exists request_logs_ts_idx on request_logs (ts desc);
 alter table request_logs enable row level security;
+
+-- Attendance method toggles (2026-08): admins show/hide each way of marking
+-- attendance from Other Settings. The classic timer starts hidden; the
+-- one-tap "Check in for today" full-day button starts visible.
+alter table app_settings add column if not exists attendance_timer_enabled boolean not null default false;
+alter table app_settings add column if not exists attendance_quick_checkin_enabled boolean not null default true;
 `
 
 /**

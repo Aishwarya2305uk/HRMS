@@ -85,6 +85,8 @@
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+/* Stacked start choices ('out' state) — one button per enabled attendance method. */
+.attendance__start { display: flex; flex-direction: column; gap: 10px; }
 
 /* ---- Buttons: ghost + small ---- */
 .btn-tactile.ghost {

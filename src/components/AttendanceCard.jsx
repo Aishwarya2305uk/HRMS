@@ -14,9 +14,18 @@ import { InlineError } from './States'
  * on top of the last sync. That's what makes it refresh- and re-login-proof —
  * reloading the page just re-reads the true elapsed time from the API.
  *
+ * Which way(s) of marking attendance are offered is an admin choice (Other
+ * Settings): the timer above, and/or the one-tap "Check in for today" that
+ * marks the whole day present at 8h. `settings` is Portal's app-settings
+ * query data — null until loaded, so buttons only render once the flags are
+ * known. The server re-checks the flags, so this gating is UX, not security.
+ * An already-running timer stays finishable even if the admin hides the
+ * timer mid-day.
+ *
  * @param {(session:object)=>void} [props.onChange]  notified after each action
+ * @param {object|null}            [props.settings]  org settings (attendance flags)
  */
-export default function AttendanceCard({ onChange }) {
+export default function AttendanceCard({ onChange, settings }) {
   const toast = useToast()
   const [session, setSession] = useState(null)
   const [now, setNow] = useState(Date.now())
@@ -81,6 +90,8 @@ export default function AttendanceCard({ onChange }) {
     resume: () => 'Back on the clock.',
     'check-out': (live) =>
       `Checked out. You worked ${formatHours(live.workedSeconds)} today.`,
+    'day-checkin': (live) =>
+      `Checked in for today — you're marked present (${formatHours(live.workedSeconds)}).`,
   }
 
   async function act(action, feel = 'medium') {
@@ -89,7 +100,8 @@ export default function AttendanceCard({ onChange }) {
     setError('')
     haptic(feel)
     try {
-      const live = await attendance.action(action)
+      const live =
+        action === 'day-checkin' ? await attendance.dayCheckin() : await attendance.action(action)
       apply(live)
       toast.success(CONFIRM[action]?.(live) ?? 'Attendance updated.')
     } catch (err) {
@@ -107,6 +119,12 @@ export default function AttendanceCard({ onChange }) {
   const liveSeconds =
     sync.current.base + (sync.current.running ? (now - sync.current.at) / 1000 : 0)
   const elapsed = formatElapsed(liveSeconds)
+
+  // Admin-controlled attendance methods; null settings = still loading, so
+  // hold the start buttons rather than flashing the wrong set for a moment.
+  const methodsKnown = settings != null
+  const timerEnabled = Boolean(settings?.attendanceTimerEnabled)
+  const quickEnabled = Boolean(settings?.attendanceQuickCheckinEnabled)
 
   const statusLabel =
     state === 'running'
@@ -133,8 +151,17 @@ export default function AttendanceCard({ onChange }) {
 
       {state === 'done' ? (
         <p className="attendance__hint">
-          You worked <b>{formatHours(session.workedSeconds)}</b> today · checked out at{' '}
-          {formatTime(session.checkOutAt)}.{' '}
+          {session.checkOutAt ? (
+            <>
+              You worked <b>{formatHours(session.workedSeconds)}</b> today · checked out at{' '}
+              {formatTime(session.checkOutAt)}.{' '}
+            </>
+          ) : (
+            // One-tap day: no timer ran, so there's no checkout time to show.
+            <>
+              Checked in for today — <b>{formatHours(session.workedSeconds)}</b> logged.{' '}
+            </>
+          )}
           <span className={`status ${session.dayStatus === 'present' ? 'approved' : 'pending'}`}>
             {session.dayStatus === 'present' ? 'Present' : 'Marked leave'}
           </span>
@@ -145,17 +172,37 @@ export default function AttendanceCard({ onChange }) {
             ? 'Timer is running. Pause for breaks, and check out when you leave.'
             : state === 'paused'
               ? 'Paused — resume when you’re back. Paused time isn’t counted.'
-              : "You're not checked in yet. Start your day whenever you're ready."}
+              : methodsKnown && !timerEnabled && !quickEnabled
+                ? 'Attendance marking is currently turned off by your admin.'
+                : "You're not checked in yet. Start your day whenever you're ready."}
         </p>
       )}
 
       {error && <InlineError onRetry={loadFailed ? load : undefined}>{error}</InlineError>}
 
-      {state === 'out' && (
-        <button className="btn-tactile primary block" onClick={() => act('check-in', 'success')} disabled={busy}>
-          <Icon name="check" size={18} />
-          Check in
-        </button>
+      {state === 'out' && (quickEnabled || timerEnabled) && (
+        <div className="attendance__start">
+          {quickEnabled && (
+            <button
+              className="btn-tactile primary block"
+              onClick={() => act('day-checkin', 'success')}
+              disabled={busy}
+            >
+              <Icon name="check" size={18} />
+              Check in for today
+            </button>
+          )}
+          {timerEnabled && (
+            <button
+              className={`btn-tactile block${quickEnabled ? ' ghost' : ' primary'}`}
+              onClick={() => act('check-in', 'success')}
+              disabled={busy}
+            >
+              <Icon name="clock" size={18} />
+              {quickEnabled ? 'Check in with timer' : 'Check in'}
+            </button>
+          )}
+        </div>
       )}
 
       {(state === 'running' || state === 'paused') && (
@@ -179,7 +226,11 @@ export default function AttendanceCard({ onChange }) {
       )}
 
       <p className="attendance__note">
-        {`A full day is 8h — under that auto-marks the day as leave. Logging in doesn't mark attendance.`}
+        {timerEnabled
+          ? `A full day is 8h — under that auto-marks the day as leave. Logging in doesn't mark attendance.`
+          : quickEnabled
+            ? `"Check in for today" marks your whole day present at 8h. Logging in doesn't mark attendance.`
+            : `Your attendance history stays saved — marking will be back when your admin turns it on.`}
       </p>
     </section>
   )

@@ -7,6 +7,8 @@ import { apiFetch } from './api'
 export const attendance = {
   today: () => apiFetch('/attendance/today'),
   action: (a) => apiFetch(`/attendance/${a}`, { method: 'POST' }),
+  /** One-tap "Check in for today" — marks the whole day present (8h), no timer. */
+  dayCheckin: () => apiFetch('/attendance/day-checkin', { method: 'POST' }),
   history: () => apiFetch('/attendance/history'),
   analytics: () => apiFetch('/attendance/analytics'),
   all: (month) => apiFetch(`/attendance/all${month ? `?month=${month}` : ''}`),

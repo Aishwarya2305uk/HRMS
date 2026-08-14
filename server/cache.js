@@ -35,3 +35,13 @@ export const cachedEmploymentTypes = () =>
   cached('employment_types', () =>
     q('select * from employment_types order by created_at').then((r) => r.rows),
   )
+
+/** The app_settings singleton row (upsert-on-read: first access creates it). */
+export const cachedAppSettings = () =>
+  cached('app_settings', () =>
+    q(
+      `insert into app_settings (id) values (1)
+       on conflict (id) do update set id = 1
+       returning *`,
+    ).then((r) => r.rows[0]),
+  )

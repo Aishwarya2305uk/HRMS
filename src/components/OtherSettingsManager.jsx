@@ -23,6 +23,28 @@ const FIELDS = [
   },
 ]
 
+// The two ways of marking attendance, shown/hidden per org. Hiding never
+// deletes anything — the buttons just disappear from dashboards until the
+// method is turned back on (the server refuses hidden methods too).
+const ATTENDANCE_TOGGLES = [
+  {
+    key: 'attendanceQuickCheckinEnabled',
+    label: '“Check in for today” button',
+    icon: 'check',
+    hint: 'One tap marks the whole day as present (8h) — no timer to run.',
+    detail:
+      'The simplest way to mark attendance: a single button that logs a full 8h day and marks the person present — no pause or check-out needed.',
+  },
+  {
+    key: 'attendanceTimerEnabled',
+    label: 'Check-in timer',
+    icon: 'clock',
+    hint: 'Live check in / pause / resume / check out — under 8h auto-marks leave.',
+    detail:
+      'The classic timer: people check in, pause for breaks and check out, and a day under 8h auto-marks as leave. Hiding it stops new timer check-ins; anyone already checked in today can still finish their day.',
+  },
+]
+
 /** Empty is fine (clears the link); anything else must be a full http(s) URL. */
 function isValidLink(raw) {
   if (!raw) return true
@@ -36,12 +58,13 @@ function isValidLink(raw) {
 }
 
 /**
- * Admin editing of the org-wide external form links (Other Settings page).
- * Each setting is a collapsible row — header shows what it is and whether a
- * link is set; expanding it reveals the URL input. Each link saves
- * independently. Receives Portal's settings query so a save immediately
- * updates the same data the sidebar's Feedback / HR Request items open — no
- * refetch needed.
+ * Admin editing of the org-wide settings (Other Settings page): the external
+ * form links, plus which attendance check-in methods appear on dashboards.
+ * Each setting is a collapsible row — header shows what it is and its current
+ * state; expanding it reveals the control (URL input / show-hide button), and
+ * each saves independently. Receives Portal's settings query so a save
+ * immediately updates the same data the sidebar items and AttendanceCard
+ * read — no refetch needed.
  */
 export default function OtherSettingsManager({ query }) {
   const toast = useToast()
@@ -94,7 +117,32 @@ export default function OtherSettingsManager({ query }) {
     }
   }
 
+  /** Flip one attendance method on/off — saves immediately, like the links. */
+  async function saveToggle(field, value) {
+    if (savingKey) return
+    setSavingKey(field.key)
+    haptic('medium')
+    try {
+      const updated = await appSettingsApi.update({ [field.key]: value })
+      query.setData(updated)
+      haptic('success')
+      toast.success(
+        value
+          ? `${field.label} is now on everyone's dashboard.`
+          : `${field.label} hidden — nothing is deleted, bring it back anytime.`,
+      )
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSavingKey(null)
+    }
+  }
+
+  const bothHidden =
+    settings != null && !settings.attendanceTimerEnabled && !settings.attendanceQuickCheckinEnabled
+
   return (
+    <>
     <section className="card pop" style={{ '--d': '40ms' }}>
       <div className="attendance__head">
         <h2>
@@ -171,5 +219,75 @@ export default function OtherSettingsManager({ query }) {
         })}
       </div>
     </section>
+
+    <section className="card pop" style={{ '--d': '80ms' }}>
+      <div className="attendance__head">
+        <h2>
+          Attendance check-in
+          <span className="settings-acc__count">{ATTENDANCE_TOGGLES.length} settings</span>
+        </h2>
+      </div>
+      <p className="field-hint team-manager__hint">
+        Choose how people mark attendance on their dashboard — show one way or both. Hiding a
+        method only tucks it away for now: history is kept, and you can bring it back anytime.
+      </p>
+
+      <div className="settings-acc">
+        {ATTENDANCE_TOGGLES.map((f) => {
+          const open = openKey === f.key
+          const on = Boolean(settings?.[f.key])
+          return (
+            <div className={`settings-acc__item${open ? ' is-open' : ''}`} key={f.key}>
+              <button
+                type="button"
+                className="settings-acc__head"
+                aria-expanded={open}
+                aria-controls={`os-panel-${f.key}`}
+                onClick={() => toggle(f.key)}
+              >
+                <span className="settings-acc__icon">
+                  <Icon name={f.icon} size={17} />
+                </span>
+                <span className="settings-acc__text">
+                  <strong>{f.label}</strong>
+                  <em>{f.hint}</em>
+                </span>
+                <span className={`settings-acc__state${on ? ' is-set' : ''}`}>
+                  {on ? 'Shown' : 'Hidden'}
+                </span>
+                <Icon name="chevronDown" size={16} className="settings-acc__chevron" />
+              </button>
+
+              {open && (
+                <div className="settings-acc__body" id={`os-panel-${f.key}`}>
+                  <p className="field-hint team-manager__hint">{f.detail}</p>
+                  <button
+                    type="button"
+                    className={`btn-tactile ${on ? 'ghost' : 'primary'} sm`}
+                    onClick={() => saveToggle(f, !on)}
+                    disabled={savingKey === f.key}
+                  >
+                    <Icon name={on ? 'eyeOff' : 'eye'} size={15} />
+                    {savingKey === f.key
+                      ? 'Saving…'
+                      : on
+                        ? 'Hide from dashboards'
+                        : 'Show on dashboards'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {bothHidden && (
+        <p className="field-hint team-manager__hint">
+          Both methods are hidden right now, so nobody can mark attendance. Turn one back on
+          when you&rsquo;re ready.
+        </p>
+      )}
+    </section>
+    </>
   )
 }

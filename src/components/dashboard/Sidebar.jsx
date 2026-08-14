@@ -6,7 +6,7 @@ import { haptic, tactile } from '../../lib/haptics'
 const CONSOLE_LABEL = {
   admin: 'Admin console',
   manager: 'Manager console',
-  employee: 'Employee workspace',
+  employee: 'My workspace',
 }
 
 /**

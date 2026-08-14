@@ -291,5 +291,10 @@ export function documentJSON(r) {
 }
 
 export function settingsJSON(r) {
-  return { feedbackFormUrl: r.feedback_form_url, hrRequestFormUrl: r.hr_request_form_url }
+  return {
+    feedbackFormUrl: r.feedback_form_url,
+    hrRequestFormUrl: r.hr_request_form_url,
+    attendanceTimerEnabled: r.attendance_timer_enabled,
+    attendanceQuickCheckinEnabled: r.attendance_quick_checkin_enabled,
+  }
 }

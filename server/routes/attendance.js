@@ -1,5 +1,7 @@
 import { Router } from 'express'
 import { q } from '../db.js'
+import { cachedAppSettings } from '../cache.js'
+import { FULL_WORKDAY_SECONDS } from '../config.js'
 import { requireAuth } from '../middleware/auth.js'
 import {
   finalizeStaleSessions,
@@ -49,6 +51,10 @@ async function appendEvent(userId, type) {
   if (type === 'check_in') {
     if (events.some((e) => e.type === 'check_in')) {
       throw httpError(409, 'You have already checked in today.')
+    }
+    // e.g. the day was already recorded via the one-tap "Check in for today".
+    if (session.status !== 'active') {
+      throw httpError(409, 'Attendance for today is already recorded.')
     }
   } else {
     if (!session || session.status !== 'active') {
@@ -107,6 +113,52 @@ router.get('/today', async (req, res, next) => {
   }
 })
 
+/**
+ * POST /api/attendance/day-checkin — the one-tap alternative to the timer:
+ * marks today as a full present day, crediting FULL_WORKDAY_SECONDS in one
+ * click. No timer runs; the day finalizes immediately. Kept as its own event
+ * type (`day_check_in`) so timer math never confuses it with a real interval.
+ *
+ * Which attendance methods are available is an admin setting (Other
+ * Settings); this route and the timer's check-in both re-check their flag
+ * server-side, so a hidden method can't be driven from a stale client.
+ * NOTE: registered before '/:action' so Express doesn't treat it as one.
+ */
+router.post('/day-checkin', async (req, res, next) => {
+  try {
+    const settings = await cachedAppSettings()
+    if (!settings.attendance_quick_checkin_enabled) {
+      return res
+        .status(403)
+        .json({ error: '"Check in for today" is currently turned off by your admin.' })
+    }
+    const session = await getTodaySession(req.user.id, { create: true })
+    if (session.status !== 'active' || (session.events || []).length > 0) {
+      throw httpError(
+        409,
+        (session.events || []).some((e) => e.type === 'check_in')
+          ? 'You already checked in with the timer today.'
+          : 'Attendance for today is already recorded.',
+      )
+    }
+    const events = [{ type: 'day_check_in', at: new Date().toISOString() }]
+    // `status = 'active'` in the WHERE guards a double-tap race: the loser
+    // matches zero rows instead of overwriting the finalized day.
+    const { rows } = await q(
+      `update work_sessions
+         set events = $1, worked_seconds = $2, day_status = 'present', status = 'completed'
+       where id = $3 and status = 'active'
+       returning *`,
+      [JSON.stringify(events), FULL_WORKDAY_SECONDS, session.id],
+    )
+    if (!rows[0]) throw httpError(409, 'Attendance for today is already recorded.')
+    res.json(liveSessionJSON(rows[0]))
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message })
+    next(err)
+  }
+})
+
 /** POST /api/attendance/:action — action ∈ check-in | pause | resume | check-out. */
 const ACTIONS = {
   'check-in': 'check_in',
@@ -118,6 +170,17 @@ router.post('/:action', async (req, res, next) => {
   try {
     const type = ACTIONS[req.params.action]
     if (!type) return res.status(404).json({ error: 'Unknown attendance action.' })
+    // Only STARTING a timer day is gated on the admin toggle — pause/resume/
+    // check-out must keep working so hiding the timer mid-day never strands
+    // someone in a session they can't finish.
+    if (type === 'check_in') {
+      const settings = await cachedAppSettings()
+      if (!settings.attendance_timer_enabled) {
+        return res
+          .status(403)
+          .json({ error: 'The check-in timer is currently turned off by your admin.' })
+      }
+    }
     const session = await appendEvent(req.user.id, type)
     res.json(liveSessionJSON(session))
   } catch (err) {

@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { q } from '../db.js'
-import { cached, invalidate } from '../cache.js'
+import { cachedAppSettings, invalidate } from '../cache.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { settingsJSON } from '../store.js'
 
@@ -12,6 +12,11 @@ const URL_MAX = 2048
 const LINK_FIELDS = {
   feedbackFormUrl: 'feedback_form_url',
   hrRequestFormUrl: 'hr_request_form_url',
+}
+// API field → column, one entry per admin-toggleable attendance method.
+const TOGGLE_FIELDS = {
+  attendanceTimerEnabled: 'attendance_timer_enabled',
+  attendanceQuickCheckinEnabled: 'attendance_quick_checkin_enabled',
 }
 
 /** Upsert-on-read: the first access creates the (empty) singleton row atomically. */
@@ -44,16 +49,18 @@ function cleanUrl(value) {
   return raw
 }
 
-/** GET /api/settings — the org-wide form links every signed-in user's sidebar needs. */
+/** GET /api/settings — the org-wide form links and attendance-method flags
+ *  every signed-in user's dashboard needs. */
 router.get('/', async (_req, res, next) => {
   try {
-    res.json(settingsJSON(await cached('app_settings', getSingleton)))
+    res.json(settingsJSON(await cachedAppSettings()))
   } catch (err) {
     next(err)
   }
 })
 
-/** PATCH /api/settings — admin only. Body: any of { feedbackFormUrl, hrRequestFormUrl }. */
+/** PATCH /api/settings — admin only. Body: any of { feedbackFormUrl,
+ *  hrRequestFormUrl, attendanceTimerEnabled, attendanceQuickCheckinEnabled }. */
 router.patch('/', requireRole('admin'), async (req, res, next) => {
   try {
     const sets = []
@@ -67,6 +74,14 @@ router.patch('/', requireRole('admin'), async (req, res, next) => {
           .json({ error: 'Links must be full http:// or https:// URLs (or empty to clear).' })
       }
       params.push(url)
+      sets.push(`${column} = $${params.length}`)
+    }
+    for (const [field, column] of Object.entries(TOGGLE_FIELDS)) {
+      if (req.body?.[field] === undefined) continue
+      if (typeof req.body[field] !== 'boolean') {
+        return res.status(400).json({ error: 'Attendance toggles must be true or false.' })
+      }
+      params.push(req.body[field])
       sets.push(`${column} = $${params.length}`)
     }
     if (sets.length === 0) {
