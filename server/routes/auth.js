@@ -15,6 +15,7 @@ import {
   mapUser,
 } from '../store.js'
 import { requireAuth } from '../middleware/auth.js'
+import { resolveLeaveBalances } from '../services/leavePolicy.js'
 import { loginLimiter, inviteLimiter, forgotLimiter } from '../middleware/security.js'
 import { passwordPolicyError } from '../utils/password.js'
 import { sendPasswordResetEmail, appOrigin } from '../services/mailer.js'
@@ -113,6 +114,9 @@ router.post('/login', loginLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password.' })
     }
 
+    // Balances the client shows must be the EFFECTIVE ones — day/month-period
+    // leave types compute their remaining per period rather than storing it.
+    await resolveLeaveBalances(user)
     return res.json({ token: signToken(user), user: safeUserJSON(user) })
   } catch (err) {
     console.error('[auth/login]', err)
@@ -121,8 +125,13 @@ router.post('/login', loginLimiter, async (req, res) => {
 })
 
 /** GET /api/auth/me — resolve the current user from the token (session check). */
-router.get('/me', requireAuth, (req, res) => {
-  res.json({ user: safeUserJSON(req.user) })
+router.get('/me', requireAuth, async (req, res, next) => {
+  try {
+    await resolveLeaveBalances(req.user)
+    res.json({ user: safeUserJSON(req.user) })
+  } catch (err) {
+    next(err)
+  }
 })
 
 /**
@@ -211,6 +220,7 @@ router.post('/register', inviteLimiter, async (req, res, next) => {
     }
 
     const activated = mapUser(rows[0])
+    await resolveLeaveBalances(activated)
     res.status(201).json({ token: signToken(activated), user: safeUserJSON(activated) })
   } catch (err) {
     next(err)
@@ -312,6 +322,7 @@ router.post('/reset', inviteLimiter, async (req, res, next) => {
     }
 
     const updated = mapUser(rows[0])
+    await resolveLeaveBalances(updated)
     res.json({ token: signToken(updated), user: safeUserJSON(updated) })
   } catch (err) {
     next(err)

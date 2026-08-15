@@ -67,14 +67,37 @@ export function dayPartLabel(dayPart) {
 }
 
 /**
+ * A leave amount (stored in days, 8h = 1 day) in human units: whole days as
+ * "3 days"; anything fractional leads with hours — "4h (0.5 days)",
+ * "1h 30m (0.1875 days)" — since sub-day leave is taken in hours.
+ */
+export function formatLeaveAmount(days) {
+  const d = Math.round((Number(days) || 0) * 10000) / 10000
+  if (Number.isInteger(d)) return `${d} day${d === 1 ? '' : 's'}`
+  const totalMinutes = Math.round(d * 8 * 60)
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
+  return `${h}h${m ? ` ${m}m` : ''} (${d} day${d === 1 ? '' : 's'})`
+}
+
+/** The same amount hours-first and compact, for the hours-scaled bar graph: "96h", "4h 30m". */
+export function formatLeaveHoursOnly(days) {
+  const totalMinutes = Math.round((Number(days) || 0) * 8 * 60)
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
+  return m ? `${h}h ${m}m` : `${h}h`
+}
+
+/**
  * One-line summary of a leave/WFH request's window:
  * "Jul 22 – Jul 24 · 3 days · 9:00 AM – 6:00 PM". Half days show their part
- * instead of a count ("Jul 22 · First half · 9:00 AM – 1:30 PM"); requests
- * from before times existed simply omit the clock segment.
+ * instead of a count ("Jul 22 · First half · 9:00 AM – 1:30 PM"); custom-time
+ * requests show their hours-based size ("Jul 22 · 2h (0.25 days) · 10:00 AM –
+ * 12:00 PM"); requests from before times existed simply omit the clock segment.
  */
 export function formatRequestWindow(r) {
   const parts = [formatRange(r.startDate, r.endDate)]
-  parts.push(dayPartLabel(r.dayPart) || `${r.days} ${r.days > 1 ? 'days' : 'day'}`)
+  parts.push(dayPartLabel(r.dayPart) || formatLeaveAmount(r.days))
   const from = formatClock(r.startTime)
   const to = formatClock(r.endTime)
   if (from && to) parts.push(`${from} – ${to}`)

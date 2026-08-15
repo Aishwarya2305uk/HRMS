@@ -95,7 +95,7 @@ export default function LoginForm() {
               id="email"
               type="email"
               autoComplete="username"
-              placeholder="you@trula.com"
+              placeholder="you@trula.ai"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required

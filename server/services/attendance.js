@@ -66,7 +66,9 @@ export function liveSessionJSON(row, now = Date.now()) {
   const open = row.status === 'active'
   const running = open && isRunning(events)
   const workedSeconds = open ? computeWorkedSeconds(events, now) : row.worked_seconds
-  const firstIn = events.find((e) => e.type === 'check_in')
+  // day_check_in (the one-tap "Check in for today") never opens a timer
+  // interval, but it still marks the moment the person started their day.
+  const firstIn = events.find((e) => e.type === 'check_in' || e.type === 'day_check_in')
   const lastOut = [...events].reverse().find((e) => e.type === 'check_out' || e.type === 'auto_close')
   return {
     date: row.date,

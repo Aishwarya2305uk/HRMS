@@ -3,7 +3,7 @@ import Icon from './Icon'
 import Modal from './Modal'
 import { haptic, tactile } from '../lib/haptics'
 import { leaves as leavesApi } from '../lib/hrms'
-import { formatRange, formatDate } from '../lib/format'
+import { formatRange, formatDate, formatLeaveAmount } from '../lib/format'
 import { InlineError } from './States'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -340,7 +340,7 @@ function LeaveDetailBody({ entry, typeLabels }) {
         </div>
         <div>
           <dt>Duration</dt>
-          <dd>{entry.days} {entry.days === 1 ? 'day' : 'days'}</dd>
+          <dd>{formatLeaveAmount(entry.days)}</dd>
         </div>
         {entry.createdAt && (
           <div>

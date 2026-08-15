@@ -167,7 +167,7 @@ export default function ResetPassword() {
                         id="rp-email"
                         type="email"
                         autoComplete="username"
-                        placeholder="you@trula.com"
+                        placeholder="you@trula.ai"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required

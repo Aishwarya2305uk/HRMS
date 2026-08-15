@@ -65,6 +65,9 @@ export function safeUserJSON(u) {
     employmentType: u.employmentTypeId || null,
     leaveBalances: u.leaveBalances || {},
     leaveBalance: sumDays(u.leaveBalances),
+    // Per-type granted amounts (in days, 8h = 1 day) — the denominators for
+    // the balance card's days/hours bar graphs.
+    leaveQuotas: u.leaveQuotas || {},
     leaveQuotaTotal: sumDays(u.leaveQuotas),
   }
 }
@@ -227,6 +230,8 @@ export function leaveJSON(r) {
     startTime: r.start_time || null,
     endTime: r.end_time || null,
     days: r.days,
+    // Same amount hours-denominated (8h = 1 day), for hr/day displays.
+    hours: Math.round(Number(r.days) * 8 * 100) / 100,
     reason: r.reason,
     status: r.status,
     approverId: r.approver_id || null,
@@ -239,7 +244,15 @@ export function leaveJSON(r) {
 }
 
 export function leaveTypeJSON(r) {
-  return { id: r.id, key: r.key, label: r.label, active: r.active }
+  return {
+    id: r.id,
+    key: r.key,
+    label: r.label,
+    active: r.active,
+    // Policy shape: quotas for this type mean "<x> <unit> per <period>".
+    unit: r.unit ?? 'days',
+    period: r.period ?? 'year',
+  }
 }
 
 export function employmentTypeJSON(r) {

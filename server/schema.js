@@ -37,6 +37,12 @@ create table leave_types (
   key text not null unique,
   label varchar(60) not null,
   active boolean not null default true,
+  -- Policy shape: quotas for this type are "<x> <unit> per <period>", e.g.
+  -- "12 days per year" or "2 hours per day". The amount lives per employment
+  -- type (employment_types.quotas, always stored in DAYS at 8h = 1 day);
+  -- unit only affects how admins enter/see it, period drives balance resets.
+  unit text not null default 'days' check (unit in ('days','hours')),
+  period text not null default 'year' check (period in ('day','month','year')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -95,10 +101,12 @@ create table leaves (
   type text check (kind <> 'leave' or type is not null),
   start_date timestamptz not null,
   end_date timestamptz not null,
-  day_part text not null default 'full' check (day_part in ('full','first','second')),
+  -- 'custom' = a freely-picked time window; the request's size comes from
+  -- those hours (8h = 1 day), so days can be any fraction above zero.
+  day_part text not null default 'full' check (day_part in ('full','first','second','custom')),
   start_time text not null default '',
   end_time text not null default '',
-  days numeric not null check (days >= 0.5),
+  days numeric not null check (days > 0),
   reason text not null default '',
   -- 'cancelled' = an APPROVED request withdrawn by its owner before the start
   -- date (pending ones are deleted outright instead — nothing to keep).
@@ -294,6 +302,39 @@ alter table request_logs enable row level security;
 -- one-tap "Check in for today" full-day button starts visible.
 alter table app_settings add column if not exists attendance_timer_enabled boolean not null default false;
 alter table app_settings add column if not exists attendance_quick_checkin_enabled boolean not null default true;
+
+-- Hours-based leave policy (2026-08): each leave type states its quota shape
+-- ("<x> days|hours per day|month|year"); existing types keep the historical
+-- meaning (days per year). Amounts stay stored in DAYS at 8h = 1 day.
+alter table leave_types add column if not exists unit text not null default 'days';
+alter table leave_types add column if not exists period text not null default 'year';
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'leave_types_unit_check') then
+    alter table leave_types add constraint leave_types_unit_check check (unit in ('days','hours'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'leave_types_period_check') then
+    alter table leave_types add constraint leave_types_period_check check (period in ('day','month','year'));
+  end if;
+end $$;
+
+-- Custom-time leave requests (2026-08): day_part 'custom' carries a free
+-- time window whose hours set the request size — days may now be any
+-- fraction above zero (a 2h request is 0.25 days).
+do $$ begin
+  if exists (select 1 from pg_constraint
+              where conname = 'leaves_day_part_check'
+                and pg_get_constraintdef(oid) not like '%custom%') then
+    alter table leaves drop constraint leaves_day_part_check;
+    alter table leaves add constraint leaves_day_part_check
+      check (day_part in ('full','first','second','custom'));
+  end if;
+  if exists (select 1 from pg_constraint
+              where conname = 'leaves_days_check'
+                and pg_get_constraintdef(oid) like '%0.5%') then
+    alter table leaves drop constraint leaves_days_check;
+    alter table leaves add constraint leaves_days_check check (days > 0);
+  end if;
+end $$;
 `
 
 /**

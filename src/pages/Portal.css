@@ -629,7 +629,21 @@
   background: var(--surface-1);
   color: var(--text);
 }
-.leave-type-edit { display: flex; align-items: center; gap: 8px; flex: 1; }
+/* Policy pickers (unit + period) share the input look; the row wraps on
+   phones instead of squeezing the name input away. */
+.leave-type-add--policy { flex-wrap: wrap; }
+.policy-select {
+  padding: 9px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-1);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+.leave-type-edit .policy-select { padding: 6px 8px; }
+
+.leave-type-edit { display: flex; align-items: center; gap: 8px; flex: 1; flex-wrap: wrap; }
 .leave-type-edit input {
   flex: 1;
   padding: 6px 10px;
@@ -740,6 +754,7 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+.employment-type-quota__unit { font-style: normal; text-transform: none; letter-spacing: 0; color: var(--text-faint); }
 .employment-type-quota input {
   width: 80px;
   padding: 7px 9px;
@@ -1330,6 +1345,19 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
 
 .cal-nav { display: flex; align-items: center; gap: 8px; }
 .cal-month { font-weight: 650; font-size: var(--text-sm); min-width: 130px; text-align: center; }
+/* All attendance's jump-to-a-date picker — sized to sit flush with the sm
+   controls beside it (the .field input padding would tower over them).
+   Clearing the value returns to the whole-month view. */
+.cal-nav .cal-date {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-1);
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
 
 /* Month-at-a-glance stats reuse .stat, .tint-*, .stat__icon etc. verbatim
    (see .stat-row in EmployeeDashboard.css) so they match the dashboard's

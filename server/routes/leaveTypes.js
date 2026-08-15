@@ -11,6 +11,9 @@ router.use(requireAuth)
 router.use(requireRole('admin'))
 
 const LABEL_MAX = 60
+// Policy shape whitelists: quotas mean "<x> <unit> per <period>".
+const UNITS = ['days', 'hours']
+const PERIODS = ['day', 'month', 'year']
 
 /** "Bereavement Leave" -> "bereavement-leave", deduped if the slug collides. */
 async function generateKey(label) {
@@ -39,17 +42,23 @@ router.get('/', async (_req, res, next) => {
   }
 })
 
-/** POST /api/leave-types — create. Body: { label }. `key` is derived, never client-supplied. */
+/** POST /api/leave-types — create. Body: { label, unit?, period? }.
+ *  `key` is derived, never client-supplied. */
 router.post('/', async (req, res, next) => {
   try {
     const label = String(req.body?.label || '').trim()
     if (!label || label.length > LABEL_MAX) {
       return res.status(400).json({ error: `Give it a name (max ${LABEL_MAX} characters).` })
     }
+    const unit = req.body?.unit ?? 'days'
+    const period = req.body?.period ?? 'year'
+    if (!UNITS.includes(unit) || !PERIODS.includes(period)) {
+      return res.status(400).json({ error: 'Policy must be in days or hours, per day, month or year.' })
+    }
     const key = await generateKey(label)
     const { rows } = await q(
-      'insert into leave_types (key, label, active) values ($1, $2, true) returning *',
-      [key, label],
+      'insert into leave_types (key, label, active, unit, period) values ($1, $2, true, $3, $4) returning *',
+      [key, label, unit, period],
     )
     invalidate('leave_types')
     res.status(201).json(leaveTypeJSON(rows[0]))
@@ -60,7 +69,9 @@ router.post('/', async (req, res, next) => {
 
 /**
  * PATCH /api/leave-types/:id — rename (label only — `key` is immutable once
- * created, since leaves reference it) and/or retire/reactivate.
+ * created, since leaves reference it), retire/reactivate, and/or change the
+ * policy shape (unit/period). Changing the period switches how balances are
+ * tracked (stored yearly counter vs computed per-period) from then on.
  */
 router.patch('/:id', async (req, res, next) => {
   try {
@@ -73,6 +84,8 @@ router.patch('/:id', async (req, res, next) => {
 
     let label = type.label
     let active = type.active
+    let unit = type.unit ?? 'days'
+    let period = type.period ?? 'year'
     if (req.body?.label !== undefined) {
       label = String(req.body.label).trim()
       if (!label || label.length > LABEL_MAX) {
@@ -82,10 +95,15 @@ router.patch('/:id', async (req, res, next) => {
     if (req.body?.active !== undefined) {
       active = Boolean(req.body.active)
     }
+    if (req.body?.unit !== undefined) unit = req.body.unit
+    if (req.body?.period !== undefined) period = req.body.period
+    if (!UNITS.includes(unit) || !PERIODS.includes(period)) {
+      return res.status(400).json({ error: 'Policy must be in days or hours, per day, month or year.' })
+    }
 
     const { rows } = await q(
-      'update leave_types set label = $1, active = $2 where id = $3 returning *',
-      [label, active, req.params.id],
+      'update leave_types set label = $1, active = $2, unit = $3, period = $4 where id = $5 returning *',
+      [label, active, unit, period, req.params.id],
     )
     invalidate('leave_types')
     res.json(leaveTypeJSON(rows[0]))

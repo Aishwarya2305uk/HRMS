@@ -541,7 +541,8 @@ export default function Portal() {
       ? finalized.reduce((s, h) => s + (h.workedSeconds || 0), 0) / finalized.length
       : 0
     const list = [
-      { icon: 'leaf', tint: 'indigo', label: 'Leave balance', value: user?.leaveBalance ?? 0, unit: 'days' },
+      // Balances can be fractional now (hours-based leave, 8h = 1 day).
+      { icon: 'leaf', tint: 'indigo', label: 'Leave balance', value: Math.round((user?.leaveBalance ?? 0) * 100) / 100, unit: 'days' },
       { icon: 'check', tint: 'green', label: 'Present this month', value: presentDays, unit: 'days' },
       { icon: 'clock', tint: 'blue', label: 'Avg. hours / day', value: avgSec ? formatHours(avgSec) : '—', unit: '' },
     ]

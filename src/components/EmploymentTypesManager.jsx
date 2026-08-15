@@ -8,10 +8,20 @@ import { Skeleton, EmptyState, InlineError } from './States'
 
 const NAME_MAX = 60
 
+/** Short "(hrs/day)"-style suffix describing how a type's quota counts. */
+const policySuffix = (lt) => {
+  const unit = (lt.unit ?? 'days') === 'hours' ? 'hrs' : 'days'
+  const period = { day: 'day', month: 'mo', year: 'yr' }[lt.period ?? 'year']
+  return `${unit}/${period}`
+}
+
 /**
  * Admin management of employment types (Intern, Full-time, Part-time, or any
- * custom classification) and how many days of each active leave type someone
- * on that classification is granted.
+ * custom classification) and how much of each active leave type someone on
+ * that classification is granted. Amounts are entered in the LEAVE TYPE'S
+ * unit and period ("2 hrs/day", "12 days/yr" — see LeaveTypesManager);
+ * storage is always day-denominated at 8h = 1 day, converted here at the
+ * edges.
  *
  * Editing quotas here is deliberately NOT retroactive: User.leaveQuotas is a
  * frozen snapshot taken when someone is assigned (users.leave_quotas)
@@ -40,8 +50,23 @@ export default function EmploymentTypesManager() {
     return () => window.removeEventListener(LEAVE_TYPES_CHANGED_EVENT, reloadLeaveTypes)
   }, [reloadLeaveTypes])
 
+  // Inputs live in the leave type's own unit; storage is days (8h = 1 day).
+  const toDisplay = (lt, days) =>
+    String(
+      (lt.unit ?? 'days') === 'hours'
+        ? Math.round((Number(days) || 0) * 8 * 100) / 100
+        : Number(days) || 0,
+    )
+  const toDays = (lt, value) => {
+    const n = Math.max(0, Number(value) || 0)
+    return (lt.unit ?? 'days') === 'hours' ? Math.round((n / 8) * 10000) / 10000 : n
+  }
+
   function draftFor(et) {
-    return drafts[et.id] ?? Object.fromEntries(leaveTypeList.map((lt) => [lt.key, String(et.quotas?.[lt.key] ?? 0)]))
+    return (
+      drafts[et.id] ??
+      Object.fromEntries(leaveTypeList.map((lt) => [lt.key, toDisplay(lt, et.quotas?.[lt.key] ?? 0)]))
+    )
   }
   function setDraftValue(et, key, value) {
     setDrafts((prev) => ({ ...prev, [et.id]: { ...draftFor(et), [key]: value } }))
@@ -72,8 +97,9 @@ export default function EmploymentTypesManager() {
 
   async function saveQuotas(et) {
     const draft = draftFor(et)
+    // Convert each entry from the type's display unit back to stored days.
     const quotas = Object.fromEntries(
-      Object.entries(draft).map(([k, v]) => [k, Math.max(0, Number(v) || 0)]),
+      leaveTypeList.map((lt) => [lt.key, toDays(lt, draft[lt.key])]),
     )
     setBusyId(et.id)
     haptic('medium')
@@ -121,8 +147,9 @@ export default function EmploymentTypesManager() {
         <h2>Employment types</h2>
       </div>
       <p className="field-hint team-manager__hint">
-        How many days of each leave type someone on a given employment classification is
-        granted. Changing a quota only affects people assigned to it afterward.
+        How much of each leave type someone on a given employment classification is granted —
+        each amount is in the leave type&rsquo;s own policy units (shown next to its name, e.g.
+        &ldquo;hrs/day&rdquo;). Changing a quota only affects people assigned to it afterward.
       </p>
 
       <form onSubmit={create} className="leave-type-add">
@@ -173,10 +200,13 @@ export default function EmploymentTypesManager() {
                   <div className="employment-type-card__quotas">
                     {leaveTypeList.map((lt) => (
                       <label key={lt.key} className="employment-type-quota">
-                        <span>{lt.label}</span>
+                        <span>
+                          {lt.label} <em className="employment-type-quota__unit">({policySuffix(lt)})</em>
+                        </span>
                         <input
                           type="number"
                           min="0"
+                          step="any"
                           value={draft[lt.key] ?? '0'}
                           onChange={(e) => setDraftValue(et, lt.key, e.target.value)}
                           disabled={busy}

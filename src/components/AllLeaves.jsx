@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { formatRange, formatDate, requestLabel } from '../lib/format'
+import { formatRange, formatDate, requestLabel, formatLeaveAmount } from '../lib/format'
 import { EmptyState } from './States'
 
 /**
@@ -77,7 +77,7 @@ export default function AllLeaves({ leaves, typeLabels, searchQuery = '' }) {
                   </td>
                   <td>{requestLabel(l, typeLabels)}</td>
                   <td>{formatRange(l.startDate, l.endDate)}</td>
-                  <td>{l.days}</td>
+                  <td>{formatLeaveAmount(l.days)}</td>
                   <td>{formatDate(l.createdAt, true)}</td>
                   <td><span className={`status ${l.status}`}>{l.status}</span></td>
                 </tr>

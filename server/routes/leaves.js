@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { q, tx } from '../db.js'
-import { cachedLeaveTypes } from '../cache.js'
+import { cachedLeaveTypes, cachedEmploymentTypes } from '../cache.js'
 import { requireAuth } from '../middleware/auth.js'
 import {
   isValidId,
@@ -11,6 +11,13 @@ import {
   mapUser,
 } from '../store.js'
 import { finalizeStaleSessions } from '../services/attendance.js'
+import {
+  perDayFraction,
+  periodOverdraft,
+  resolveLeaveBalances,
+  describeAmount,
+  quotaDaysFor,
+} from '../services/leavePolicy.js'
 import { dayKey, inclusiveDays, startOfDay, dateKeysInRange } from '../utils/time.js'
 
 const router = Router()
@@ -18,21 +25,45 @@ router.use(requireAuth)
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/
 
+/** 4-decimal rounding to keep summed day fractions drift-free. */
+const round4 = (n) => Math.round(Number(n) * 10000) / 10000
+
 /** The join every listing uses: requester identity attached to each leave row. */
 const LEAVE_WITH_USER = `
   select l.*, u.name as employee_name, u.email as employee_email, u.employee_id as employee_code
     from leaves l
     join users u on u.id = l.user_id`
 
+const DAY_PARTS = ['full', 'first', 'second', 'custom']
+
+/**
+ * Validate the time window for a day-part. Presets may leave times empty
+ * (legacy requests did); 'custom' is DEFINED by its window, so both times are
+ * required and must be a positive span — that window repeats on every
+ * requested date, which is why end > start is enforced regardless of how many
+ * dates the request covers. Returns an error string or null.
+ */
+function windowError(dayPart, start, end) {
+  if ((start && !TIME_RE.test(start)) || (end && !TIME_RE.test(end))) {
+    return 'Times must be in HH:MM format.'
+  }
+  if (dayPart === 'custom') {
+    if (!start || !end) return 'Pick the custom time window (from and to).'
+    if (end <= start) return 'End time must be after the start time.'
+  }
+  return null
+}
+
 /**
  * Shared "when" validation for leave and WFH applications: dates, the
- * day-part (full / first half / second half) and the working-hours window.
- * Returns { error } on the first problem, otherwise the normalized fields
- * with `days` already computed (0.5 for a half day).
+ * day-part (full / first half / second half / custom time window) and the
+ * working-hours window. Returns { error } on the first problem, otherwise the
+ * normalized fields with `days` computed HOURS-BASED: each date consumes
+ * perDay days — 1 full, 0.5 half, hours/8 for a custom window (8h = 1 day).
  */
 function parseWhen(body) {
   const { startDate, endDate, dayPart = 'full', startTime = '', endTime = '' } = body || {}
-  if (!['full', 'first', 'second'].includes(dayPart)) {
+  if (!DAY_PARTS.includes(dayPart)) {
     return { error: 'Invalid day selection.' }
   }
   const startKey = String(startDate || '').slice(0, 10)
@@ -47,24 +78,26 @@ function parseWhen(body) {
   if (!startKey.startsWith(year) || !endKey.startsWith(year)) {
     return { error: 'Requests can only be made for dates within the current year.' }
   }
-  if (dayPart !== 'full' && startKey !== endKey) {
+  if ((dayPart === 'first' || dayPart === 'second') && startKey !== endKey) {
     return { error: 'Half-day requests must start and end on the same day.' }
   }
   const start = String(startTime).trim()
   const end = String(endTime).trim()
-  if ((start && !TIME_RE.test(start)) || (end && !TIME_RE.test(end))) {
-    return { error: 'Times must be in HH:MM format.' }
-  }
-  if (start && end && startKey === endKey && end <= start) {
+  const timeError = windowError(dayPart, start, end)
+  if (timeError) return { error: timeError }
+  if (dayPart !== 'custom' && start && end && startKey === endKey && end <= start) {
     return { error: 'End time must be after the start time.' }
   }
+  const perDay = perDayFraction(dayPart, start, end)
+  if (perDay <= 0) return { error: 'The time window must be longer than zero.' }
   return {
     startKey,
     endKey,
     dayPart,
     startTime: start,
     endTime: end,
-    days: dayPart === 'full' ? inclusiveDays(startKey, endKey) : 0.5,
+    perDay,
+    days: round4(inclusiveDays(startKey, endKey) * perDay),
   }
 }
 
@@ -91,7 +124,7 @@ const MAX_CUSTOM_DATES = 31
  */
 function parseCustomWhen(body) {
   const { dates, dayPart = 'full', startTime = '', endTime = '' } = body || {}
-  if (!['full', 'first', 'second'].includes(dayPart)) {
+  if (!DAY_PARTS.includes(dayPart)) {
     return { error: 'Invalid day selection.' }
   }
   const keys = (Array.isArray(dates) ? dates : []).map((d) => String(d || '').slice(0, 10))
@@ -106,23 +139,26 @@ function parseCustomWhen(body) {
   if (unique.some((k) => !k.startsWith(year))) {
     return { error: 'Requests can only be made for dates within the current year.' }
   }
-  if (dayPart !== 'full' && unique.length > 1) {
+  if ((dayPart === 'first' || dayPart === 'second') && unique.length > 1) {
     return { error: 'Half days can only cover a single date.' }
   }
   const start = String(startTime).trim()
   const end = String(endTime).trim()
-  if ((start && !TIME_RE.test(start)) || (end && !TIME_RE.test(end))) {
-    return { error: 'Times must be in HH:MM format.' }
-  }
-  if (start && end && end <= start) {
+  const timeError = windowError(dayPart, start, end)
+  if (timeError) return { error: timeError }
+  if (dayPart !== 'custom' && start && end && end <= start) {
     return { error: 'End time must be after the start time.' }
   }
+  const perDay = perDayFraction(dayPart, start, end)
+  if (perDay <= 0) return { error: 'The time window must be longer than zero.' }
   return {
     ranges: groupContiguous(unique),
+    dates: unique.sort(),
     dayPart,
     startTime: start,
     endTime: end,
-    totalDays: dayPart === 'full' ? unique.length : 0.5,
+    perDay,
+    totalDays: round4(unique.length * perDay),
   }
 }
 
@@ -191,13 +227,28 @@ router.post('/', async (req, res, next) => {
     const when = custom ? parseCustomWhen(req.body) : parseWhen(req.body)
     if (when.error) return res.status(400).json({ error: when.error })
     const totalDays = custom ? when.totalDays : when.days
+    const allDates = custom ? when.dates : dateKeysInRange(when.startKey, when.endKey)
 
-    await ensureLeaveBalances(req.user)
-    const remaining = Number(req.user.leaveBalances[type]) || 0
-    if (totalDays > remaining) {
-      return res.status(400).json({
-        error: `Insufficient ${leaveType.label} balance — you have ${remaining} day(s) left but requested ${totalDays}.`,
+    // Balance check, by the type's policy period: yearly types spend the
+    // stored counter; day/month types are checked against what's already
+    // approved in each period the requested dates touch.
+    await resolveLeaveBalances(req.user)
+    if ((leaveType.period ?? 'year') === 'year') {
+      const remaining = Number(req.user.leaveBalances[type]) || 0
+      if (totalDays > remaining) {
+        return res.status(400).json({
+          error: `Insufficient ${leaveType.label} balance — you have ${describeAmount(remaining)} left but requested ${describeAmount(totalDays)}.`,
+        })
+      }
+    } else {
+      const overdraft = await periodOverdraft({
+        userId: req.user.id,
+        type: leaveType,
+        quotaDays: Number(req.user.leaveQuotas[type]) || 0,
+        dates: allDates,
+        perDay: when.perDay,
       })
+      if (overdraft) return res.status(400).json({ error: overdraft })
     }
 
     const ranges = custom ? when.ranges : [{ start: when.startKey, end: when.endKey }]
@@ -212,7 +263,7 @@ router.post('/', async (req, res, next) => {
           dayPart: when.dayPart,
           startTime: when.startTime,
           endTime: when.endTime,
-          days: when.dayPart === 'full' ? inclusiveDays(r.start, r.end) : 0.5,
+          days: round4(inclusiveDays(r.start, r.end) * when.perDay),
           reason: String(reason).trim(),
         }),
       )
@@ -257,7 +308,7 @@ router.post('/wfh', async (req, res, next) => {
           dayPart: when.dayPart,
           startTime: when.startTime,
           endTime: when.endTime,
-          days: when.dayPart === 'full' ? inclusiveDays(r.start, r.end) : 0.5,
+          days: round4(inclusiveDays(r.start, r.end) * when.perDay),
           reason: trimmedReason,
         }),
       )
@@ -423,32 +474,53 @@ router.post('/:id/approve', async (req, res, next) => {
       const leave = await loadDecidableLeave(req, client)
 
       if (leave.kind === 'leave') {
+        // Locking the user row serializes concurrent approvals for the same
+        // person — required by the counter deduction below AND by the
+        // period re-check, which would otherwise race its usage query.
         const { rows: userRows } = await client.query(
           'select * from users where id = $1 for update',
           [leave.user_id],
         )
         const employee = mapUser(userRows[0])
-        // Normally the balance key already exists (seeded at hire / first
-        // request) — ensure fills any gap from types added since.
-        const { changed } = await ensureLeaveBalances(employee)
-        if (changed) await saveLeaveBalances(employee.id, employee.leaveBalances, client)
+        const typeRow = (await cachedLeaveTypes()).find((t) => t.key === leave.type)
 
-        // Conditional deduction: succeeds only if the balance STILL covers
-        // the request at write time.
-        const { rowCount } = await client.query(
-          `update users
-              set leave_balances = leave_balances ||
-                    jsonb_build_object($1::text, coalesce((leave_balances->>$1)::numeric, 0) - $2::numeric)
-            where id = $3
-              and coalesce((leave_balances->>$1)::numeric, 0) >= $2::numeric`,
-          [leave.type, leave.days, leave.user_id],
-        )
-        if (!rowCount) {
-          const remaining = Number(employee.leaveBalances[leave.type]) || 0
-          return {
-            status: 400,
-            error: `Cannot approve — employee only has ${remaining} day(s) of that leave left.`,
+        if ((typeRow?.period ?? 'year') === 'year') {
+          // Normally the balance key already exists (seeded at hire / first
+          // request) — ensure fills any gap from types added since.
+          const { changed } = await ensureLeaveBalances(employee)
+          if (changed) await saveLeaveBalances(employee.id, employee.leaveBalances, client)
+
+          // Conditional deduction: succeeds only if the balance STILL covers
+          // the request at write time.
+          const { rowCount } = await client.query(
+            `update users
+                set leave_balances = leave_balances ||
+                      jsonb_build_object($1::text, coalesce((leave_balances->>$1)::numeric, 0) - $2::numeric)
+              where id = $3
+                and coalesce((leave_balances->>$1)::numeric, 0) >= $2::numeric`,
+            [leave.type, leave.days, leave.user_id],
+          )
+          if (!rowCount) {
+            const remaining = Number(employee.leaveBalances[leave.type]) || 0
+            return {
+              status: 400,
+              error: `Cannot approve — employee only has ${describeAmount(remaining)} of that leave left.`,
+            }
           }
+        } else {
+          // Day/month-period types have no stored counter — the allowance
+          // resets each period, so re-run the same overdraft check the
+          // application ran, now atomically under the user lock.
+          const dates = dateKeysInRange(dayKey(leave.start_date), dayKey(leave.end_date))
+          const overdraft = await periodOverdraft({
+            userId: leave.user_id,
+            type: typeRow,
+            quotaDays: quotaDaysFor(employee, leave.type, await cachedEmploymentTypes()),
+            dates,
+            perDay: round4(Number(leave.days) / dates.length),
+            client,
+          })
+          if (overdraft) return { status: 400, error: `Cannot approve — ${overdraft}` }
         }
       }
 
@@ -567,14 +639,19 @@ router.delete('/:id', async (req, res, next) => {
         )
       }
       // Give the days back — approval deducted them (kind 'wfh' never did).
+      // Only yearly types keep a stored counter; day/month-period balances
+      // are computed from approved rows, so the flip above already frees them.
       if (leave.kind === 'leave') {
-        await client.query(
-          `update users
-              set leave_balances = leave_balances ||
-                    jsonb_build_object($1::text, coalesce((leave_balances->>$1)::numeric, 0) + $2::numeric)
-            where id = $3`,
-          [leave.type, leave.days, leave.user_id],
-        )
+        const typeRow = (await cachedLeaveTypes()).find((t) => t.key === leave.type)
+        if ((typeRow?.period ?? 'year') === 'year') {
+          await client.query(
+            `update users
+                set leave_balances = leave_balances ||
+                      jsonb_build_object($1::text, coalesce((leave_balances->>$1)::numeric, 0) + $2::numeric)
+              where id = $3`,
+            [leave.type, leave.days, leave.user_id],
+          )
+        }
       }
       return flipped[0]
     })

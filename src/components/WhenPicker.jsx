@@ -3,7 +3,8 @@ import Icon from './Icon'
 import { formatDate } from '../lib/format'
 import { haptic } from '../lib/haptics'
 
-/** Default working-hours windows per day part ('HH:MM', 24h). */
+/** Fixed working-hours windows per PRESET day part ('HH:MM', 24h). 'custom'
+ *  deliberately has no entry — its whole point is a freely-picked window. */
 export const DAY_PART_TIMES = {
   full: { startTime: '09:00', endTime: '18:00' },
   first: { startTime: '09:00', endTime: '13:30' },
@@ -14,6 +15,7 @@ const DAY_PARTS = [
   { key: 'full', label: 'Full day' },
   { key: 'first', label: 'First half' },
   { key: 'second', label: 'Second half' },
+  { key: 'custom', label: 'Custom time' },
 ]
 
 const MODES = [
@@ -34,10 +36,15 @@ export const yearEndStr = () => `${new Date().getFullYear()}-12-31`
  * picked days that don't have to be consecutive (the server files one
  * request per consecutive run).
  *
- * Owns the coupling rules so both modals don't have to: picking a half day
- * snaps the times to that half's window and locks the request to a single
- * date (range mode syncs+disables the end date; custom mode is capped at
- * one chip, and adding a second one drops back to a full day).
+ * Day coverage comes in presets with FIXED windows (Full day / First half /
+ * Second half — the times show but can't be edited, since the request's size
+ * is fixed too) and 'Custom time', where both time fields unlock and the
+ * picked window sets the size hours-based (8h = 1 day). A custom window may
+ * span multiple dates — it applies to each one.
+ *
+ * Owns the coupling rules so both modals don't have to: picking a HALF day
+ * locks the request to a single date (range mode syncs+disables the end
+ * date; custom-dates mode is capped at one chip).
  *
  * State stays in the parent — this only renders `value` and reports patches.
  *
@@ -50,25 +57,25 @@ export const yearEndStr = () => `${new Date().getFullYear()}-12-31`
  */
 export default function WhenPicker({ idPrefix, value, onChange, showError, errors, markTouched }) {
   const { mode = 'range', startDate, endDate, dates = [], dayPart, startTime, endTime } = value
-  const half = dayPart !== 'full'
+  // Halves cover a single date; 'custom' behaves like 'full' for dates.
+  const half = dayPart === 'first' || dayPart === 'second'
+  const customTime = dayPart === 'custom'
   const custom = mode === 'custom'
   // The date staged in the custom-mode picker before "Add" commits it.
   const [draftDate, setDraftDate] = useState('')
-  // Which end of the range the user is working on — each date unlocks only
-  // its own time: start date pairs with "From", end date with "To".
-  const [activeEnd, setActiveEnd] = useState('start')
-  const startTimeLocked = !custom && activeEnd === 'end'
-  const endTimeLocked = !custom && activeEnd === 'start'
 
   function pickDayPart(part) {
     if (part === dayPart) return
     haptic('light')
+    const isHalf = part === 'first' || part === 'second'
     onChange({
       dayPart: part,
-      ...DAY_PART_TIMES[part],
-      ...(part !== 'full' && !custom && startDate ? { endDate: startDate } : {}),
+      // Presets snap to their fixed window; 'custom' keeps whatever is there
+      // as the starting point for free editing.
+      ...(DAY_PART_TIMES[part] ?? {}),
+      ...(isHalf && !custom && startDate ? { endDate: startDate } : {}),
       // A half day covers one date — in custom mode drop any extra picks.
-      ...(part !== 'full' && custom && dates.length > 1 ? { dates: dates.slice(0, 1) } : {}),
+      ...(isHalf && custom && dates.length > 1 ? { dates: dates.slice(0, 1) } : {}),
     })
   }
 
@@ -85,7 +92,8 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
     const next = [...dates, draftDate].sort()
     onChange({
       dates: next,
-      // More than one date can't be a half day — quietly widen back to full.
+      // More than one date can't be a HALF day — quietly widen back to full.
+      // (A custom window is fine across many dates: it applies to each.)
       ...(next.length > 1 && half ? { dayPart: 'full', ...DAY_PART_TIMES.full } : {}),
     })
     setDraftDate('')
@@ -104,23 +112,27 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
           Dates &amp; time
         </span>
         <div className="seg" role="group" aria-label="Day coverage">
-          {DAY_PARTS.map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              className={`seg__btn${dayPart === p.key ? ' is-active' : ''}`}
-              aria-pressed={dayPart === p.key}
-              disabled={p.key !== 'full' && custom && dates.length > 1}
-              title={
-                p.key !== 'full' && custom && dates.length > 1
-                  ? 'Half days cover a single date — remove extra dates first.'
-                  : undefined
-              }
-              onClick={() => pickDayPart(p.key)}
-            >
-              {p.label}
-            </button>
-          ))}
+          {DAY_PARTS.map((p) => {
+            const halfBlocked =
+              (p.key === 'first' || p.key === 'second') && custom && dates.length > 1
+            return (
+              <button
+                key={p.key}
+                type="button"
+                className={`seg__btn${dayPart === p.key ? ' is-active' : ''}`}
+                aria-pressed={dayPart === p.key}
+                disabled={halfBlocked}
+                title={
+                  halfBlocked
+                    ? 'Half days cover a single date — remove extra dates first.'
+                    : undefined
+                }
+                onClick={() => pickDayPart(p.key)}
+              >
+                {p.label}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -201,11 +213,9 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
                 value={startDate}
                 min={todayStr()}
                 max={yearEndStr()}
-                onFocus={() => setActiveEnd('start')}
-                onChange={(e) => {
-                  setActiveEnd('start')
+                onChange={(e) =>
                   onChange({ startDate: e.target.value, ...(half ? { endDate: e.target.value } : {}) })
-                }}
+                }
                 onBlur={() => markTouched('startDate')}
                 aria-invalid={Boolean(showError('startDate'))}
                 aria-describedby={showError('startDate') ? `err-${idPrefix}-start` : undefined}
@@ -225,11 +235,7 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
                 min={startDate || todayStr()}
                 max={yearEndStr()}
                 disabled={half}
-                onFocus={() => setActiveEnd('end')}
-                onChange={(e) => {
-                  setActiveEnd('end')
-                  onChange({ endDate: e.target.value })
-                }}
+                onChange={(e) => onChange({ endDate: e.target.value })}
                 onBlur={() => markTouched('endDate')}
                 aria-invalid={Boolean(showError('endDate'))}
                 aria-describedby={showError('endDate') ? `err-${idPrefix}-end` : undefined}
@@ -251,8 +257,8 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
             id={`${idPrefix}-startTime`}
             type="time"
             value={startTime}
-            disabled={startTimeLocked}
-            title={startTimeLocked ? 'Switch to the start date to edit this time.' : undefined}
+            disabled={!customTime}
+            title={!customTime ? 'Fixed window — pick "Custom time" to choose your own hours.' : undefined}
             onChange={(e) => onChange({ startTime: e.target.value })}
             onBlur={() => markTouched('time')}
             aria-invalid={Boolean(showError('time'))}
@@ -266,8 +272,8 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
             id={`${idPrefix}-endTime`}
             type="time"
             value={endTime}
-            disabled={endTimeLocked}
-            title={endTimeLocked ? 'Switch to the end date to edit this time.' : undefined}
+            disabled={!customTime}
+            title={!customTime ? 'Fixed window — pick "Custom time" to choose your own hours.' : undefined}
             onChange={(e) => onChange({ endTime: e.target.value })}
             onBlur={() => markTouched('time')}
             aria-invalid={Boolean(showError('time'))}
@@ -279,6 +285,12 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
           )}
         </div>
       </div>
+
+      <p className="field-hint">
+        {customTime
+          ? 'Pick any window — those hours count toward your leave, and 8h makes a full day.'
+          : 'Preset windows are fixed. Choose "Custom time" to take just the hours you need.'}
+      </p>
     </div>
   )
 }

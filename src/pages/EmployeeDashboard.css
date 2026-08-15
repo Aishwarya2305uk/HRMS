@@ -963,6 +963,23 @@ button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
 }
 .ring__center strong { font-size: 1.4rem; font-weight: 750; }
 .ring__center span { display: block; font-size: var(--text-2xs); color: var(--text-muted); }
+
+/* The two parallel balance rings — same proportion, one read in days and one
+   in hours. Slightly smaller than the old single ring so the pair still fits
+   beside the bar graphs; the hours ring gets the accent hue to set it apart. */
+.ring-duo { display: flex; gap: 18px; align-items: flex-start; flex-shrink: 0; }
+.ring-unit { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.ring-unit figcaption {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.ring-duo .ring { width: 112px; height: 112px; }
+.ring-duo .ring__center { width: 84px; height: 84px; }
+.ring-duo .ring__center strong { font-size: 1.05rem; }
+.ring--hours { background: conic-gradient(var(--accent) var(--pct), var(--surface-muted) 0); }
 .leave-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
 .leave-legend li { display: flex; align-items: center; gap: 9px; font-size: var(--text-sm); color: var(--text-muted); }
 .leave-legend b { margin-left: auto; color: var(--text); }
@@ -971,6 +988,59 @@ button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
 .lg.blue { background: var(--accent); }
 .lg.green { background: var(--success); }
 .lg.amber { background: var(--warning); }
+
+/* Two parallel remaining-vs-granted graphs — same bars, one panel scaled in
+   days and one in hours (8h = 1 day). */
+.leave-bars {
+  flex: 1;
+  min-width: 250px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.leave-bars__panel h3 {
+  margin: 0 0 9px;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.leave-bars__panel ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.leave-bars__panel li { display: flex; flex-direction: column; gap: 3px; }
+.leave-bars__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.leave-bars__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.leave-bars__label em { font-style: normal; color: var(--text-faint); }
+.leave-bars__top b { color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.leave-bars__top b.is-spent { color: var(--text-faint); font-weight: 600; }
+.leave-bars__track {
+  display: block;
+  height: 7px;
+  border-radius: var(--r-pill);
+  background: var(--surface-muted);
+  overflow: hidden;
+}
+.leave-bars__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.6s var(--spring-soft);
+}
+.leave-bars__fill.indigo { background: var(--primary); }
+.leave-bars__fill.blue { background: var(--accent); }
+.leave-bars__fill.green { background: var(--success); }
+.leave-bars__fill.amber { background: var(--warning); }
+/* The panels sit side by side ("parallel"); on narrow phones they stack. */
+@media (max-width: 480px) {
+  .leave-bars { grid-template-columns: 1fr; }
+}
 
 /* ---------------- Requests ---------------- */
 .req-list {

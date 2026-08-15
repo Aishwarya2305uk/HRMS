@@ -5,6 +5,8 @@ import Avatar from './Avatar'
 import WhenPicker, { DAY_PART_TIMES, yearEndStr } from './WhenPicker'
 import { useAuth } from '../context/AuthContext'
 import { leaves as leavesApi } from '../lib/hrms'
+import { perDayFraction, roundDays } from '../lib/leave'
+import { formatLeaveAmount } from '../lib/format'
 import { haptic } from '../lib/haptics'
 import { InlineError } from './States'
 
@@ -41,9 +43,11 @@ export default function ApplyWfhModal({ onClose, onCreated }) {
 
   const { mode, startDate, endDate, dates, dayPart, startTime, endTime } = when
   const custom = mode === 'custom'
+  // Same hours-based sizing as leave (8h = 1 day) — WFH just has no balance.
+  const perDay = perDayFraction(dayPart, startTime, endTime)
   const days = custom
-    ? dayPart === 'full' ? dates.length : dates.length ? 0.5 : 0
-    : dayPart === 'full' ? dayCount(startDate, endDate) : startDate ? 0.5 : 0
+    ? roundDays(dates.length * perDay)
+    : startDate ? roundDays(dayCount(startDate, endDate || startDate) * perDay) : 0
 
   const errors = useMemo(() => {
     const e = {}
@@ -62,13 +66,16 @@ export default function ApplyWfhModal({ onClose, onCreated }) {
       }
     }
     if (!startTime || !endTime) e.time = 'Pick the working hours.'
-    else if ((custom || (startDate && startDate === endDate)) && endTime <= startTime) {
+    else if (
+      (dayPart === 'custom' || custom || (startDate && startDate === endDate)) &&
+      endTime <= startTime
+    ) {
       e.time = 'The end time must be after the start time.'
     }
     if (!reason.trim()) e.reason = 'Let your manager know why you’ll be working from home.'
     else if (reason.trim().length > MAX_REASON) e.reason = `Keep it under ${MAX_REASON} characters.`
     return e
-  }, [custom, dates, startDate, endDate, startTime, endTime, reason])
+  }, [custom, dates, startDate, endDate, startTime, endTime, reason, dayPart])
 
   const isValid = Object.keys(errors).length === 0
   const showError = (field) => (touched[field] || touched._submitted) && errors[field]
@@ -164,7 +171,7 @@ export default function ApplyWfhModal({ onClose, onCreated }) {
         {days > 0 && (
           <p className="apply-summary" aria-live="polite">
             <Icon name="calendar" size={15} />
-            {days === 0.5 ? 'Half a day' : `${days} day${days > 1 ? 's' : ''}`} requested
+            {formatLeaveAmount(days)} requested
           </p>
         )}
 

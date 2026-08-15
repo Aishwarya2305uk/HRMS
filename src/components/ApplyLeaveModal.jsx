@@ -5,6 +5,8 @@ import Avatar from './Avatar'
 import WhenPicker, { DAY_PART_TIMES, yearEndStr } from './WhenPicker'
 import { useAuth } from '../context/AuthContext'
 import { leaves as leavesApi } from '../lib/hrms'
+import { perDayFraction, roundDays } from '../lib/leave'
+import { formatLeaveAmount } from '../lib/format'
 import { haptic } from '../lib/haptics'
 import { InlineError } from './States'
 
@@ -44,10 +46,15 @@ export default function ApplyLeaveModal({ types, balances, onClose, onCreated })
 
   const { mode, startDate, endDate, dates, dayPart, startTime, endTime } = when
   const custom = mode === 'custom'
+  // Hours-based size: each picked date consumes perDay days (1 full, 0.5
+  // half, window÷8h for custom time) — mirrors the server's math.
+  const perDay = perDayFraction(dayPart, startTime, endTime)
   const days = custom
-    ? dayPart === 'full' ? dates.length : dates.length ? 0.5 : 0
-    : dayPart === 'full' ? dayCount(startDate, endDate) : startDate ? 0.5 : 0
+    ? roundDays(dates.length * perDay)
+    : startDate ? roundDays(dayCount(startDate, endDate || startDate) * perDay) : 0
   const remaining = Number(balances?.[type]) || 0
+  const selectedType = types.find((t) => t.key === type)
+  const period = selectedType?.period ?? 'year'
 
   /** Field-level validation, recomputed as the user types. */
   const errors = useMemo(() => {
@@ -67,17 +74,24 @@ export default function ApplyLeaveModal({ types, balances, onClose, onCreated })
       }
     }
     if (!startTime || !endTime) e.time = 'Pick the working hours.'
-    else if ((custom || (startDate && startDate === endDate)) && endTime <= startTime) {
+    else if (
+      (dayPart === 'custom' || custom || (startDate && startDate === endDate)) &&
+      endTime <= startTime
+    ) {
       e.time = 'The end time must be after the start time.'
     }
-    if (days > 0 && days > remaining) {
+    // Daily-quota types are checked per date (each day's window must fit the
+    // day's allowance); everything else against the whole requested amount.
+    // Server-side checks are per touched period and stay authoritative.
+    const requested = period === 'day' ? perDay : days
+    if (days > 0 && requested > remaining) {
       e.type =
         remaining === 0
-          ? 'You have no days left of this leave type.'
-          : `That's ${days} day${days > 1 ? 's' : ''}, but only ${remaining} remain.`
+          ? `Nothing left of this leave type${period === 'year' ? '' : ` this ${period}`}.`
+          : `That's ${formatLeaveAmount(period === 'day' ? perDay : days)}${period === 'day' ? ' a day' : ''}, but only ${formatLeaveAmount(remaining)} ${period === 'year' ? 'remain' : `remain this ${period}`}.`
     }
     return e
-  }, [custom, dates, startDate, endDate, startTime, endTime, days, remaining])
+  }, [custom, dates, startDate, endDate, startTime, endTime, days, remaining, dayPart, perDay, period])
 
   const isValid = Object.keys(errors).length === 0
   /** Show a field's error once it's been touched, or after a submit attempt. */
@@ -155,9 +169,14 @@ export default function ApplyLeaveModal({ types, balances, onClose, onCreated })
           >
             {types.map((t) => {
               const left = Number(balances?.[t.key]) || 0
+              const tPeriod = t.period ?? 'year'
+              // A used-up daily/monthly allowance refreshes next period, so
+              // only yearly types are truly unavailable at zero.
               return (
-                <option key={t.key} value={t.key} disabled={left === 0}>
-                  {t.label} · {left === 0 ? 'none left' : `${left} left`}
+                <option key={t.key} value={t.key} disabled={left === 0 && tPeriod === 'year'}>
+                  {t.label} ·{' '}
+                  {left === 0 ? 'none left' : `${formatLeaveAmount(left)} left`}
+                  {tPeriod === 'year' ? '' : ` this ${tPeriod}`}
                 </option>
               )
             })}
@@ -195,8 +214,8 @@ export default function ApplyLeaveModal({ types, balances, onClose, onCreated })
         {days > 0 && (
           <p className={`apply-summary${errors.type ? ' over' : ''}`} aria-live="polite">
             <Icon name="calendar" size={15} />
-            {days === 0.5 ? 'Half a day' : `${days} day${days > 1 ? 's' : ''}`} requested ·{' '}
-            {remaining} available
+            {formatLeaveAmount(days)} requested · {formatLeaveAmount(remaining)} available
+            {period === 'year' ? '' : ` this ${period}`}
           </p>
         )}
 
