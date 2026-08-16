@@ -24,7 +24,7 @@
  */
 import { q } from '../db.js'
 import { FULL_WORKDAY_SECONDS } from '../config.js'
-import { locationLabel } from './geoip.js'
+import { isPrivateIp, locationLabel } from './geoip.js'
 import { dayKey, endOfDay, weekStartOf } from '../utils/time.js'
 
 /**
@@ -84,9 +84,17 @@ export function liveSessionJSON(row, now = Date.now()) {
     checkOutAt: lastOut ? lastOut.at : null,
     // Where the day was started from. `checkInLocation` is the ready-to-render
     // "Mumbai, Maharashtra, India"; it's '' whenever the IP couldn't be
-    // resolved (private range, lookup off, provider down) — the IP itself is
-    // recorded either way.
+    // resolved — the IP itself is recorded either way.
+    //
+    // `checkInIpScope` is why it's blank, and the two reasons are NOT the same
+    // thing to a reader: 'local' means the address is loopback/private, so no
+    // public location exists to look up (the normal case in local dev, and for
+    // an on-prem deployment with no proxy in front); 'public' means a real
+    // routable address whose lookup was off or failed. Derived on read rather
+    // than stored — it's a pure function of the IP, so recomputing keeps it
+    // correct if the private-range list ever changes.
     checkInIp: row.check_in_ip || null,
+    checkInIpScope: row.check_in_ip ? (isPrivateIp(row.check_in_ip) ? 'local' : 'public') : null,
     checkInCity: row.check_in_city || '',
     checkInCountry: row.check_in_country || '',
     checkInCountryCode: row.check_in_country_code || '',

@@ -1956,6 +1956,23 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
 .crash__card h1 { font-size: var(--text-lg); margin: 14px 0 8px; }
 .crash__card p { color: var(--text-muted); font-size: var(--text-sm); line-height: 1.55; margin-bottom: 22px; }
 .crash__actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+/* Dev-build-only crash detail (see ErrorBoundary.jsx — stripped in production). */
+.crash__debug { margin-top: 18px; text-align: left; }
+.crash__debug summary { cursor: pointer; font-size: var(--text-xs); color: var(--text-muted); }
+.crash__debug pre {
+  margin-top: 8px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  color: var(--danger-text);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 /* ---- Visible keyboard focus everywhere (a11y baseline) ---- */
 :where(button, a, input, select, textarea, [tabindex]):focus-visible {

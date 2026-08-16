@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { formatDate, formatHours, formatTime } from '../lib/format'
+import { checkInOriginLabel, formatDate, formatHours, formatTime } from '../lib/format'
 import { haptic } from '../lib/haptics'
 import { useSessionState } from '../lib/useSessionState'
 import { EmptyState } from './States'
@@ -219,7 +219,7 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
                   {showCheckIn && <td>{formatTime(r.checkInAt)}</td>}
                   {showCheckIn && (
                     <td>
-                      {r.checkInLocation || (r.checkInIp ? 'Unknown location' : '—')}
+                      {checkInOriginLabel(r) || '—'}
                       {r.checkInIp && <em className="cell-sub">{r.checkInIp}</em>}
                     </td>
                   )}
@@ -242,8 +242,9 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
 
       {showCheckIn && filtered.length > 0 && (
         <p className="attendance__note">
-          "From" is estimated from the check-in IP address — approximate, and wrong on a VPN or
-          mobile network.
+          &quot;From&quot; is estimated from the check-in IP address — approximate, and wrong on a
+          VPN or mobile network. Check-ins made over localhost or a private network have no public
+          location to resolve.
         </p>
       )}
     </section>

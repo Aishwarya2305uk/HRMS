@@ -11,18 +11,21 @@ import Icon from './Icon'
  * user (it can contain internal implementation details).
  */
 export default class ErrorBoundary extends Component {
-  state = { hasError: false }
+  state = { hasError: false, error: null, stack: '' }
 
-  static getDerivedStateFromError() {
-    return { hasError: true }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
   }
 
   componentDidCatch(error, info) {
     console.error('[ui] render error:', error, info)
+    // Kept in state purely so the DEV build can show it on screen (below) —
+    // production still shows only the plain-language message.
+    this.setState({ stack: info?.componentStack ?? '' })
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false })
+    this.setState({ hasError: false, error: null, stack: '' })
   }
 
   render() {
@@ -50,6 +53,20 @@ export default class ErrorBoundary extends Component {
               Back to sign in
             </button>
           </div>
+
+          {/* DEV ONLY. Vite statically replaces import.meta.env.DEV with false
+              in a production build, so this whole block is dropped from the
+              bundle — a user can never see internals, but a developer no
+              longer has to go digging in the console to find out what broke. */}
+          {import.meta.env.DEV && this.state.error && (
+            <details className="crash__debug" open>
+              <summary>Developer detail (dev build only)</summary>
+              <pre>
+                {String(this.state.error?.stack || this.state.error)}
+                {this.state.stack}
+              </pre>
+            </details>
+          )}
         </div>
       </div>
     )

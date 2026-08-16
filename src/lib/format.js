@@ -104,6 +104,28 @@ export function formatRequestWindow(r) {
   return parts.join(' · ')
 }
 
+/**
+ * Where a check-in came from, as one line of display text — used by the
+ * check-in card, the manager/admin roll-call and the admin All-attendance
+ * table so all three say the same thing.
+ *
+ * The blank-location cases are deliberately worded apart. A loopback or
+ * private address has no public location to resolve — that's the normal state
+ * in local dev, not a failure — so calling it "unknown" would send someone
+ * hunting a bug that isn't there. Only a real routable address whose lookup
+ * was disabled or failed is genuinely unavailable.
+ *
+ * @param {{checkInIp?:string|null, checkInLocation?:string, checkInIpScope?:string|null}} row
+ * @returns {string} '' when nothing was recorded at all
+ */
+export function checkInOriginLabel({ checkInIp, checkInLocation, checkInIpScope } = {}) {
+  if (checkInLocation) return checkInLocation
+  if (!checkInIp) return ''
+  if (checkInIp === '::1' || checkInIp === '127.0.0.1') return 'This device (localhost)'
+  if (checkInIpScope === 'local') return 'Local network'
+  return 'Location unavailable'
+}
+
 /** Bytes -> "312 KB" / "2.4 MB" for document sizes. */
 export function formatBytes(bytes) {
   const n = Number(bytes) || 0

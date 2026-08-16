@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Avatar from './Avatar'
 import Icon from './Icon'
 import { haptic } from '../lib/haptics'
-import { formatDate, formatHours, formatTime } from '../lib/format'
+import { checkInOriginLabel, formatDate, formatHours, formatTime } from '../lib/format'
 import { attendance } from '../lib/hrms'
 import { useAsyncData } from '../lib/useAsyncData'
 import { useSessionState } from '../lib/useSessionState'
@@ -150,19 +150,8 @@ export default function TeamCheckins() {
                     {r.checkedIn && (
                       <span className="checkin__origin">
                         <Icon name="mapPin" size={12} />
-                        {r.checkInLocation ? (
-                          <>
-                            {r.checkInLocation}
-                            {r.checkInIp && <span className="checkin__ip">{r.checkInIp}</span>}
-                          </>
-                        ) : r.checkInIp ? (
-                          <>
-                            Location unavailable
-                            <span className="checkin__ip">{r.checkInIp}</span>
-                          </>
-                        ) : (
-                          'No network details recorded'
-                        )}
+                        {checkInOriginLabel(r) || 'No network details recorded'}
+                        {r.checkInIp && <span className="checkin__ip">{r.checkInIp}</span>}
                       </span>
                     )}
                   </div>
@@ -188,7 +177,8 @@ export default function TeamCheckins() {
 
       <p className="checkins__note">
         City and country are estimated from the check-in IP address — approximate, and wrong on a
-        VPN or mobile network.
+        VPN or mobile network. Check-ins made over localhost or a private network have no public
+        location to resolve.
       </p>
     </section>
   )

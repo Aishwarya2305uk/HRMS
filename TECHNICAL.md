@@ -219,6 +219,20 @@ ip-api.com's free tier. IP geolocation is city-level *at best* and simply wrong
 behind a VPN or mobile carrier NAT — every surface that shows it says so, since
 a location column reads as much harder evidence than it is.
 
+**Why a location can be blank** — two different reasons, deliberately worded
+apart in the UI (`checkInOriginLabel()` in `src/lib/format.js` is the single
+place that decides the copy, so the card, the roll-call and the admin table
+never disagree). `checkInIpScope` is derived on read from the stored IP:
+
+| Scope | Meaning | Shown as |
+| --- | --- | --- |
+| `local` | loopback/private address — no public location exists to resolve. **The normal case in local dev**, where the browser → Vite → Express hop makes the client IP `::1`. Also on-prem with no proxy in front. | `This device (localhost)` / `Local network` |
+| `public` | a real routable address whose lookup was disabled, rate-limited or failed | `Location unavailable` |
+| `null` | nothing recorded (a day from before this feature) | `—` |
+
+Calling the `local` case "unknown" would send a developer hunting a bug that
+isn't there, which is exactly what it did the first time.
+
 Module-level functions in `server/services/attendance.js`:
 `computeWorkedSeconds(events, upto)`
 and `isRunning(events)` — see [Core algorithms](#core-algorithms) for the
@@ -439,6 +453,7 @@ employees list, and anywhere else a user is embedded:
   // from an IP lookup (services/geoip.js) and are blank whenever that lookup is
   // disabled, hits a private address, or fails.
   "checkInIp": "203.0.113.42",
+  "checkInIpScope": "public",        // local | public | null — derived on read, see below
   "checkInCity": "Mumbai",
   "checkInCountry": "India",
   "checkInCountryCode": "IN",

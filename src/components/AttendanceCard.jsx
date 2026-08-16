@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Icon from './Icon'
 import TeamCheckins from './TeamCheckins'
 import { haptic } from '../lib/haptics'
-import { formatElapsed, formatHours, formatTime, formatRange } from '../lib/format'
+import { checkInOriginLabel, formatElapsed, formatHours, formatTime, formatRange } from '../lib/format'
 import { attendance } from '../lib/hrms'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
@@ -215,9 +215,12 @@ export default function AttendanceCard({ onChange, settings }) {
       {session?.checkInAt && (
         <p className="attendance__origin">
           <Icon name="mapPin" size={13} />
+          {/* " · " rather than "from …": the label isn't always a place
+              ("Local network", "Location unavailable"), and "checked in from
+              location unavailable" doesn't read as English. */}
           <span>
             Checked in at <b>{formatTime(session.checkInAt)}</b>
-            {session.checkInLocation ? <> from {session.checkInLocation}</> : ''}
+            {checkInOriginLabel(session) ? <> · {checkInOriginLabel(session)}</> : ''}
             {session.checkInIp && <span className="attendance__ip">{session.checkInIp}</span>}
           </span>
         </p>
