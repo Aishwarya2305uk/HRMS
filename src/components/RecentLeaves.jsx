@@ -3,6 +3,7 @@ import Icon from './Icon'
 import { leaves as leavesApi } from '../lib/hrms'
 import { tactile, haptic } from '../lib/haptics'
 import { formatRequestWindow, formatDate } from '../lib/format'
+import { useSessionState } from '../lib/useSessionState'
 import { Skeleton, EmptyState, InlineError } from './States'
 
 /** Plain-language explanation of what each status means for the user. */
@@ -40,8 +41,10 @@ export default function RecentLeaves({
   plain = false,
 }) {
   const rows = limit ? leaves.slice(0, limit) : leaves
-  const [confirmingId, setConfirmingId] = useState(null)
-  const [cancelReason, setCancelReason] = useState('')
+  // An open cancel box and its half-typed reason survive a page refresh (per
+  // tab, per user — lib/useSessionState.js); confirming or backing out clears them.
+  const [confirmingId, setConfirmingId] = useSessionState('draft.leaveCancel.id', null)
+  const [cancelReason, setCancelReason] = useSessionState('draft.leaveCancel.reason', '')
   const [busyId, setBusyId] = useState(null)
   const [rowError, setRowError] = useState({ id: null, message: '' })
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAsyncData } from '../lib/useAsyncData'
+import { useSessionState } from '../lib/useSessionState'
 import { employmentTypes as employmentTypesApi, leaves as leavesApi, LEAVE_TYPES_CHANGED_EVENT } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
 import { useToast } from '../context/ToastContext'
@@ -32,12 +33,14 @@ export default function EmploymentTypesManager() {
   const toast = useToast()
   const typesQ = useAsyncData(useCallback(() => employmentTypesApi.list(), []))
   const leaveTypesQ = useAsyncData(useCallback(() => leavesApi.config(), []))
-  const [name, setName] = useState('')
+  // The new-type name and any unsaved quota edits survive a page refresh (per
+  // tab, per user — lib/useSessionState.js); saving clears them.
+  const [name, setName] = useSessionState('draft.employmentType.name', '')
   const [creating, setCreating] = useState(false)
   const [busyId, setBusyId] = useState(null)
   // { [employmentTypeId]: { [leaveTypeKey]: string } } — only populated once
   // someone actually edits a field; read through draftFor() otherwise.
-  const [drafts, setDrafts] = useState({})
+  const [drafts, setDrafts] = useSessionState('draft.employmentType.quotas', {})
 
   const types = typesQ.data ?? []
   const leaveTypeList = leaveTypesQ.data?.types ?? []

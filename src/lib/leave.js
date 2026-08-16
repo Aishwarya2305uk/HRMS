@@ -28,3 +28,28 @@ export function perDayFraction(dayPart, startTime, endTime) {
 
 /** 4-decimal rounding so summed fractions (0.125 steps) never drift. */
 export const roundDays = (n) => Math.round(Number(n) * 10000) / 10000
+
+/**
+ * Weekly off: Sunday is the one non-working day (mirrors
+ * server/utils/time.js — v1 has no per-org weekend/holiday setup). Leave and
+ * WFH requests can't start or end on one, and one inside a range isn't
+ * counted, since there's no work to be away from.
+ */
+export function isWeeklyOff(dateKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey || '')) return false
+  const [y, m, d] = dateKey.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay() === 0 // 0 = Sunday, UTC like every day key
+}
+
+/** Working days in the inclusive 'YYYY-MM-DD' range (weekly offs skipped); 0 for an empty/inverted range. */
+export function workingDayCount(start, end) {
+  if (!start || !end || end < start) return 0
+  let count = 0
+  const t = new Date(`${start}T00:00:00Z`)
+  const last = new Date(`${end}T00:00:00Z`).getTime()
+  while (t.getTime() <= last) {
+    if (t.getUTCDay() !== 0) count++
+    t.setUTCDate(t.getUTCDate() + 1)
+  }
+  return count
+}

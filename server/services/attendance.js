@@ -24,6 +24,7 @@
  */
 import { q } from '../db.js'
 import { FULL_WORKDAY_SECONDS } from '../config.js'
+import { locationLabel } from './geoip.js'
 import { dayKey, endOfDay, weekStartOf } from '../utils/time.js'
 
 /**
@@ -81,6 +82,19 @@ export function liveSessionJSON(row, now = Date.now()) {
     dayStatus: row.day_status,
     checkInAt: firstIn ? firstIn.at : null,
     checkOutAt: lastOut ? lastOut.at : null,
+    // Where the day was started from. `checkInLocation` is the ready-to-render
+    // "Mumbai, Maharashtra, India"; it's '' whenever the IP couldn't be
+    // resolved (private range, lookup off, provider down) — the IP itself is
+    // recorded either way.
+    checkInIp: row.check_in_ip || null,
+    checkInCity: row.check_in_city || '',
+    checkInCountry: row.check_in_country || '',
+    checkInCountryCode: row.check_in_country_code || '',
+    checkInLocation: locationLabel({
+      city: row.check_in_city,
+      region: row.check_in_region,
+      country: row.check_in_country,
+    }),
   }
 }
 

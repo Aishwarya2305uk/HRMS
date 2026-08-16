@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { appSettings as appSettingsApi } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
+import { useSessionState } from '../lib/useSessionState'
 import { useToast } from '../context/ToastContext'
 import Icon from './Icon'
 import { Skeleton, InlineError } from './States'
@@ -68,10 +69,12 @@ function isValidLink(raw) {
  */
 export default function OtherSettingsManager({ query }) {
   const toast = useToast()
-  const [drafts, setDrafts] = useState({})
+  // Unsaved edits and the expanded row survive a page refresh (per tab, per
+  // user — lib/useSessionState.js); saving clears that field's draft.
+  const [drafts, setDrafts] = useSessionState('draft.otherSettings.values', {})
   const [savingKey, setSavingKey] = useState(null)
   // Which accordion row is expanded (one at a time), or null for none.
-  const [openKey, setOpenKey] = useState(null)
+  const [openKey, setOpenKey] = useSessionState('ui.otherSettings.openKey', null)
 
   const settings = query.data
   if (query.loading && settings === null) return <Skeleton rows={2} />

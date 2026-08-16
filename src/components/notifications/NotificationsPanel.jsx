@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import Modal from '../Modal'
 import Icon from '../Icon'
 import { announcements as announcementsApi } from '../../lib/hrms'
 import { haptic } from '../../lib/haptics'
+import { useSessionState } from '../../lib/useSessionState'
 import ComposeAnnouncementForm from './ComposeAnnouncementForm'
 import NotificationsFeed from './NotificationsFeed'
 
@@ -30,7 +31,9 @@ export default function NotificationsPanel({
   onViewLeaves,
   onClose,
 }) {
-  const [composing, setComposing] = useState(false)
+  // Survives a refresh alongside the drawer's own open flag (Portal) and the
+  // compose form's fields, so a half-written announcement comes back intact.
+  const [composing, setComposing] = useSessionState('ui.notificationsComposing', false)
   const markedRef = useRef(false)
 
   useEffect(() => {

@@ -131,6 +131,15 @@ create table work_sessions (
   status text not null default 'active' check (status in ('active','completed','auto_closed')),
   worked_seconds integer not null default 0,
   day_status text check (day_status in ('present','leave')),
+  -- Where the day was started from, stamped once by whichever check-in
+  -- happened first (timer or one-tap): the request's client IP, plus the
+  -- coarse city/country that IP resolves to (see services/geoip.js — blank
+  -- whenever the lookup is off, private-range, or unavailable).
+  check_in_ip varchar(64),
+  check_in_city varchar(120) not null default '',
+  check_in_region varchar(120) not null default '',
+  check_in_country varchar(120) not null default '',
+  check_in_country_code varchar(2) not null default '',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, date)
@@ -316,6 +325,15 @@ do $$ begin
     alter table leave_types add constraint leave_types_period_check check (period in ('day','month','year'));
   end if;
 end $$;
+
+-- Check-in origin (2026-08): every check-in records the IP it arrived from
+-- and the coarse city/country that IP resolves to, for the admin/manager
+-- daily check-in view. Days recorded before this stay blank.
+alter table work_sessions add column if not exists check_in_ip varchar(64);
+alter table work_sessions add column if not exists check_in_city varchar(120) not null default '';
+alter table work_sessions add column if not exists check_in_region varchar(120) not null default '';
+alter table work_sessions add column if not exists check_in_country varchar(120) not null default '';
+alter table work_sessions add column if not exists check_in_country_code varchar(2) not null default '';
 
 -- Custom-time leave requests (2026-08): day_part 'custom' carries a free
 -- time window whose hours set the request size — days may now be any

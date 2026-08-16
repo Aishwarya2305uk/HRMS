@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useSessionState } from '../lib/useSessionState'
 import { EmptyState } from './States'
 import { AnnouncementItem } from './notifications/NotificationsFeed'
 import ComposeAnnouncementForm from './notifications/ComposeAnnouncementForm'
@@ -20,7 +21,8 @@ const FILTER_LABEL = { all: 'All', announcement: 'Announcements', urgent: 'Urgen
  * @param {string}   [props.searchQuery] filters by title/body/author
  */
 export default function AllAnnouncements({ items, onCreated, onRemoved, currentUserId, role, searchQuery = '' }) {
-  const [filter, setFilter] = useState('all')
+  // Survives a refresh (per tab) so you come back to the same lens.
+  const [filter, setFilter] = useSessionState('ui.allAnnouncements.filter', 'all')
   const [composeKey, setComposeKey] = useState(0)
 
   const rows = useMemo(() => {

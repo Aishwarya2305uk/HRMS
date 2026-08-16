@@ -11,6 +11,10 @@ export const attendance = {
   dayCheckin: () => apiFetch('/attendance/day-checkin', { method: 'POST' }),
   history: () => apiFetch('/attendance/history'),
   analytics: () => apiFetch('/attendance/analytics'),
+  /** Manager/admin daily check-in roll-call for one date. The server decides
+   *  whose names come back — the whole company for an admin, only the
+   *  manager's own reports for a manager. */
+  daily: (date) => apiFetch(`/attendance/daily${date ? `?date=${date}` : ''}`),
   all: (month) => apiFetch(`/attendance/all${month ? `?month=${month}` : ''}`),
 }
 

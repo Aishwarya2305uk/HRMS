@@ -1,19 +1,25 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Icon from './Icon'
 import Modal from './Modal'
 import Avatar from './Avatar'
 import WhenPicker, { DAY_PART_TIMES, yearEndStr } from './WhenPicker'
 import { useAuth } from '../context/AuthContext'
 import { leaves as leavesApi } from '../lib/hrms'
-import { perDayFraction, roundDays } from '../lib/leave'
+import { perDayFraction, roundDays, isWeeklyOff, workingDayCount } from '../lib/leave'
 import { formatLeaveAmount } from '../lib/format'
 import { haptic } from '../lib/haptics'
+import { useSessionState } from '../lib/useSessionState'
 import { InlineError } from './States'
 
-/** Inclusive calendar-day count between two YYYY-MM-DD strings (client preview). */
-function dayCount(start, end) {
-  if (!start || !end || end < start) return 0
-  return Math.floor((new Date(end) - new Date(start)) / 86400000) + 1
+const WEEKLY_OFF_ERROR = 'Sundays are weekly offs — pick a working day.'
+
+const BLANK_WHEN = {
+  mode: 'range',
+  startDate: '',
+  endDate: '',
+  dates: [],
+  dayPart: 'full',
+  ...DAY_PART_TIMES.full,
 }
 
 /**
@@ -30,28 +36,44 @@ function dayCount(start, end) {
  */
 export default function ApplyLeaveModal({ types, balances, onClose, onCreated }) {
   const { user } = useAuth()
-  const [type, setType] = useState(types[0]?.key ?? '')
-  const [when, setWhen] = useState({
-    mode: 'range',
-    startDate: '',
-    endDate: '',
-    dates: [],
-    dayPart: 'full',
-    ...DAY_PART_TIMES.full,
-  })
-  const [reason, setReason] = useState('')
+  // The three things the person actually typed/picked survive a page refresh
+  // (per tab, per user — lib/useSessionState.js); closing the dialog on
+  // purpose or submitting clears them (see close/handleSubmit below).
+  const [type, setType] = useSessionState('draft.applyLeave.type', types[0]?.key ?? '')
+  const [when, setWhen] = useSessionState('draft.applyLeave.when', BLANK_WHEN)
+  const [reason, setReason] = useSessionState('draft.applyLeave.reason', '')
   const [touched, setTouched] = useState({})
   const [submitError, setSubmitError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  // A remembered type may have been retired since — fall back to the first
+  // one that still exists rather than submitting an unknown key.
+  useEffect(() => {
+    if (types.length && !types.some((t) => t.key === type)) setType(types[0].key)
+  }, [types, type, setType])
+
+  const clearDraft = useCallback(() => {
+    setType(types[0]?.key ?? '')
+    setWhen(BLANK_WHEN)
+    setReason('')
+  }, [types, setType, setWhen, setReason])
+  // Stable identity matters: Modal re-runs its focus/keyboard effect whenever
+  // onClose changes, so a fresh function every render would yank focus to
+  // the first control on each keystroke.
+  const close = useCallback(() => {
+    clearDraft()
+    onClose()
+  }, [clearDraft, onClose])
+
   const { mode, startDate, endDate, dates, dayPart, startTime, endTime } = when
   const custom = mode === 'custom'
-  // Hours-based size: each picked date consumes perDay days (1 full, 0.5
-  // half, window÷8h for custom time) — mirrors the server's math.
+  // Hours-based size: each picked WORKING date consumes perDay days (1 full,
+  // 0.5 half, window÷8h for custom time) — mirrors the server's math. Sundays
+  // are weekly offs, so a Sat–Mon range is 2 days, not 3.
   const perDay = perDayFraction(dayPart, startTime, endTime)
   const days = custom
     ? roundDays(dates.length * perDay)
-    : startDate ? roundDays(dayCount(startDate, endDate || startDate) * perDay) : 0
+    : startDate ? roundDays(workingDayCount(startDate, endDate || startDate) * perDay) : 0
   const remaining = Number(balances?.[type]) || 0
   const selectedType = types.find((t) => t.key === type)
   const period = selectedType?.period ?? 'year'
@@ -63,14 +85,18 @@ export default function ApplyLeaveModal({ types, balances, onClose, onCreated })
     if (custom) {
       if (dates.length === 0) e.dates = 'Add at least one date.'
       else if (dates.some((d) => d > yearEnd)) e.dates = 'Dates must fall within the current year.'
+      else if (dates.some(isWeeklyOff)) e.dates = 'Sundays are weekly offs — remove them.'
     } else {
       if (!startDate) e.startDate = 'Pick a start date.'
       else if (startDate > yearEnd) e.startDate = 'Dates must fall within the current year.'
+      else if (isWeeklyOff(startDate)) e.startDate = WEEKLY_OFF_ERROR
       if (!endDate) e.endDate = 'Pick an end date.'
       else if (startDate && endDate < startDate) {
         e.endDate = 'The end date can’t be before the start date.'
       } else if (endDate > yearEnd) {
         e.endDate = 'Dates must fall within the current year.'
+      } else if (isWeeklyOff(endDate)) {
+        e.endDate = WEEKLY_OFF_ERROR
       }
     }
     if (!startTime || !endTime) e.time = 'Pick the working hours.'
@@ -128,7 +154,7 @@ export default function ApplyLeaveModal({ types, balances, onClose, onCreated })
       })
       haptic('success')
       onCreated?.(leave)
-      onClose()
+      close()
     } catch (err) {
       setSubmitError(err.message)
       setSubmitting(false)
@@ -136,10 +162,10 @@ export default function ApplyLeaveModal({ types, balances, onClose, onCreated })
   }
 
   return (
-    <Modal titleId="apply-leave-title" onClose={onClose}>
+    <Modal titleId="apply-leave-title" onClose={close}>
       <div className="modal__head">
         <h2 id="apply-leave-title">Apply for leave</h2>
-        <button className="icon-btn sm" onClick={onClose} aria-label="Close dialog">
+        <button className="icon-btn sm" onClick={close} aria-label="Close dialog">
           <Icon name="x" size={16} />
         </button>
       </div>
@@ -220,7 +246,7 @@ export default function ApplyLeaveModal({ types, balances, onClose, onCreated })
         )}
 
         <div className="modal__actions">
-          <button type="button" className="btn-tactile ghost" onClick={onClose} disabled={submitting}>
+          <button type="button" className="btn-tactile ghost" onClick={close} disabled={submitting}>
             Cancel
           </button>
           <button type="submit" className="btn-tactile primary" disabled={submitting}>

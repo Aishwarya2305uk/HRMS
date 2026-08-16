@@ -59,6 +59,18 @@ export const SMTP_USER = process.env.SMTP_USER?.trim()
 export const SMTP_PASS = process.env.SMTP_PASS
 export const SMTP_FROM = process.env.SMTP_FROM?.trim() || SMTP_USER
 
+// Attendance check-in geolocation: the IP a check-in arrives from is always
+// recorded; turning this on also resolves that IP to a coarse city/country
+// through a public lookup service (see services/geoip.js). Optional and
+// fail-soft — an unreachable/rate-limited provider just leaves the location
+// blank, same "warn and skip if unconfigured" policy as Turnstile and SMTP.
+// GEOIP_URL must contain the {ip} placeholder; the default is ip-api.com's
+// free endpoint (no key, ~45 lookups/minute).
+export const GEOIP_ENABLED = (process.env.GEOIP_ENABLED ?? 'true').trim().toLowerCase() !== 'false'
+export const GEOIP_URL =
+  process.env.GEOIP_URL?.trim() ||
+  'http://ip-api.com/json/{ip}?fields=status,country,countryCode,regionName,city'
+
 // Public URL of the frontend, used to build invite links inside emails
 // (e.g. https://your-app.vercel.app). Falls back to the request's Origin
 // header, so local dev works without setting it.

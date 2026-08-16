@@ -7,6 +7,7 @@ import { employees as employeesApi, employmentTypes as employmentTypesApi } from
 import { haptic } from '../lib/haptics'
 import { formatDate } from '../lib/format'
 import { useAsyncData } from '../lib/useAsyncData'
+import { useSessionState } from '../lib/useSessionState'
 import { useToast } from '../context/ToastContext'
 import { EmptyState, InlineError } from './States'
 
@@ -44,14 +45,21 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
   const { user: currentUser } = useAuth()
   const employmentTypesQ = useAsyncData(useCallback(() => employmentTypesApi.list(), []))
   const employmentTypeOptions = employmentTypesQ.data ?? []
-  const [form, setForm] = useState(BLANK)
+  // A half-filled "add employee" form survives a page refresh (per tab, per
+  // user — lib/useSessionState.js); a successful add resets it to BLANK.
+  const [form, setForm] = useSessionState('draft.addEmployee', BLANK)
   const [touched, setTouched] = useState({})
   const [submitError, setSubmitError] = useState('')
   const [saving, setSaving] = useState(false)
   const [busyManagerId, setBusyManagerId] = useState(null)
   const [busyRoleId, setBusyRoleId] = useState(null)
-  const [busyInviteId, setBusyInviteId] = useState(null)
-  /** { name, url } — shows the copy-the-invite-link dialog after add/re-invite. */
+  /** { id, kind: 'link' | 'email' } — which roster invite action is in flight. */
+  const [busyInvite, setBusyInvite] = useState(null)
+  /**
+   * { name, email, url, emailSent, note } — shows the copy-the-invite-link
+   * dialog after add / re-invite (and as the fallback when a resend email
+   * couldn't go out; `note` explains why the dialog appeared).
+   */
   const [inviteModal, setInviteModal] = useState(null)
   const [inviteCopied, setInviteCopied] = useState(false)
 
@@ -117,7 +125,12 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
       // The raw token exists only in this response — hand the admin the link
       // to share right away (a fresh one can be issued from the roster later).
       setInviteCopied(false)
-      setInviteModal({ name: created.name, url: inviteUrl(created.inviteToken) })
+      setInviteModal({
+        name: created.name,
+        email: created.email,
+        url: inviteUrl(created.inviteToken),
+        emailSent: Boolean(created.inviteEmailSent),
+      })
     } catch (err) {
       setSubmitError(err.message)
       toast.error(err.message)
@@ -153,19 +166,59 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
   /**
    * Fresh invite link for a pending account — the original token is shown
    * only once at creation, so this is how a lost/expired link is replaced.
-   * The server refuses it for accounts that already registered.
+   * The server refuses it for accounts that already registered. (Issuing a
+   * link also emails it when SMTP is set up — the dialog says so — because
+   * every issue rotates the token, and the newest email must always hold the
+   * link that actually works.)
    */
-  async function resendInvite(person) {
-    setBusyInviteId(person.id)
+  async function regenerateInviteLink(person) {
+    setBusyInvite({ id: person.id, kind: 'link' })
     haptic('light')
     try {
-      const { inviteToken } = await employeesApi.reinvite(person.id)
+      const { inviteToken, inviteEmailSent } = await employeesApi.reinvite(person.id)
       setInviteCopied(false)
-      setInviteModal({ name: person.name, url: inviteUrl(inviteToken) })
+      setInviteModal({
+        name: person.name,
+        email: person.email,
+        url: inviteUrl(inviteToken),
+        emailSent: Boolean(inviteEmailSent),
+      })
     } catch (err) {
       toast.error(`Couldn't create an invite link — ${err.message}`)
     } finally {
-      setBusyInviteId(null)
+      setBusyInvite(null)
+    }
+  }
+
+  /**
+   * "Resend": email a fresh invite in one click — no dialog to click through
+   * when it goes out. Same rotate-and-send call as the link button; the
+   * difference is what the admin sees afterwards. If the mail didn't go out
+   * (SMTP unset or unreachable) the link dialog opens instead, with a note
+   * saying why, so they can still share it themselves.
+   */
+  async function resendInviteEmail(person) {
+    setBusyInvite({ id: person.id, kind: 'email' })
+    haptic('light')
+    try {
+      const { inviteToken, inviteEmailSent } = await employeesApi.reinvite(person.id)
+      if (inviteEmailSent) {
+        haptic('success')
+        toast.success(`Invite email resent to ${person.email}.`)
+        return
+      }
+      setInviteCopied(false)
+      setInviteModal({
+        name: person.name,
+        email: person.email,
+        url: inviteUrl(inviteToken),
+        emailSent: false,
+        note: `The email to ${person.email} couldn’t be sent (email delivery isn’t set up or the mail server didn’t respond). Share this fresh link with ${person.name} yourself instead.`,
+      })
+    } catch (err) {
+      toast.error(`Couldn't resend the invite — ${err.message}`)
+    } finally {
+      setBusyInvite(null)
     }
   }
 
@@ -402,11 +455,21 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
                           <button
                             type="button"
                             className="btn-tactile ghost sm"
-                            disabled={busyInviteId === p.id}
-                            onClick={() => resendInvite(p)}
+                            disabled={busyInvite?.id === p.id}
+                            onClick={() => regenerateInviteLink(p)}
                             title={`Get a fresh invite link for ${p.name}`}
                           >
-                            {busyInviteId === p.id ? 'Creating…' : 'Invite link'}
+                            {busyInvite?.id === p.id && busyInvite.kind === 'link' ? 'Creating…' : 'Invite link'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-tactile ghost sm"
+                            disabled={busyInvite?.id === p.id}
+                            onClick={() => resendInviteEmail(p)}
+                            title={`Email a fresh invite to ${p.email}`}
+                          >
+                            <Icon name="mail" size={14} />
+                            {busyInvite?.id === p.id && busyInvite.kind === 'email' ? 'Sending…' : 'Resend'}
                           </button>
                         </div>
                       ) : (
@@ -476,10 +539,13 @@ export default function PeopleAdmin({ people, setPeople, searchQuery = '', onVie
               <Icon name="x" size={16} />
             </button>
           </div>
+          {inviteModal.note && <InlineError>{inviteModal.note}</InlineError>}
           <p className="field-hint" style={{ marginBottom: 12 }}>
-            Share this link with {inviteModal.name} (email, chat — whatever you use). They’ll
-            set their own password and finish registering. The link works once and expires in
-            7 days; you can issue a new one anytime from the roster.
+            {inviteModal.emailSent
+              ? `This link has been emailed to ${inviteModal.email} — you can also share it directly (chat, another email — whatever you use). `
+              : `Share this link with ${inviteModal.name} (email, chat — whatever you use). `}
+            They’ll set their own password and finish registering. The link works once and
+            expires in 7 days; you can issue a new one anytime from the roster.
           </p>
           <div className="field">
             <label htmlFor="invite-link">Invite link</label>

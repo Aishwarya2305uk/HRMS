@@ -23,6 +23,9 @@ router.use(requireAuth)
 
 const PHONE_RE = /^[0-9+\-\s()]{7,20}$/
 const AADHAR_RE = /^\d{12}$/
+// users.name is unbounded text in the schema; this keeps a typo'd paste from
+// becoming a paragraph-long display name in every roster and dropdown.
+const MAX_NAME_LENGTH = 80
 // Base64 inflates size ~4/3 — this caps the decoded image around ~1MB.
 const MAX_PHOTO_DATA_URL_LENGTH = 1_400_000
 const PHOTO_DATA_URL_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i
@@ -136,7 +139,8 @@ router.get('/:id/profile', async (req, res, next) => {
  * PATCH /api/employees/:id/profile — update personal details. Self may edit
  * their own; admin may edit anyone's. Deliberately whitelists only the
  * personal fields below — role, manager and email changes go through their
- * own, separately-audited endpoints, never this one.
+ * own, separately-audited endpoints, never this one. `name` and
+ * `employmentType` are the two admin-only fields (see their checks below).
  */
 router.patch('/:id/profile', async (req, res, next) => {
   try {
@@ -154,13 +158,32 @@ router.patch('/:id/profile', async (req, res, next) => {
     // May be overwritten below if employmentType actually changes.
     let employmentTypeName = target.employment_type_name ?? null
 
-    const { dob, address, phone, education, aadharNumber, photoUrl, employmentType } = req.body || {}
+    const { name, dob, address, phone, education, aadharNumber, photoUrl, employmentType } = req.body || {}
 
     const sets = []
     const params = []
     const set = (column, value) => {
       params.push(value)
       sets.push(`${column} = $${params.length}`)
+    }
+
+    // Display name is HR record data — an admin typed it when creating the
+    // account (POST /) — so, like employment type below, changing it is
+    // admin-only even on your own profile. This is also how the bootstrapped
+    // admin replaces the ADMIN_NAME placeholder ("Administrator") with a real
+    // name: that env var only ever applies at first creation.
+    if (name !== undefined) {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Only an admin can change a name.' })
+      }
+      const trimmed = String(name).trim()
+      if (!trimmed) {
+        return res.status(400).json({ error: 'Name is required.' })
+      }
+      if (trimmed.length > MAX_NAME_LENGTH) {
+        return res.status(400).json({ error: `Name must be under ${MAX_NAME_LENGTH} characters.` })
+      }
+      set('name', trimmed)
     }
 
     if (dob !== undefined) {

@@ -3,6 +3,7 @@ import Icon from './Icon'
 import { leaves as leavesApi } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
 import { formatRequestWindow, requestLabel } from '../lib/format'
+import { useSessionState } from '../lib/useSessionState'
 import { Skeleton, EmptyState, InlineError } from './States'
 
 /**
@@ -28,8 +29,10 @@ export default function Approvals({
 }) {
   const [busyId, setBusyId] = useState(null)
   const [rowError, setRowError] = useState({ id: null, message: '' })
-  const [rejecting, setRejecting] = useState(null)
-  const [comment, setComment] = useState('')
+  // A rejection reason mid-typing survives a page refresh (per tab, per user
+  // — lib/useSessionState.js); deciding or cancelling clears it.
+  const [rejecting, setRejecting] = useSessionState('draft.approvals.rejectingId', null)
+  const [comment, setComment] = useSessionState('draft.approvals.comment', '')
 
   async function decide(leave, outcome) {
     setBusyId(leave.id)

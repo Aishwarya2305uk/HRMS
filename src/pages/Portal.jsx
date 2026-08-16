@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { useAsyncData } from '../lib/useAsyncData'
+import { useSessionState, clearSessionState } from '../lib/useSessionState'
 import Icon from '../components/Icon'
 import { haptic, tactile } from '../lib/haptics'
 import {
@@ -167,16 +168,46 @@ export default function Portal() {
   const { user, role, logout, refreshUser } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
-  const [active, setActive] = useState('dashboard')
-  const [showApply, setShowApply] = useState(false)
-  const [showApplyWfh, setShowApplyWfh] = useState(false)
-  const [showNotifications, setShowNotifications] = useState(false)
+  const location = useLocation()
+
+  // ---- Which section is open lives in the URL, not in state ----
+  // /dashboard/leaves, /admin/dashboard/people, /admin/dashboard/profile/<id>
+  // (see App.jsx) — so a refresh, the browser's Back/Forward, a bookmark, and
+  // the post-login redirect (ProtectedRoute remembers the full path) all land
+  // on the very page the person was on. Anything the URL names that this
+  // role can't open falls back to the dashboard (and the URL is tidied to
+  // match) instead of rendering a blank page.
+  const { section: routeSection, id: routeId } = useParams()
+  const base = role === 'admin' ? '/admin/dashboard' : '/dashboard'
+  const active =
+    routeSection && (routeSection === 'profile' || canAccess(role, routeSection)) ? routeSection : 'dashboard'
+  useEffect(() => {
+    if (routeSection && routeSection !== active) navigate(base, { replace: true })
+  }, [routeSection, active, base, navigate])
+  /** Open a section (and, for 'profile', optionally someone else's record). */
+  const goTo = useCallback(
+    (key, id = null) => {
+      const target = key === 'dashboard' && !id ? base : `${base}/${key}${id ? `/${encodeURIComponent(id)}` : ''}`
+      if (target !== location.pathname) navigate(target)
+    },
+    [base, navigate, location.pathname],
+  )
+  // null = viewing your own profile; an id = an admin viewing someone else's
+  // (opened from the People roster) — read straight from the URL.
+  const profileTarget = active === 'profile' ? (routeId ?? null) : null
+
+  // Anything "half done" that a refresh shouldn't wipe survives in
+  // sessionStorage (per tab, per user — see lib/useSessionState.js): an open
+  // Apply dialog (its fields persist inside the dialog itself), the open
+  // notifications drawer, and the month the admin was browsing.
+  const [showApply, setShowApply] = useSessionState('ui.applyLeaveOpen', false)
+  const [showApplyWfh, setShowApplyWfh] = useSessionState('ui.applyWfhOpen', false)
+  const [showNotifications, setShowNotifications] = useSessionState('ui.notificationsOpen', false)
   const [searchQuery, setSearchQuery] = useState('')
   // 'YYYY-MM' — which month the admin All Attendance view is browsing.
-  const [attendanceMonth, setAttendanceMonth] = useState(() => new Date().toISOString().slice(0, 7))
-  // null = viewing your own profile; an id = an admin viewing someone else's
-  // (opened from the People roster).
-  const [profileTarget, setProfileTarget] = useState(null)
+  const [attendanceMonth, setAttendanceMonth] = useSessionState('ui.attendanceMonth', () =>
+    new Date().toISOString().slice(0, 7),
+  )
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('hrms.sidebarCollapsed') === '1',
   )
@@ -233,7 +264,7 @@ export default function Portal() {
   function selectTab(key) {
     setNavOpen(false)
     if (key === 'notifications') markNotificationsSeen()
-    setActive(key)
+    goTo(key)
     setSearchQuery('') // a filter from one section shouldn't silently apply to the next
   }
 
@@ -415,6 +446,10 @@ export default function Portal() {
 
   function handleLogout() {
     haptic('medium')
+    // Signing out is a deliberate "I'm done" — drop any half-filled drafts and
+    // open dialogs remembered for this tab (they're per user anyway, so a
+    // mere session expiry keeps them for the same person's next sign-in).
+    clearSessionState()
     logout()
     navigate('/', { replace: true })
   }
@@ -514,8 +549,7 @@ export default function Portal() {
   /** Opens the profile page — your own (id omitted) or, for an admin, anyone else's. */
   function openProfile(id = null) {
     setNavOpen(false) // reachable from the drawer's mini-profile
-    setProfileTarget(id)
-    setActive('profile')
+    goTo('profile', id)
   }
 
   function onProfileSaved(updated) {
@@ -808,9 +842,10 @@ export default function Portal() {
                 profile={profileQ.data}
                 isSelf={isSelfProfile}
                 canEdit={isSelfProfile || role === 'admin'}
+                canEditName={role === 'admin'}
                 canEditEmploymentType={role === 'admin'}
                 onSaved={onProfileSaved}
-                onBack={!isSelfProfile ? () => setActive('people') : undefined}
+                onBack={!isSelfProfile ? () => goTo('people') : undefined}
               />
             </Section>
           )}
@@ -884,7 +919,10 @@ export default function Portal() {
         </div>
       </div>
 
-      {showApply && (
+      {/* `types.length` guard: the open flag survives a refresh, and on that
+          first render the leave config may still be loading — the dialog
+          waits for it rather than mounting with an empty type list. */}
+      {showApply && types.length > 0 && (
         <ApplyLeaveModal
           types={types}
           balances={user?.leaveBalances}

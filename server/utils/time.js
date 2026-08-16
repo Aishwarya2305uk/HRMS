@@ -19,7 +19,7 @@ export function startOfDay(dateKey) {
   return new Date(`${dateKey}T00:00:00.000Z`)
 }
 
-/** Inclusive number of calendar days between two 'YYYY-MM-DD' keys (v1 counts weekends). */
+/** Inclusive number of calendar days between two 'YYYY-MM-DD' keys — Sundays included; see workingDays(). */
 export function inclusiveDays(startKey, endKey) {
   const a = startOfDay(startKey).getTime()
   const b = startOfDay(endKey).getTime()
@@ -36,6 +36,26 @@ export function dateKeysInRange(startKey, endKey) {
     t += 86400000
   }
   return keys
+}
+
+/**
+ * Weekly off: Sunday is the one non-working day (v1 — no per-org weekend or
+ * holiday configuration yet). Leave and WFH requests skip weekly offs: they
+ * can't start or end on one and one inside a range isn't counted, since
+ * there's no work to be away from. The client mirrors this in lib/leave.js.
+ */
+export function isWeeklyOff(dateKey) {
+  return startOfDay(dateKey).getUTCDay() === 0 // 0 = Sunday (UTC, like every day key)
+}
+
+/** The keys in [startKey, endKey] that are working days (weekly offs skipped). */
+export function workingDayKeysInRange(startKey, endKey) {
+  return dateKeysInRange(startKey, endKey).filter((k) => !isWeeklyOff(k))
+}
+
+/** Number of working days in the inclusive range — what a leave/WFH request is sized by. */
+export function workingDays(startKey, endKey) {
+  return workingDayKeysInRange(startKey, endKey).length
 }
 
 /** 'YYYY-MM-DD' of the Monday (UTC) that starts the week containing this day key. */

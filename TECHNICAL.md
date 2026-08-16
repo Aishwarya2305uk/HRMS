@@ -65,12 +65,13 @@ server/
   routes/               # auth, attendance, leaves, employees, announcements, teams, cron
   services/
     attendance.js       # 8h verdict, finalization, analytics summarization/bucketing
+    geoip.js             # check-in origin: client IP + fail-soft IP→city/country lookup
     hierarchy.js         # ancestorChain(), descendantIds() — the two org-tree walks
   utils/time.js          # UTC day-key helpers shared by attendance + leave calendar
 
 src/
   main.jsx              # app bootstrap: ErrorBoundary > Router > ToastProvider > AuthProvider
-  App.jsx                # 4 routes: "/" (Login), "/signup", "/dashboard", "/admin/dashboard"
+  App.jsx                # routes: "/" (Login), "/signup", "/reset-password", "/dashboard/:section?/:id?", "/admin/dashboard/:section?/:id?"
   pages/
     Login.jsx            # public sign-in page (brand panel + LoginForm)
     SignUp.jsx           # invite-only registration (completes an admin-created account)
@@ -84,6 +85,7 @@ src/
     format.js             # display formatters (elapsed time, hours, dates, relative time)
     haptics.js            # Vibration API wrapper, no-ops where unsupported
     useAsyncData.js       # {data,error,loading,reload,setData} hook used throughout Portal.jsx
+    useSessionState.js    # useState that survives a refresh (sessionStorage, per tab + user) — drafts, open dialogs, filters
   components/            # ~28 components — see "Component inventory" below
     dashboard/            # Sidebar, TopBar
     notifications/        # NotificationsPanel, ComposeAnnouncementForm
@@ -203,6 +205,19 @@ aadharNumber on top of `safeUserJSON()`).
 | `status` | `active \| completed \| auto_closed` | |
 | `workedSeconds` | Number | finalized total, written once the day closes |
 | `dayStatus` | `present \| leave \| null` | 8h-rule verdict, written once the day closes |
+| `check_in_ip` | `varchar(64) \| null` | the client IP the day's first check-in arrived on (timer or one-tap), stamped once — later actions never overwrite it |
+| `check_in_city` / `check_in_region` / `check_in_country` / `check_in_country_code` | String, default `''` | coarse location that IP resolves to (`services/geoip.js`); all blank when the lookup is disabled, the address is private/loopback, or the provider fails |
+
+**Check-in origin.** Recording the IP is free — it's on the request. Turning it
+into a city/country needs a call to a public IP-geolocation service, which is
+why `services/geoip.js` is fail-soft end to end: a 2.5s timeout, a one-day
+per-IP cache, private ranges skipped outright, warn-once logging, and every
+failure path returning blanks. **A check-in must never fail, or visibly slow
+down, because a third-party geo API was unreachable.** Configured with
+`GEOIP_ENABLED` / `GEOIP_URL` (see `.env.example`); the default provider is
+ip-api.com's free tier. IP geolocation is city-level *at best* and simply wrong
+behind a VPN or mobile carrier NAT — every surface that shows it says so, since
+a location column reads as much harder evidence than it is.
 
 Module-level functions in `server/services/attendance.js`:
 `computeWorkedSeconds(events, upto)`
@@ -218,7 +233,7 @@ view (see [shared response shapes](#shared-response-shapes)).
 | `kind` | `leave \| wfh`, indexed | default `leave` |
 | `type` | one of `config.js` → `LEAVE_TYPE_KEYS` (`casual\|sick\|earned`) | required only when `kind === 'leave'`; WFH has no quota-based type |
 | `startDate`, `endDate` | Date | inclusive range, stored at UTC midnight |
-| `days` | Number, min 1 | inclusive calendar-day count — **v1 counts weekends** |
+| `days` | Number, > 0 | working days in the range × per-day fraction — **Sundays are weekly offs**: a request can't start or end on one and one inside the range isn't counted (`utils/time.js` `workingDays`) |
 | `reason` | String | |
 | `status` | `pending \| approved \| rejected`, indexed | |
 | `approverId`, `decidedAt`, `decisionComment` | mixed | set on manager decision |
@@ -417,7 +432,17 @@ employees list, and anywhere else a user is embedded:
   "status": "active",                // active | completed | auto_closed
   "dayStatus": null,                  // present | leave | null (null until the day closes)
   "checkInAt": "2026-07-28T09:00:00.000Z",
-  "checkOutAt": null
+  "checkOutAt": null,
+
+  // Where the day was started from — stamped once, by whichever check-in came
+  // first (timer or one-tap). The IP is always recorded; the city/country come
+  // from an IP lookup (services/geoip.js) and are blank whenever that lookup is
+  // disabled, hits a private address, or fails.
+  "checkInIp": "203.0.113.42",
+  "checkInCity": "Mumbai",
+  "checkInCountry": "India",
+  "checkInCountryCode": "IN",
+  "checkInLocation": "Mumbai, Maharashtra, India"   // ready-to-render, '' when unknown
 }
 ```
 
@@ -492,7 +517,7 @@ employees list, and anywhere else a user is embedded:
 ### Attendance (`server/routes/attendance.js`)
 
 #### `GET /api/attendance/today`
-- **200:** `LiveSession`, or `{timerState:'out',running:false,workedSeconds:0,dayStatus:null,checkInAt:null,checkOutAt:null}` if no session exists yet today.
+- **200:** `LiveSession & { onLeave }`, or `{timerState:'out',running:false,workedSeconds:0,dayStatus:null,checkInAt:null,checkOutAt:null,onLeave}` if no session exists yet today. `onLeave` is the approved **full-day** `kind:'leave'` covering today (`{id,type,label,startDate,endDate}`) or `null` — the dashboard greys out both check-in buttons with the reason when it's set (half-day / shorter custom leave doesn't count: part of the day is still worked; WFH never counts).
 
 #### `POST /api/attendance/:action`
 - `:action` ∈ `check-in | pause | resume | check-out`
@@ -500,7 +525,8 @@ employees list, and anywhere else a user is embedded:
 - **404:** unrecognized action (`"Unknown attendance action."`)
 - **409:** invalid state transition — `"You have already checked in today."` ·
   `"You need to check in first."` · `"Timer is not running."` (pause while
-  paused/not started) · `"Timer is already running."` (resume while running)
+  paused/not started) · `"Timer is already running."` (resume while running) ·
+  on a full-day leave day (`check-in` and `day-checkin` only): `"You're on approved <type> today — check-in isn't available on a leave day."`
 
 #### `GET /api/attendance/history`
 - Last 60 sessions for the caller, newest first.
@@ -527,9 +553,46 @@ employees list, and anywhere else a user is embedded:
   consecutive calendar dates (v1 has no working-day/weekend calendar
   concept, so a day with no session at all isn't treated as a break).
 
+#### `GET /api/attendance/daily?date=YYYY-MM-DD` — manager + admin
+The daily check-in roll-call rendered at the foot of the check-in card
+(`TeamCheckins.jsx`). Defaults to today if `date` is missing/malformed.
+
+**Scope is decided from `req.user.role` alone** — the request carries no scope
+parameter, so a manager has nothing to tamper with:
+
+| Role | Sees |
+| --- | --- |
+| `admin` | every `status:'active'` user in the company |
+| `manager` | only their own reporting subtree (`descendantIds`) — direct *and* indirect reports |
+| anything else | 403 |
+
+The caller is always excluded (their own status is the card this panel hangs
+under), as are `status:'invited'` accounts, which can't have attendance yet.
+Rows include people who have **not** checked in — that's the point of a
+roll-call — sorted as an arrival log: earliest check-in first, then everyone
+still missing, alphabetically. Profile photos are deliberately not selected
+(inline data URLs, up to ~1.4MB each; the panel shows initials).
+
+- **200:**
+  ```jsonc
+  {
+    "date": "2026-08-16",
+    "scope": "team",                    // team | company — titles the panel
+    "summary": { "total": 12, "checkedIn": 9, "onLeave": 1, "absent": 2 },
+    "rows": [ /* LiveSession & {
+                   employeeId, employeeName, department, designation,
+                   checkedIn: boolean,
+                   onLeave: {id,type,label,startDate,endDate} | null
+                 } */ ]
+  }
+  ```
+- **403:** `"You do not have access to this resource."`
+
 #### `GET /api/attendance/all?month=YYYY-MM` — admin only
 - Defaults to the current month if `month` is missing/malformed.
-- **200:** `(LiveSession & { employeeId, employeeName, department })[]`
+- **200:** `(LiveSession & { employeeId, employeeName, department })[]` — the
+  `LiveSession` part carries the check-in origin fields, which the admin
+  All-attendance table shows as a "From" column under a single-day lens.
 - **403:** `"Admins only."`
 
 ---
@@ -777,10 +840,16 @@ globally instead of every call site handling it separately.
 (OfflineBanner, App, Toaster)`. `ErrorBoundary` is outermost so a render
 crash anywhere still shows a recoverable screen instead of a blank page.
 
-`App.jsx` has exactly three routes: `/` (public `Login`), `/dashboard`
-(`Portal`, roles `employee`/`manager`), `/admin/dashboard` (`Portal`, role
-`admin`), plus a catch-all redirecting to `/`. **The same `Portal` component
-renders for every role** — see "Portal.jsx shell pattern" below.
+`App.jsx` has exactly three routes: `/` (public `Login`),
+`/dashboard/:section?/:id?` (`Portal`, roles `employee`/`manager`),
+`/admin/dashboard/:section?/:id?` (`Portal`, role `admin`), plus a catch-all
+redirecting to `/`. **The same `Portal` component renders for every role** —
+see "Portal.jsx shell pattern" below. **The open section lives in the path**
+(`/admin/dashboard/leaves`, `/dashboard/profile/<id>` for an admin viewing
+someone else's profile) rather than in component state, so a page refresh,
+the browser's Back/Forward, a bookmark and the post-login redirect all land
+on the same page; a section the role can't open falls back to the dashboard
+and the URL is tidied to match.
 
 `ProtectedRoute` gates by auth state and (optionally) role. It waits for
 `AuthContext`'s `loading` flag before redirecting, so a page refresh on a
@@ -812,6 +881,16 @@ constructing URLs inline.
 against a slow earlier response overwriting a newer one (a `runId` ref), and
 accepts `enabled` to defer fetching until a section is actually opened
 (lazy per-tab loading in `Portal.jsx`).
+
+`src/lib/useSessionState.js` is a drop-in `useState` whose value survives a
+page refresh: sessionStorage-backed (per tab, gone when the tab closes) and
+namespaced by the signed-in user's id. It holds everything "half done" that a
+reload shouldn't wipe — the Apply Leave / WFH dialogs (open flag + fields),
+the add-employee form, an announcement being composed, a profile mid-edit
+(keyed per person), leave-policy / other-settings edits, an open reject or
+cancel reason box — plus view state such as list filters and the month being
+browsed. Each form clears its own draft on submit or deliberate cancel;
+`clearSessionState()` wipes the lot on sign-out.
 
 ### Portal.jsx shell pattern
 
@@ -846,10 +925,11 @@ One line each — see the file itself for props/behavior detail.
 | --- | --- | --- |
 | Shell | `dashboard/Sidebar.jsx` | Role-filtered nav, collapse toggle, account entry point |
 | Shell | `dashboard/TopBar.jsx` | Page title, search box (where applicable), notification bell, user menu |
-| Attendance | `AttendanceCard.jsx` | The Zoho-style check-in timer widget (see below) |
+| Attendance | `AttendanceCard.jsx` | The Zoho-style check-in timer widget (see below); shows the viewer's own check-in origin, and hosts `TeamCheckins` for manager/admin |
+| Attendance | `TeamCheckins.jsx` | Daily check-in roll-call at the foot of the check-in card — manager sees their reports, admin the whole company (scope enforced server-side) |
 | Attendance | `AttendanceHistory.jsx` | Own attendance table (date/in/out/hours/status) |
 | Attendance | `AttendanceAnalytics.jsx` | KPI summary + weekly bar chart + 90-day heatmap (hand-rolled SVG, no chart library) |
-| Attendance | `AllAttendance.jsx` | Admin-only: company-wide attendance for a month |
+| Attendance | `AllAttendance.jsx` | Admin-only: company-wide attendance for a month; adds a "From" (IP + city/country) column under a single-day lens |
 | Leaves | `LeaveBalanceCard.jsx` | Remaining balance per type + total ring |
 | Leaves | `RecentLeaves.jsx` | Own recent leave applications with status |
 | Leaves | `ApplyLeaveModal.jsx` | Leave application form (type/dates/reason) |

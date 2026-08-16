@@ -18,7 +18,13 @@ import {
   describeAmount,
   quotaDaysFor,
 } from '../services/leavePolicy.js'
-import { dayKey, inclusiveDays, startOfDay, dateKeysInRange } from '../utils/time.js'
+import {
+  dayKey,
+  startOfDay,
+  isWeeklyOff,
+  workingDays,
+  workingDayKeysInRange,
+} from '../utils/time.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -54,12 +60,16 @@ function windowError(dayPart, start, end) {
   return null
 }
 
+const WEEKLY_OFF_ERROR = 'Sundays are weekly offs — there’s no leave to take. Start and end your request on a working day.'
+
 /**
  * Shared "when" validation for leave and WFH applications: dates, the
  * day-part (full / first half / second half / custom time window) and the
  * working-hours window. Returns { error } on the first problem, otherwise the
- * normalized fields with `days` computed HOURS-BASED: each date consumes
- * perDay days — 1 full, 0.5 half, hours/8 for a custom window (8h = 1 day).
+ * normalized fields with `days` computed HOURS-BASED: each WORKING date
+ * consumes perDay days — 1 full, 0.5 half, hours/8 for a custom window (8h =
+ * 1 day). Sundays are weekly offs: a request can't start or end on one, and
+ * one inside the range isn't counted (Sat–Mon is 2 days, not 3).
  */
 function parseWhen(body) {
   const { startDate, endDate, dayPart = 'full', startTime = '', endTime = '' } = body || {}
@@ -77,6 +87,9 @@ function parseWhen(body) {
   const year = String(new Date().getFullYear())
   if (!startKey.startsWith(year) || !endKey.startsWith(year)) {
     return { error: 'Requests can only be made for dates within the current year.' }
+  }
+  if (isWeeklyOff(startKey) || isWeeklyOff(endKey)) {
+    return { error: WEEKLY_OFF_ERROR }
   }
   if ((dayPart === 'first' || dayPart === 'second') && startKey !== endKey) {
     return { error: 'Half-day requests must start and end on the same day.' }
@@ -97,17 +110,22 @@ function parseWhen(body) {
     startTime: start,
     endTime: end,
     perDay,
-    days: round4(inclusiveDays(startKey, endKey) * perDay),
+    // Neither end is a Sunday (checked above), so this is always ≥ 1.
+    days: round4(workingDays(startKey, endKey) * perDay),
   }
 }
 
 /** Sorted, deduped 'YYYY-MM-DD' keys grouped into contiguous runs, e.g.
- *  [4th, 5th, 12th] -> [{start: 4th, end: 5th}, {start: 12th, end: 12th}]. */
+ *  [4th, 5th, 12th] -> [{start: 4th, end: 5th}, {start: 12th, end: 12th}].
+ *  A weekly off between two picks doesn't break a run — Sat + Mon file as
+ *  one Sat–Mon request (sized at 2 days), the same as picking that range. */
 function groupContiguous(keys) {
   const ranges = []
   for (const k of [...new Set(keys)].sort()) {
     const last = ranges[ranges.length - 1]
-    if (last && inclusiveDays(last.end, k) === 2) last.end = k
+    // Exactly two working days from the run's end to this pick means nothing
+    // workable lies between them (keys are never Sundays themselves).
+    if (last && workingDays(last.end, k) === 2) last.end = k
     else ranges.push({ start: k, end: k })
   }
   return ranges
@@ -138,6 +156,9 @@ function parseCustomWhen(body) {
   const year = String(new Date().getFullYear())
   if (unique.some((k) => !k.startsWith(year))) {
     return { error: 'Requests can only be made for dates within the current year.' }
+  }
+  if (unique.some(isWeeklyOff)) {
+    return { error: 'Sundays are weekly offs — there’s no leave to take. Remove them from your dates.' }
   }
   if ((dayPart === 'first' || dayPart === 'second') && unique.length > 1) {
     return { error: 'Half days can only cover a single date.' }
@@ -227,7 +248,7 @@ router.post('/', async (req, res, next) => {
     const when = custom ? parseCustomWhen(req.body) : parseWhen(req.body)
     if (when.error) return res.status(400).json({ error: when.error })
     const totalDays = custom ? when.totalDays : when.days
-    const allDates = custom ? when.dates : dateKeysInRange(when.startKey, when.endKey)
+    const allDates = custom ? when.dates : workingDayKeysInRange(when.startKey, when.endKey)
 
     // Balance check, by the type's policy period: yearly types spend the
     // stored counter; day/month types are checked against what's already
@@ -263,7 +284,7 @@ router.post('/', async (req, res, next) => {
           dayPart: when.dayPart,
           startTime: when.startTime,
           endTime: when.endTime,
-          days: round4(inclusiveDays(r.start, r.end) * when.perDay),
+          days: round4(workingDays(r.start, r.end) * when.perDay),
           reason: String(reason).trim(),
         }),
       )
@@ -308,7 +329,7 @@ router.post('/wfh', async (req, res, next) => {
           dayPart: when.dayPart,
           startTime: when.startTime,
           endTime: when.endTime,
-          days: round4(inclusiveDays(r.start, r.end) * when.perDay),
+          days: round4(workingDays(r.start, r.end) * when.perDay),
           reason: trimmedReason,
         }),
       )
@@ -511,15 +532,22 @@ router.post('/:id/approve', async (req, res, next) => {
           // Day/month-period types have no stored counter — the allowance
           // resets each period, so re-run the same overdraft check the
           // application ran, now atomically under the user lock.
-          const dates = dateKeysInRange(dayKey(leave.start_date), dayKey(leave.end_date))
-          const overdraft = await periodOverdraft({
-            userId: leave.user_id,
-            type: typeRow,
-            quotaDays: quotaDaysFor(employee, leave.type, await cachedEmploymentTypes()),
-            dates,
-            perDay: round4(Number(leave.days) / dates.length),
-            client,
-          })
+          // Working days only — a Sunday inside the range was never sized
+          // into `days`, so it mustn't be charged against a period either.
+          // (Requests filed before weekly offs existed may span only Sundays
+          // or have been sized with them; the guards keep those approvable
+          // at one day per date at most rather than dividing by zero.)
+          const dates = workingDayKeysInRange(dayKey(leave.start_date), dayKey(leave.end_date))
+          const overdraft = dates.length
+            ? await periodOverdraft({
+                userId: leave.user_id,
+                type: typeRow,
+                quotaDays: quotaDaysFor(employee, leave.type, await cachedEmploymentTypes()),
+                dates,
+                perDay: Math.min(1, round4(Number(leave.days) / dates.length)),
+                client,
+              })
+            : null
           if (overdraft) return { status: 400, error: `Cannot approve — ${overdraft}` }
         }
       }
@@ -714,7 +742,8 @@ router.get('/calendar', async (req, res, next) => {
     }
     for (const l of approved) {
       const isSelf = l.user_id === req.user.id
-      const keys = dateKeysInRange(dayKey(l.start_date), dayKey(l.end_date))
+      // Working days only: a Sunday inside a leave isn't a leave day.
+      const keys = workingDayKeysInRange(dayKey(l.start_date), dayKey(l.end_date))
       for (const k of keys) {
         push(k, {
           id: l.id,
@@ -742,7 +771,7 @@ router.get('/calendar', async (req, res, next) => {
       [req.user.id, monthEnd, monthStart],
     )
     for (const l of own) {
-      for (const k of dateKeysInRange(dayKey(l.start_date), dayKey(l.end_date))) {
+      for (const k of workingDayKeysInRange(dayKey(l.start_date), dayKey(l.end_date))) {
         push(k, {
           id: l.id,
           name: 'You',

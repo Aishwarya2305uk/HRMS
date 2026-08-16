@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAsyncData } from '../../lib/useAsyncData'
+import { useSessionState } from '../../lib/useSessionState'
 import { announcements as announcementsApi } from '../../lib/hrms'
 import { haptic } from '../../lib/haptics'
 import { Skeleton, EmptyState, InlineError } from '../States'
@@ -21,21 +22,49 @@ const BODY_MAX = 2000
  */
 export default function ComposeAnnouncementForm({ onCancel, onCreated, cancelLabel = 'Cancel' }) {
   const optionsQ = useAsyncData(useCallback(() => announcementsApi.audienceOptions(), []))
-  const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
-  const [type, setType] = useState('announcement')
-  const [audience, setAudience] = useState('')
+  // The draft survives a page refresh (per tab, per user — see
+  // lib/useSessionState.js) and is shared by the drawer and the
+  // Announcements page, so it's one draft wherever you pick it back up.
+  // Posting or cancelling clears it.
+  const [title, setTitle] = useSessionState('draft.announcement.title', '')
+  const [body, setBody] = useSessionState('draft.announcement.body', '')
+  const [type, setType] = useSessionState('draft.announcement.type', 'announcement')
+  const [audience, setAudience] = useSessionState('draft.announcement.audience', '')
   const [touched, setTouched] = useState({})
   const [submitError, setSubmitError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  function clearDraft() {
+    setTitle('')
+    setBody('')
+    setType('announcement')
+    setAudience('')
+  }
+  function cancel() {
+    clearDraft()
+    onCancel()
+  }
+
   // Default the "Send to" select once options arrive, without stomping a
-  // choice the user already made.
+  // choice the user already made — unless that (remembered) choice names an
+  // audience that no longer exists, e.g. a project team deleted since.
   useEffect(() => {
-    if (audience || !optionsQ.data) return
-    if (optionsQ.data.canTargetAll) setAudience('all')
-    else if (optionsQ.data.teams[0]) setAudience(`team:${optionsQ.data.teams[0].id}`)
-  }, [optionsQ.data, audience])
+    const d = optionsQ.data
+    if (!d) return
+    const valid = new Set([
+      ...(d.canTargetAll ? ['all'] : []),
+      ...(d.canTargetRole ? ['role:employee', 'role:manager', 'role:admin'] : []),
+      ...d.teams.map((t) => `team:${t.id}`),
+      ...(d.groups ?? []).map((g) => `group:${g.id}`),
+    ])
+    if (audience && !valid.has(audience)) {
+      setAudience('')
+      return
+    }
+    if (audience) return
+    if (d.canTargetAll) setAudience('all')
+    else if (d.teams[0]) setAudience(`team:${d.teams[0].id}`)
+  }, [optionsQ.data, audience, setAudience])
 
   const errors = useMemo(() => {
     const e = {}
@@ -73,6 +102,7 @@ export default function ComposeAnnouncementForm({ onCancel, onCreated, cancelLab
         audienceGroupId: scope === 'group' ? detail : undefined,
       })
       haptic('success')
+      clearDraft()
       onCreated(created)
     } catch (err) {
       setSubmitError(err.message)
@@ -187,7 +217,7 @@ export default function ComposeAnnouncementForm({ onCancel, onCreated, cancelLab
       </div>
 
       <div className="modal__actions">
-        <button type="button" className="btn-tactile ghost" onClick={onCancel} disabled={submitting}>
+        <button type="button" className="btn-tactile ghost" onClick={cancel} disabled={submitting}>
           {cancelLabel}
         </button>
         <button type="submit" className="btn-tactile primary" disabled={submitting}>

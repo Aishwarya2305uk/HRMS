@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { formatRange, formatDate, requestLabel, formatLeaveAmount } from '../lib/format'
+import { useSessionState } from '../lib/useSessionState'
 import { EmptyState } from './States'
 
 /**
@@ -10,7 +11,8 @@ import { EmptyState } from './States'
  * @param {string} [props.searchQuery]  filters rows by employee name
  */
 export default function AllLeaves({ leaves, typeLabels, searchQuery = '' }) {
-  const [filter, setFilter] = useState('all')
+  // Survives a refresh (per tab) so the admin comes back to the same lens.
+  const [filter, setFilter] = useSessionState('ui.allLeaves.filter', 'all')
   const rows = useMemo(() => {
     const byStatus = filter === 'all' ? leaves : leaves.filter((l) => l.status === filter)
     const q = searchQuery.trim().toLowerCase()

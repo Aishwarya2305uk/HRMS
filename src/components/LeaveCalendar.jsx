@@ -4,6 +4,7 @@ import Modal from './Modal'
 import { haptic, tactile } from '../lib/haptics'
 import { leaves as leavesApi } from '../lib/hrms'
 import { formatRange, formatDate, formatLeaveAmount } from '../lib/format'
+import { useSessionState } from '../lib/useSessionState'
 import { InlineError } from './States'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -69,7 +70,8 @@ function initials(name) {
  * employee and their direct manager, not every coworker who opens the calendar.
  */
 export default function LeaveCalendar({ typeLabels = {} }) {
-  const [month, setMonth] = useState(() => monthKey(new Date()))
+  // The month being browsed survives a refresh (per tab).
+  const [month, setMonth] = useSessionState('ui.calendar.month', () => monthKey(new Date()))
   const [days, setDays] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)

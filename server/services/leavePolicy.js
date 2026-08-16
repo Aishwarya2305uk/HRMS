@@ -49,6 +49,76 @@ export function perDayFraction(dayPart, startTime, endTime) {
   return round4(minutes / (DAY_HOURS * 60))
 }
 
+/**
+ * The approved FULL-day leave (kind 'leave') covering `dateKey` for a user,
+ * or null. "Full day" = the request takes the whole of each date (Full day,
+ * or a custom window of 8h+); a half day or a shorter window leaves part of
+ * the day to work, so it doesn't count. What routes/attendance.js uses to
+ * keep someone from checking in on a day they're on leave — and to tell the
+ * dashboard why the buttons are greyed out. Never WFH: working from home is
+ * still working.
+ * @returns {Promise<{id:string,type:string,label:string,startDate:string,endDate:string}|null>}
+ */
+export async function approvedFullDayLeaveOn(userId, dateKey) {
+  const day = startOfDay(dateKey)
+  const { rows } = await q(
+    `select l.id, l.type, l.day_part, l.start_time, l.end_time, l.start_date, l.end_date,
+            t.label as type_label
+       from leaves l
+       left join leave_types t on t.key = l.type
+      where l.user_id = $1 and l.kind = 'leave' and l.status = 'approved'
+        and l.start_date <= $2 and l.end_date >= $2
+      order by l.start_date`,
+    [userId, day],
+  )
+  const row = rows.find(
+    (r) => perDayFraction(r.day_part ?? 'full', r.start_time || '', r.end_time || '') >= 1,
+  )
+  if (!row) return null
+  return {
+    id: row.id,
+    type: row.type,
+    label: row.type_label ?? row.type,
+    startDate: dayKey(row.start_date),
+    endDate: dayKey(row.end_date),
+  }
+}
+
+/**
+ * The same question as approvedFullDayLeaveOn, asked for many people at once:
+ * who among `userIds` is on approved full-day leave on `dateKey`. One query
+ * instead of one per person — what the admin/manager daily check-in roll-call
+ * uses to tell "on leave" apart from "hasn't checked in".
+ * @returns {Promise<Map<string, {id,type,label,startDate,endDate}>>} keyed by user id
+ */
+export async function approvedFullDayLeavesOn(userIds, dateKey) {
+  const byUser = new Map()
+  if (!userIds.length) return byUser
+  const day = startOfDay(dateKey)
+  const { rows } = await q(
+    `select l.user_id, l.id, l.type, l.day_part, l.start_time, l.end_time,
+            l.start_date, l.end_date, t.label as type_label
+       from leaves l
+       left join leave_types t on t.key = l.type
+      where l.user_id = any($1::uuid[]) and l.kind = 'leave' and l.status = 'approved'
+        and l.start_date <= $2 and l.end_date >= $2
+      order by l.start_date`,
+    [userIds, day],
+  )
+  for (const row of rows) {
+    if (byUser.has(row.user_id)) continue
+    if (perDayFraction(row.day_part ?? 'full', row.start_time || '', row.end_time || '') < 1) continue
+    byUser.set(row.user_id, {
+      id: row.id,
+      type: row.type,
+      label: row.type_label ?? row.type,
+      startDate: dayKey(row.start_date),
+      endDate: dayKey(row.end_date),
+    })
+  }
+  return byUser
+}
+
 /** "3 days", "1 day", or for fractions "2h (0.25 day)" / "4h 30m (0.5625 day)". */
 export function describeAmount(days) {
   const d = round4(days)

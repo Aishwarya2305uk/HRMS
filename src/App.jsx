@@ -20,9 +20,12 @@ function App() {
           from it with ?token to set the new password */}
       <Route path="/reset-password" element={<ResetPassword />} />
 
-      {/* Staff area (employees + managers) — one role-aware portal */}
+      {/* Staff area (employees + managers) — one role-aware portal. The
+          section lives in the path (/dashboard/leaves) and a profile may
+          name a record (/dashboard/profile/<id>), so a refresh, the Back
+          button and a bookmark all land on the same page — see Portal.jsx. */}
       <Route
-        path="/dashboard"
+        path="/dashboard/:section?/:id?"
         element={
           <ProtectedRoute roles={['employee', 'manager']}>
             <Portal />
@@ -32,7 +35,7 @@ function App() {
 
       {/* Admin area — same portal, admin nav/sections unlocked by role */}
       <Route
-        path="/admin/dashboard"
+        path="/admin/dashboard/:section?/:id?"
         element={
           <ProtectedRoute roles={['admin']}>
             <Portal />

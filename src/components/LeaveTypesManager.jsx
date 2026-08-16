@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { useAsyncData } from '../lib/useAsyncData'
+import { useSessionState } from '../lib/useSessionState'
 import { leaveTypes as leaveTypesApi, LEAVE_TYPES_CHANGED_EVENT } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
 import { useToast } from '../context/ToastContext'
@@ -35,13 +36,15 @@ const policyLabel = (t) => `${t.unit ?? 'days'} ${PERIODS.find((p) => p.key === 
 export default function LeaveTypesManager() {
   const toast = useToast()
   const typesQ = useAsyncData(useCallback(() => leaveTypesApi.list(), []))
-  const [label, setLabel] = useState('')
-  const [unit, setUnit] = useState('days')
-  const [period, setPeriod] = useState('year')
+  // The new-type form and any row mid-edit survive a page refresh (per tab,
+  // per user — lib/useSessionState.js); saving/cancelling clears them.
+  const [label, setLabel] = useSessionState('draft.leaveType.label', '')
+  const [unit, setUnit] = useSessionState('draft.leaveType.unit', 'days')
+  const [period, setPeriod] = useSessionState('draft.leaveType.period', 'year')
   const [creating, setCreating] = useState(false)
   const [busyId, setBusyId] = useState(null)
-  const [editingId, setEditingId] = useState(null)
-  const [draft, setDraft] = useState({ label: '', unit: 'days', period: 'year' })
+  const [editingId, setEditingId] = useSessionState('draft.leaveType.editingId', null)
+  const [draft, setDraft] = useSessionState('draft.leaveType.edit', { label: '', unit: 'days', period: 'year' })
 
   const types = typesQ.data ?? []
 

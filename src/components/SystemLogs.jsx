@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { systemLogs } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
+import { useSessionState } from '../lib/useSessionState'
 import Icon from './Icon'
 import { Skeleton, ErrorState, EmptyState, InlineError } from './States'
 
@@ -51,11 +52,13 @@ const DATE_OPTIONS = [
  * query and search needs a debounce.
  */
 export default function SystemLogs() {
-  const [search, setSearch] = useState('')
-  const [roleFilter, setRoleFilter] = useState('all')
-  const [level, setLevel] = useState('all')
-  const [method, setMethod] = useState('all')
-  const [days, setDays] = useState('30')
+  // The filter set survives a refresh (per tab) so the admin lands back on
+  // the same slice of the log.
+  const [search, setSearch] = useSessionState('ui.systemLogs.search', '')
+  const [roleFilter, setRoleFilter] = useSessionState('ui.systemLogs.role', 'all')
+  const [level, setLevel] = useSessionState('ui.systemLogs.level', 'all')
+  const [method, setMethod] = useSessionState('ui.systemLogs.method', 'all')
+  const [days, setDays] = useSessionState('ui.systemLogs.days', '30')
   const [rows, setRows] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)

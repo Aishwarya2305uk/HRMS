@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Icon from './Icon'
+import TeamCheckins from './TeamCheckins'
 import { haptic } from '../lib/haptics'
-import { formatElapsed, formatHours, formatTime } from '../lib/format'
+import { formatElapsed, formatHours, formatTime, formatRange } from '../lib/format'
 import { attendance } from '../lib/hrms'
+import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { InlineError } from './States'
 
@@ -22,10 +24,21 @@ import { InlineError } from './States'
  * An already-running timer stays finishable even if the admin hides the
  * timer mid-day.
  *
+ * On a day the person is on approved full-day leave, /attendance/today
+ * carries `onLeave` (type label + dates): both check-in buttons render greyed
+ * out with the reason, and the server refuses the action anyway.
+ *
+ * Every check-in also records the IP it arrived from and the city/country that
+ * IP resolves to. The person who checked in sees their own origin line here;
+ * managers and admins additionally get the daily roll-call panel at the foot
+ * of this card (TeamCheckins — scoped server-side to their reports, or the
+ * whole company for an admin).
+ *
  * @param {(session:object)=>void} [props.onChange]  notified after each action
  * @param {object|null}            [props.settings]  org settings (attendance flags)
  */
 export default function AttendanceCard({ onChange, settings }) {
+  const { role } = useAuth()
   const toast = useToast()
   const [session, setSession] = useState(null)
   const [now, setNow] = useState(Date.now())
@@ -109,6 +122,11 @@ export default function AttendanceCard({ onChange, settings }) {
       // an attendance action failing silently would cost the user real hours.
       setError(err.message)
       toast.error(err.message)
+      // A refused START usually means today changed under us since the last
+      // sync — e.g. leave approved while this page sat open — so re-read the
+      // day and let the card reflect it (greyed buttons + reason) rather than
+      // inviting another click.
+      if (action === 'check-in' || action === 'day-checkin') load()
     } finally {
       setBusy(false)
     }
@@ -126,6 +144,15 @@ export default function AttendanceCard({ onChange, settings }) {
   const timerEnabled = Boolean(settings?.attendanceTimerEnabled)
   const quickEnabled = Boolean(settings?.attendanceQuickCheckinEnabled)
 
+  // Approved full-day leave covering today (from /attendance/today) — the
+  // start buttons stay visible but greyed, with the reason, on a leave day.
+  const onLeave = state === 'out' ? (session?.onLeave ?? null) : null
+  const leaveNote = onLeave
+    ? `You're on approved ${onLeave.label} today${
+        onLeave.startDate !== onLeave.endDate ? ` (${formatRange(onLeave.startDate, onLeave.endDate)})` : ''
+      } — check-in isn't available on a leave day.`
+    : ''
+
   const statusLabel =
     state === 'running'
       ? 'Checked in'
@@ -133,7 +160,9 @@ export default function AttendanceCard({ onChange, settings }) {
         ? 'Paused'
         : state === 'done'
           ? 'Checked out'
-          : 'Not started'
+          : onLeave
+            ? 'On leave'
+            : 'Not started'
 
   return (
     <section className={`card attendance pop${running ? ' is-active' : ''}`} style={{ '--d': '300ms' }}>
@@ -172,9 +201,25 @@ export default function AttendanceCard({ onChange, settings }) {
             ? 'Timer is running. Pause for breaks, and check out when you leave.'
             : state === 'paused'
               ? 'Paused — resume when you’re back. Paused time isn’t counted.'
-              : methodsKnown && !timerEnabled && !quickEnabled
-                ? 'Attendance marking is currently turned off by your admin.'
-                : "You're not checked in yet. Start your day whenever you're ready."}
+              : onLeave
+                ? leaveNote
+                : methodsKnown && !timerEnabled && !quickEnabled
+                  ? 'Attendance marking is currently turned off by your admin.'
+                  : "You're not checked in yet. Start your day whenever you're ready."}
+        </p>
+      )}
+
+      {/* Where today's check-in came from. Shown to the person themselves so
+          the recording is never a surprise — it's the same IP + city/country
+          their manager sees in the roll-call below. */}
+      {session?.checkInAt && (
+        <p className="attendance__origin">
+          <Icon name="mapPin" size={13} />
+          <span>
+            Checked in at <b>{formatTime(session.checkInAt)}</b>
+            {session.checkInLocation ? <> from {session.checkInLocation}</> : ''}
+            {session.checkInIp && <span className="attendance__ip">{session.checkInIp}</span>}
+          </span>
         </p>
       )}
 
@@ -186,7 +231,9 @@ export default function AttendanceCard({ onChange, settings }) {
             <button
               className="btn-tactile primary block"
               onClick={() => act('day-checkin', 'success')}
-              disabled={busy}
+              disabled={busy || Boolean(onLeave)}
+              aria-disabled={Boolean(onLeave) || undefined}
+              title={onLeave ? leaveNote : undefined}
             >
               <Icon name="check" size={18} />
               Check in for today
@@ -196,7 +243,9 @@ export default function AttendanceCard({ onChange, settings }) {
             <button
               className={`btn-tactile block${quickEnabled ? ' ghost' : ' primary'}`}
               onClick={() => act('check-in', 'success')}
-              disabled={busy}
+              disabled={busy || Boolean(onLeave)}
+              aria-disabled={Boolean(onLeave) || undefined}
+              title={onLeave ? leaveNote : undefined}
             >
               <Icon name="clock" size={18} />
               {quickEnabled ? 'Check in with timer' : 'Check in'}
@@ -232,6 +281,11 @@ export default function AttendanceCard({ onChange, settings }) {
             ? `"Check in for today" marks your whole day present at 8h. Logging in doesn't mark attendance.`
             : `Your attendance history stays saved — marking will be back when your admin turns it on.`}
       </p>
+
+      {/* Manager/admin only. The panel fetches its own data and the SERVER
+          decides whose names it may contain, so rendering it here is a UI
+          convenience, not the access control. */}
+      {(role === 'manager' || role === 'admin') && <TeamCheckins />}
     </section>
   )
 }

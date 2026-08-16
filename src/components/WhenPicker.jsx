@@ -2,8 +2,10 @@ import { useState } from 'react'
 import Icon from './Icon'
 import { formatDate } from '../lib/format'
 import { haptic } from '../lib/haptics'
+import { isWeeklyOff } from '../lib/leave'
 
-/** Fixed working-hours windows per PRESET day part ('HH:MM', 24h). 'custom'
+/** Usual working-hours windows per PRESET day part ('HH:MM', 24h) — what a
+ *  preset PREFILLS into the (always editable) time fields. 'custom'
  *  deliberately has no entry — its whole point is a freely-picked window. */
 export const DAY_PART_TIMES = {
   full: { startTime: '09:00', endTime: '18:00' },
@@ -36,11 +38,15 @@ export const yearEndStr = () => `${new Date().getFullYear()}-12-31`
  * picked days that don't have to be consecutive (the server files one
  * request per consecutive run).
  *
- * Day coverage comes in presets with FIXED windows (Full day / First half /
- * Second half — the times show but can't be edited, since the request's size
- * is fixed too) and 'Custom time', where both time fields unlock and the
- * picked window sets the size hours-based (8h = 1 day). A custom window may
- * span multiple dates — it applies to each one.
+ * Laid out as the request reads: Start date beside Start time, then End
+ * date beside End time (custom-dates mode: the date list, then the two
+ * times). The time fields are ALWAYS editable. Day coverage presets (Full
+ * day / First half / Second half) prefill their usual hours as a starting
+ * point and fix the AMOUNT (1 or 0.5 day per date) — the times then simply
+ * record when the leave starts and ends, and the server accepts any valid
+ * pair for them. 'Custom time' instead sizes the request by the picked
+ * window, hours-based (8h = 1 day); that window may span multiple dates —
+ * it applies to each one.
  *
  * Owns the coupling rules so both modals don't have to: picking a HALF day
  * locks the request to a single date (range mode syncs+disables the end
@@ -70,8 +76,8 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
     const isHalf = part === 'first' || part === 'second'
     onChange({
       dayPart: part,
-      // Presets snap to their fixed window; 'custom' keeps whatever is there
-      // as the starting point for free editing.
+      // Presets prefill their usual hours (still editable afterwards);
+      // 'custom' keeps whatever is there as the starting point.
       ...(DAY_PART_TIMES[part] ?? {}),
       ...(isHalf && !custom && startDate ? { endDate: startDate } : {}),
       // A half day covers one date — in custom mode drop any extra picks.
@@ -86,8 +92,11 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
     markTouched('dates')
   }
 
+  // Sundays are weekly offs — nothing to request (the server refuses too).
+  const draftIsWeeklyOff = isWeeklyOff(draftDate)
+
   function addDraftDate() {
-    if (!draftDate || dates.includes(draftDate) || dates.length >= MAX_CUSTOM_DATES) return
+    if (!draftDate || draftIsWeeklyOff || dates.includes(draftDate) || dates.length >= MAX_CUSTOM_DATES) return
     haptic('light')
     const next = [...dates, draftDate].sort()
     onChange({
@@ -103,6 +112,43 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
   function removeDate(d) {
     onChange({ dates: dates.filter((x) => x !== d) })
   }
+
+  // The two time fields, always editable whatever the day part (presets only
+  // PREFILL them). Rendered beside their date in range mode and side by side
+  // in custom-dates mode, so they're built once here. The shared `time`
+  // error sits under End time, the field that completes the window.
+  const startTimeField = (
+    <div className="field">
+      <label htmlFor={`${idPrefix}-startTime`}>Start time</label>
+      <input
+        id={`${idPrefix}-startTime`}
+        type="time"
+        value={startTime}
+        onChange={(e) => onChange({ startTime: e.target.value })}
+        onBlur={() => markTouched('time')}
+        aria-invalid={Boolean(showError('time'))}
+        required
+      />
+    </div>
+  )
+  const endTimeField = (
+    <div className="field">
+      <label htmlFor={`${idPrefix}-endTime`}>End time</label>
+      <input
+        id={`${idPrefix}-endTime`}
+        type="time"
+        value={endTime}
+        onChange={(e) => onChange({ endTime: e.target.value })}
+        onBlur={() => markTouched('time')}
+        aria-invalid={Boolean(showError('time'))}
+        aria-describedby={showError('time') ? `err-${idPrefix}-time` : undefined}
+        required
+      />
+      {showError('time') && (
+        <p className="field-error" id={`err-${idPrefix}-time`}>{errors.time}</p>
+      )}
+    </div>
+  )
 
   return (
     <div className="when-card">
@@ -150,6 +196,9 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
           </button>
         ))}
       </div>
+      <p className="field-hint">
+        Sundays are weekly offs — they aren’t counted, and a request can’t start or end on one.
+      </p>
 
       {custom ? (
         <div className="field">
@@ -171,12 +220,20 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
               type="button"
               className="btn-tactile ghost sm"
               onClick={addDraftDate}
-              disabled={!draftDate || dates.includes(draftDate) || (half && dates.length >= 1)}
+              disabled={
+                !draftDate || draftIsWeeklyOff || dates.includes(draftDate) || (half && dates.length >= 1)
+              }
+              title={draftIsWeeklyOff ? 'Sundays are weekly offs.' : undefined}
             >
               <Icon name="plus" size={14} />
               Add date
             </button>
           </div>
+          {draftIsWeeklyOff && (
+            <p className="field-error" role="status">
+              {formatDate(draftDate, true)} is a Sunday — a weekly off, so there’s no leave to take.
+            </p>
+          )}
           {dates.length > 0 && (
             <ul className="when-chips">
               {dates.map((d) => (
@@ -204,6 +261,7 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
         </div>
       ) : (
         <>
+          {/* Start date beside start time … */}
           <div className="field-row">
             <div className="field">
               <label htmlFor={`${idPrefix}-startDate`}>Start date</label>
@@ -225,7 +283,11 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
                 <p className="field-error" id={`err-${idPrefix}-start`}>{errors.startDate}</p>
               )}
             </div>
+            {startTimeField}
+          </div>
 
+          {/* … then end date beside end time. */}
+          <div className="field-row">
             <div className="field">
               <label htmlFor={`${idPrefix}-endDate`}>End date</label>
               <input
@@ -246,50 +308,26 @@ export default function WhenPicker({ idPrefix, value, onChange, showError, error
                 <p className="field-error" id={`err-${idPrefix}-end`}>{errors.endDate}</p>
               )}
             </div>
+            {endTimeField}
           </div>
         </>
       )}
 
-      <div className="field-row">
-        <div className="field">
-          <label htmlFor={`${idPrefix}-startTime`}>From</label>
-          <input
-            id={`${idPrefix}-startTime`}
-            type="time"
-            value={startTime}
-            disabled={!customTime}
-            title={!customTime ? 'Fixed window — pick "Custom time" to choose your own hours.' : undefined}
-            onChange={(e) => onChange({ startTime: e.target.value })}
-            onBlur={() => markTouched('time')}
-            aria-invalid={Boolean(showError('time'))}
-            required
-          />
+      {/* Custom-dates mode has no start/end date to pair the times with, so
+          they share one row under the date list. */}
+      {custom && (
+        <div className="field-row">
+          {startTimeField}
+          {endTimeField}
         </div>
-
-        <div className="field">
-          <label htmlFor={`${idPrefix}-endTime`}>To</label>
-          <input
-            id={`${idPrefix}-endTime`}
-            type="time"
-            value={endTime}
-            disabled={!customTime}
-            title={!customTime ? 'Fixed window — pick "Custom time" to choose your own hours.' : undefined}
-            onChange={(e) => onChange({ endTime: e.target.value })}
-            onBlur={() => markTouched('time')}
-            aria-invalid={Boolean(showError('time'))}
-            aria-describedby={showError('time') ? `err-${idPrefix}-time` : undefined}
-            required
-          />
-          {showError('time') && (
-            <p className="field-error" id={`err-${idPrefix}-time`}>{errors.time}</p>
-          )}
-        </div>
-      </div>
+      )}
 
       <p className="field-hint">
         {customTime
-          ? 'Pick any window — those hours count toward your leave, and 8h makes a full day.'
-          : 'Preset windows are fixed. Choose "Custom time" to take just the hours you need.'}
+          ? 'Your hours set the amount — 8h counts as a full day — and this window applies to each date you pick.'
+          : half
+            ? 'A half day always counts as 0.5 day; the times just record when it starts and ends — adjust them if yours differ.'
+            : 'A full day always counts as 1 day per date; the times just record when your leave starts and ends — adjust them if yours differ. Choose "Custom time" to take only the hours you need.'}
       </p>
     </div>
   )

@@ -1,22 +1,27 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import Icon from './Icon'
 import Modal from './Modal'
 import Avatar from './Avatar'
 import WhenPicker, { DAY_PART_TIMES, yearEndStr } from './WhenPicker'
 import { useAuth } from '../context/AuthContext'
 import { leaves as leavesApi } from '../lib/hrms'
-import { perDayFraction, roundDays } from '../lib/leave'
+import { perDayFraction, roundDays, isWeeklyOff, workingDayCount } from '../lib/leave'
 import { formatLeaveAmount } from '../lib/format'
 import { haptic } from '../lib/haptics'
+import { useSessionState } from '../lib/useSessionState'
 import { InlineError } from './States'
 
-/** Inclusive calendar-day count between two YYYY-MM-DD strings (client preview). */
-function dayCount(start, end) {
-  if (!start || !end || end < start) return 0
-  return Math.floor((new Date(end) - new Date(start)) / 86400000) + 1
-}
-
 const MAX_REASON = 500
+const WEEKLY_OFF_ERROR = 'Sundays are weekly offs — pick a working day.'
+
+const BLANK_WHEN = {
+  mode: 'range',
+  startDate: '',
+  endDate: '',
+  dates: [],
+  dayPart: 'full',
+  ...DAY_PART_TIMES.full,
+}
 
 /**
  * Modal form to request working from home for a date range.
@@ -28,26 +33,33 @@ const MAX_REASON = 500
  */
 export default function ApplyWfhModal({ onClose, onCreated }) {
   const { user } = useAuth()
-  const [when, setWhen] = useState({
-    mode: 'range',
-    startDate: '',
-    endDate: '',
-    dates: [],
-    dayPart: 'full',
-    ...DAY_PART_TIMES.full,
-  })
-  const [reason, setReason] = useState('')
+  // What the person picked/typed survives a page refresh (per tab, per user —
+  // lib/useSessionState.js); closing on purpose or submitting clears it.
+  const [when, setWhen] = useSessionState('draft.applyWfh.when', BLANK_WHEN)
+  const [reason, setReason] = useSessionState('draft.applyWfh.reason', '')
   const [touched, setTouched] = useState({})
   const [submitError, setSubmitError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  const clearDraft = useCallback(() => {
+    setWhen(BLANK_WHEN)
+    setReason('')
+  }, [setWhen, setReason])
+  // Stable identity: Modal re-runs its focus/keyboard effect when onClose
+  // changes (see ApplyLeaveModal for the full note).
+  const close = useCallback(() => {
+    clearDraft()
+    onClose()
+  }, [clearDraft, onClose])
+
   const { mode, startDate, endDate, dates, dayPart, startTime, endTime } = when
   const custom = mode === 'custom'
-  // Same hours-based sizing as leave (8h = 1 day) — WFH just has no balance.
+  // Same hours-based sizing as leave (8h = 1 day, working days only — Sundays
+  // are weekly offs) — WFH just has no balance.
   const perDay = perDayFraction(dayPart, startTime, endTime)
   const days = custom
     ? roundDays(dates.length * perDay)
-    : startDate ? roundDays(dayCount(startDate, endDate || startDate) * perDay) : 0
+    : startDate ? roundDays(workingDayCount(startDate, endDate || startDate) * perDay) : 0
 
   const errors = useMemo(() => {
     const e = {}
@@ -55,14 +67,18 @@ export default function ApplyWfhModal({ onClose, onCreated }) {
     if (custom) {
       if (dates.length === 0) e.dates = 'Add at least one date.'
       else if (dates.some((d) => d > yearEnd)) e.dates = 'Dates must fall within the current year.'
+      else if (dates.some(isWeeklyOff)) e.dates = 'Sundays are weekly offs — remove them.'
     } else {
       if (!startDate) e.startDate = 'Pick a start date.'
       else if (startDate > yearEnd) e.startDate = 'Dates must fall within the current year.'
+      else if (isWeeklyOff(startDate)) e.startDate = WEEKLY_OFF_ERROR
       if (!endDate) e.endDate = 'Pick an end date.'
       else if (startDate && endDate < startDate) {
         e.endDate = 'The end date can’t be before the start date.'
       } else if (endDate > yearEnd) {
         e.endDate = 'Dates must fall within the current year.'
+      } else if (isWeeklyOff(endDate)) {
+        e.endDate = WEEKLY_OFF_ERROR
       }
     }
     if (!startTime || !endTime) e.time = 'Pick the working hours.'
@@ -109,7 +125,7 @@ export default function ApplyWfhModal({ onClose, onCreated }) {
       })
       haptic('success')
       onCreated?.(wfh)
-      onClose()
+      close()
     } catch (err) {
       setSubmitError(err.message)
       setSubmitting(false)
@@ -117,10 +133,10 @@ export default function ApplyWfhModal({ onClose, onCreated }) {
   }
 
   return (
-    <Modal titleId="apply-wfh-title" onClose={onClose}>
+    <Modal titleId="apply-wfh-title" onClose={close}>
       <div className="modal__head">
         <h2 id="apply-wfh-title">Request work from home</h2>
-        <button className="icon-btn sm" onClick={onClose} aria-label="Close dialog">
+        <button className="icon-btn sm" onClick={close} aria-label="Close dialog">
           <Icon name="x" size={16} />
         </button>
       </div>
@@ -176,7 +192,7 @@ export default function ApplyWfhModal({ onClose, onCreated }) {
         )}
 
         <div className="modal__actions">
-          <button type="button" className="btn-tactile ghost" onClick={onClose} disabled={submitting}>
+          <button type="button" className="btn-tactile ghost" onClick={close} disabled={submitting}>
             Cancel
           </button>
           <button type="submit" className="btn-tactile primary" disabled={submitting}>

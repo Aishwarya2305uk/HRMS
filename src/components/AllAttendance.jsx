@@ -1,12 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { formatDate, formatHours, formatTime } from '../lib/format'
 import { haptic } from '../lib/haptics'
+import { useSessionState } from '../lib/useSessionState'
 import { EmptyState } from './States'
 
 /** 'YYYY-MM' for a Date (UTC month, to match the server's day keys). */
 function monthKey(date) {
   return date.toISOString().slice(0, 7)
 }
+/** Today's 'YYYY-MM-DD' — UTC, the same day key the server stamps sessions with. */
+const todayKey = () => new Date().toISOString().slice(0, 10)
 function monthLabel(key) {
   const [y, m] = key.split('-').map(Number)
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, {
@@ -20,19 +23,28 @@ const FILTER_LABELS = { all: 'All', present: 'Present', leave: 'Auto-leave', che
 /**
  * Admin company-wide attendance view: every employee's daily worked hours
  * and present/leave verdict for the selected month. The Check-in filter is
- * the arrival lens: who has checked in (timer or one-tap) and at what time,
- * including today's still-running sessions that have no verdict yet. The
- * header's date picker narrows every card and the table to one specific
- * day (with check-in times shown); clearing it restores the month view.
+ * the arrival lens for ONE day — today by default: who has checked in so
+ * far (timer or one-tap) and at what time, earliest first, including
+ * still-running sessions that have no verdict yet. The header's date picker
+ * narrows every card and the table to one specific day instead (with
+ * check-in times shown); clearing it restores the month view (and Check-in
+ * back to today).
+ *
+ * Whenever check-in times show, so does a "From" column: where the check-in
+ * came from, as an IP address and the city/country that IP resolves to. That
+ * lookup is city-level at best and wrong behind a VPN or mobile network — the
+ * footnote under the table says so, since a location column reads as harder
+ * evidence than it is.
  * @param {Array}  props.rows            from /attendance/all
  * @param {string} [props.searchQuery]   filters rows by employee name
  * @param {string} props.month           'YYYY-MM' currently selected
  * @param {Function} props.onMonthChange (nextMonth: string) => void
  */
 export default function AllAttendance({ rows, searchQuery = '', month, onMonthChange }) {
-  const [filter, setFilter] = useState('all')
+  // Both survive a refresh (per tab) so the admin comes back to the same lens.
+  const [filter, setFilter] = useSessionState('ui.allAttendance.filter', 'all')
   // '' = whole month; a 'YYYY-MM-DD' narrows every card and the table to that day.
-  const [day, setDay] = useState('')
+  const [day, setDay] = useSessionState('ui.allAttendance.day', '')
 
   function shiftMonth(delta) {
     haptic('light')
@@ -61,21 +73,22 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
       })
   }, [rows, activeDay])
   const rowsWithStatus = useMemo(() => dayRows.filter((r) => r.dayStatus), [dayRows])
-  // Everyone who checked in (timer or one-tap), including today's still-running
-  // sessions — those have no verdict yet, so the status filters can't show them.
+  // Check-in is a one-day arrival log: the picked date if there is one,
+  // otherwise TODAY — never the whole month. Everyone who checked in that day
+  // (timer or one-tap), earliest first, including still-running sessions,
+  // which have no verdict yet and so never show under the status filters.
+  const today = todayKey()
+  const checkInDay = activeDay || today
   const checkedIn = useMemo(
     () =>
       dayRows
-        .filter((r) => r.checkInAt)
-        .sort((a, b) =>
-          a.date === b.date
-            ? new Date(a.checkInAt) - new Date(b.checkInAt)
-            : a.date < b.date
-              ? 1
-              : -1,
-        ),
-    [dayRows],
+        .filter((r) => r.checkInAt && r.date === checkInDay)
+        .sort((a, b) => new Date(a.checkInAt) - new Date(b.checkInAt)),
+    [dayRows, checkInDay],
   )
+  // Browsing a past/future month with no date picked: today isn't in `rows`,
+  // so Check-in has nothing to show — say why instead of "no check-ins yet".
+  const checkInDayOutOfView = !activeDay && !today.startsWith(month)
   const filtered = useMemo(() => {
     // With a specific day selected, "All" widens to every session that day —
     // in-progress ones included — instead of only days that already have a
@@ -161,7 +174,9 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
               : activeDay
                 ? 'Nothing on this date'
                 : filter === 'checkin'
-                  ? 'No check-ins yet'
+                  ? checkInDayOutOfView
+                    ? 'Check-in shows today'
+                    : 'No check-ins yet today'
                   : 'No attendance recorded yet'
           }
           message={
@@ -170,7 +185,9 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
               : activeDay
                 ? `No attendance was recorded on ${formatDate(activeDay, true)}. Clear the date to see the whole month.`
                 : filter === 'checkin'
-                  ? 'Check-ins will appear here the moment someone starts their day this month.'
+                  ? checkInDayOutOfView
+                    ? `Today (${formatDate(today, true)}) isn't in ${monthLabel(month)}. Go to the current month, or pick a date above to see who checked in on a day in this month.`
+                    : 'People will appear here the moment they check in today.'
                   : 'Company-wide attendance will appear here once people finish a day.'
           }
         />
@@ -183,6 +200,7 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
                 <th>Department</th>
                 <th>Date</th>
                 {showCheckIn && <th>Check-in</th>}
+                {showCheckIn && <th>From</th>}
                 <th>Worked</th>
                 <th>Status</th>
               </tr>
@@ -199,6 +217,12 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
                   <td>{r.department || '—'}</td>
                   <td>{formatDate(r.date, true)}</td>
                   {showCheckIn && <td>{formatTime(r.checkInAt)}</td>}
+                  {showCheckIn && (
+                    <td>
+                      {r.checkInLocation || (r.checkInIp ? 'Unknown location' : '—')}
+                      {r.checkInIp && <em className="cell-sub">{r.checkInIp}</em>}
+                    </td>
+                  )}
                   <td>{r.workedSeconds ? formatHours(r.workedSeconds) : '—'}</td>
                   <td>
                     {r.status === 'active' ? (
@@ -214,6 +238,13 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
             </tbody>
           </table>
         </div>
+      )}
+
+      {showCheckIn && filtered.length > 0 && (
+        <p className="attendance__note">
+          "From" is estimated from the check-in IP address — approximate, and wrong on a VPN or
+          mobile network.
+        </p>
       )}
     </section>
   )

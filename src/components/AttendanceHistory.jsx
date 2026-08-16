@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { formatDate, formatTime, formatHours } from '../lib/format'
 import { leaves as leavesApi } from '../lib/hrms'
 import { haptic } from '../lib/haptics'
+import { useSessionState } from '../lib/useSessionState'
 import { EmptyState, InlineError } from './States'
 
 /**
@@ -17,8 +18,10 @@ import { EmptyState, InlineError } from './States'
  * @param {Function} [props.onRegularized] (createdRequest) => void
  */
 export default function AttendanceHistory({ rows, regularize = [], onRegularized }) {
-  const [requestingDate, setRequestingDate] = useState(null)
-  const [reason, setReason] = useState('')
+  // An open "Request fix" row and its half-typed reason survive a page refresh
+  // (per tab, per user — lib/useSessionState.js); submitting clears both.
+  const [requestingDate, setRequestingDate] = useSessionState('draft.regularize.date', null)
+  const [reason, setReason] = useSessionState('draft.regularize.reason', '')
   const [busy, setBusy] = useState(false)
   const [rowError, setRowError] = useState({ date: null, message: '' })
 

@@ -12,6 +12,7 @@ import { employees as employeesApi, employmentTypes as employmentTypesApi } from
 
 const PHONE_RE = /^[0-9+\-\s()]{7,20}$/
 const AADHAR_RE = /^\d{12}$/
+const MAX_NAME_LENGTH = 80 // mirrors the server cap in routes/employees.js
 const MAX_IMAGE_DIM = 480
 const MAX_SOURCE_IMAGE_BYTES = 8_000_000 // reject absurd source files before we even try to read them
 
@@ -63,15 +64,21 @@ function fileToCompressedDataUrl(file) {
  * @param {object}   props.profile               result of employees.profile(id) (toProfileJSON() + managerName + employmentTypeName)
  * @param {boolean}  props.isSelf                true when viewing your own profile
  * @param {boolean}  props.canEdit               true for self, or an admin viewing someone else — gates the personal-details fields
+ * @param {boolean}  props.canEditName           admin-only, even on your own profile — the display name is HR record data (an admin entered it when creating the account); adds a Full name field to the edit form
  * @param {boolean}  props.canEditEmploymentType admin-only, even on your own profile — employment type is HR classification, not a personal detail
  * @param {Function} props.onSaved               (updatedProfile) => void
  * @param {Function} [props.onBack]               present only when viewing someone else's profile
  */
-export default function Profile({ profile, isSelf, canEdit, canEditEmploymentType, onSaved, onBack }) {
+export default function Profile({ profile, isSelf, canEdit, canEditName, canEditEmploymentType, onSaved, onBack }) {
   const toast = useToast()
-  const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState(null)
-  const [photoPreview, setPhotoPreview] = useState('')
+  // A half-edited form survives a page refresh (per tab, per user — see
+  // lib/useSessionState.js), remembered per PERSON being edited so an admin
+  // browsing People never sees one employee's draft on another's page.
+  const draftKey = `draft.profile.${profile?.id ?? 'none'}`
+  const [editingFlag, setEditing] = useSessionState(`${draftKey}.editing`, false)
+  const [form, setForm] = useSessionState(`${draftKey}.form`, null)
+  // Both halves must have come back for the form to be shown.
+  const editing = editingFlag && form !== null
   const [revealAadhar, setRevealAadhar] = useState(false)
   const [touched, setTouched] = useState({})
   const [submitError, setSubmitError] = useState('')
@@ -91,10 +98,10 @@ export default function Profile({ profile, isSelf, canEdit, canEditEmploymentTyp
   const [savingEmploymentType, setSavingEmploymentType] = useState(false)
 
   // Switching to a different person (admin browsing People) should never
-  // leave a stale edit form or a revealed Aadhar number on screen.
+  // leave a revealed Aadhar number, a stale error or a half-done employment
+  // type change on screen. The edit form itself is keyed per person above, so
+  // it can't leak between people and needs no reset here.
   useEffect(() => {
-    setEditing(false)
-    setForm(null)
     setRevealAadhar(false)
     setSubmitError('')
     setTouched({})
@@ -104,6 +111,7 @@ export default function Profile({ profile, isSelf, canEdit, canEditEmploymentTyp
 
   function startEdit() {
     setForm({
+      name: profile.name || '',
       phone: profile.phone || '',
       dob: profile.dob ? profile.dob.slice(0, 10) : '',
       address: profile.address || '',
@@ -111,7 +119,6 @@ export default function Profile({ profile, isSelf, canEdit, canEditEmploymentTyp
       aadharNumber: profile.aadharNumber || '',
       photoUrl: profile.photoUrl || '',
     })
-    setPhotoPreview(profile.photoUrl || '')
     setTouched({})
     setSubmitError('')
     setEditing(true)
@@ -145,7 +152,6 @@ export default function Profile({ profile, isSelf, canEdit, canEditEmploymentTyp
     try {
       const dataUrl = await fileToCompressedDataUrl(file)
       update('photoUrl', dataUrl)
-      setPhotoPreview(dataUrl)
     } catch (err) {
       toast.error(err.message)
     }
@@ -154,6 +160,11 @@ export default function Profile({ profile, isSelf, canEdit, canEditEmploymentTyp
   const errors = useMemo(() => {
     if (!form) return {}
     const e = {}
+    if (canEditName) {
+      const name = form.name.trim()
+      if (!name) e.name = 'Enter a full name.'
+      else if (name.length > MAX_NAME_LENGTH) e.name = `Keep the name under ${MAX_NAME_LENGTH} characters.`
+    }
     if (form.phone.trim() && !PHONE_RE.test(form.phone.trim())) {
       e.phone = 'Enter a valid phone number.'
     }
@@ -167,7 +178,7 @@ export default function Profile({ profile, isSelf, canEdit, canEditEmploymentTyp
     if (form.address.length > 300) e.address = 'Keep the address under 300 characters.'
     if (form.education.length > 500) e.education = 'Keep this under 500 characters.'
     return e
-  }, [form])
+  }, [form, canEditName])
 
   // Portal wraps us in <Section query={profileQ}>, which normally only ever
   // mounts this component once data has arrived — except for one transitional
@@ -198,6 +209,10 @@ export default function Profile({ profile, isSelf, canEdit, canEditEmploymentTyp
       // Only re-upload the photo when it actually changed — it's the one
       // field big enough to matter for a save that touched nothing else.
       if (form.photoUrl !== (profile.photoUrl || '')) payload.photoUrl = form.photoUrl
+      // Name is admin-only server-side, so it's only ever sent when this
+      // admin actually changed it — never as an unchanged passenger on a
+      // regular save (which the server would still accept, but needlessly).
+      if (canEditName && form.name.trim() !== profile.name) payload.name = form.name.trim()
 
       const updated = await employeesApi.updateProfile(profile.id, payload)
       haptic('success')
@@ -252,7 +267,12 @@ export default function Profile({ profile, isSelf, canEdit, canEditEmploymentTyp
     }
   }
 
-  const displayPhoto = editing ? photoPreview : profile.photoUrl
+  // While editing, the preview IS the form's photo (a freshly picked file
+  // becomes a data URL there) — no separate preview state to fall out of step.
+  const displayPhoto = editing ? form.photoUrl : profile.photoUrl
+  // Same live-preview treatment the photo gets: while an admin types a new
+  // name, the hero heading and avatar initials follow along.
+  const displayName = editing && canEditName ? form.name.trim() || profile.name : profile.name
 
   return (
     <div className="profile-page">
@@ -265,7 +285,7 @@ export default function Profile({ profile, isSelf, canEdit, canEditEmploymentTyp
 
       <section className="card pop profile-hero" style={{ '--d': '60ms' }}>
         <div className="profile-hero__photo">
-          <Avatar name={profile.name} photoUrl={displayPhoto} size="xl" />
+          <Avatar name={displayName} photoUrl={displayPhoto} size="xl" />
           {editing && (
             <>
               <button
@@ -290,7 +310,7 @@ export default function Profile({ profile, isSelf, canEdit, canEditEmploymentTyp
         </div>
 
         <div className="profile-hero__text">
-          <h2>{profile.name}</h2>
+          <h2>{displayName}</h2>
           <div className="profile-hero__tags">
             <span className={`role-pill ${profile.role}`}>{profile.role}</span>
             {profile.designation && <span>{profile.designation}</span>}
@@ -322,6 +342,27 @@ export default function Profile({ profile, isSelf, canEdit, canEditEmploymentTyp
 
       {editing ? (
         <form className="card pop profile-form" style={{ '--d': '120ms' }} onSubmit={handleSubmit} noValidate>
+          {canEditName && (
+            <div className="field">
+              <label htmlFor="pf-name">Full name</label>
+              <input
+                id="pf-name"
+                value={form.name}
+                maxLength={MAX_NAME_LENGTH}
+                autoComplete="off"
+                onChange={(e) => update('name', e.target.value)}
+                onBlur={() => markTouched('name')}
+                aria-invalid={Boolean(showError('name'))}
+                placeholder="Jane Doe"
+              />
+              {showError('name') ? (
+                <p className="field-error">{errors.name}</p>
+              ) : (
+                <p className="field-hint">Shown everywhere across Orbit — the header, People, leaves and attendance.</p>
+              )}
+            </div>
+          )}
+
           <div className="field-row">
             <div className="field">
               <label htmlFor="pf-phone">Phone number</label>
