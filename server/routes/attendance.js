@@ -14,6 +14,7 @@ import {
 } from '../services/attendance.js'
 import { approvedFullDayLeaveOn, approvedFullDayLeavesOn } from '../services/leavePolicy.js'
 import { captureCheckInOrigin } from '../services/geoip.js'
+import { recordActivity } from '../services/activityLog.js'
 import { descendantIds } from '../services/hierarchy.js'
 import { dayKey } from '../utils/time.js'
 
@@ -216,6 +217,13 @@ router.post('/day-checkin', async (req, res, next) => {
       ],
     )
     if (!rows[0]) throw httpError(409, 'Attendance for today is already recorded.')
+    recordActivity(req, 'attendance.checked_in', {
+      targetType: 'attendance',
+      targetName: rows[0].date,
+      description:
+        `${req.user.name} checked in for the day (one-tap, marked present)` +
+        `${origin.city ? ` from ${origin.city}` : ''}.`,
+    })
     res.json(liveSessionJSON(rows[0]))
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })
@@ -249,7 +257,29 @@ router.post('/:action', async (req, res, next) => {
       origin = await captureCheckInOrigin(req)
     }
     const session = await appendEvent(req.user.id, type, origin)
-    res.json(liveSessionJSON(session))
+    // Only the two ends of the day are activities; pause/resume would bury the
+    // trail in noise without telling an HR admin anything they'd act on.
+    const live = liveSessionJSON(session)
+    if (type === 'check_in') {
+      recordActivity(req, 'attendance.checked_in', {
+        targetType: 'attendance',
+        targetName: live.date,
+        description:
+          `${req.user.name} started their day on the check-in timer` +
+          `${origin?.city ? ` from ${origin.city}` : ''}.`,
+      })
+    } else if (type === 'check_out') {
+      const hours = Math.floor(live.workedSeconds / 3600)
+      const mins = Math.floor((live.workedSeconds % 3600) / 60)
+      recordActivity(req, 'attendance.checked_out', {
+        targetType: 'attendance',
+        targetName: live.date,
+        description:
+          `${req.user.name} checked out after ${hours}h ${String(mins).padStart(2, '0')}m ` +
+          `(${live.dayStatus === 'present' ? 'marked present' : 'short day — auto-leave'}).`,
+      })
+    }
+    res.json(live)
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })
     next(err)

@@ -16,6 +16,7 @@ import {
 } from '../store.js'
 import { requireAuth } from '../middleware/auth.js'
 import { resolveLeaveBalances } from '../services/leavePolicy.js'
+import { recordActivity } from '../services/activityLog.js'
 import { loginLimiter, inviteLimiter, forgotLimiter } from '../middleware/security.js'
 import { passwordPolicyError } from '../utils/password.js'
 import { sendPasswordResetEmail, appOrigin } from '../services/mailer.js'
@@ -80,7 +81,24 @@ async function verifyCaptcha(token, remoteIp) {
         // A spent or expired token is the user's page being stale, not a
         // failed challenge — worth its own message so they reload instead of
         // retrying the same dead token.
-        return codes.includes('timeout-or-duplicate') ? 'stale' : 'rejected'
+        if (codes.includes('timeout-or-duplicate')) return 'stale'
+        // These two mean the KEYS are wrong, which no amount of retrying will
+        // fix — every login fails forever until someone changes an env var:
+        //   invalid-input-secret   — TURNSTILE_SECRET_KEY isn't a valid secret
+        //   invalid-input-response — the token doesn't belong to this secret,
+        //     i.e. the frontend's site key and this secret are from different
+        //     widgets (the classic case: a TEST site key in the frontend build
+        //     against a REAL secret here, or vice versa).
+        if (codes.includes('invalid-input-secret') || codes.includes('invalid-input-response')) {
+          console.error(
+            '[auth/login] Turnstile KEY MISMATCH — TURNSTILE_SECRET_KEY does not pair with the ' +
+              "site key this frontend was built with. Both must come from the SAME Cloudflare " +
+              'widget (or both be the matching test pair 1x…AA / 1x…AA). Logins cannot succeed ' +
+              'until this is fixed.',
+          )
+          return 'misconfigured'
+        }
+        return 'rejected'
       }
       return 'ok'
     } catch (err) {
@@ -94,6 +112,12 @@ async function verifyCaptcha(token, remoteIp) {
 const CAPTCHA_ERRORS = {
   missing: 'The human-verification check hasn’t finished. Wait for it to complete, then sign in.',
   stale: 'That verification had already been used. Please reload the page and sign in again.',
+  // Deliberately does NOT say "try again": retrying is futile, and telling
+  // someone to retry a server misconfiguration wastes their time and hides
+  // the outage. No key material or internals in the copy — the detail is in
+  // the server log for whoever can act on it.
+  misconfigured:
+    'Sign-in verification isn’t configured correctly on this site. Please contact your administrator.',
   rejected: 'CAPTCHA verification failed. Please try again.',
   unreachable: "We couldn't reach the verification service. Please try again in a moment.",
 }
@@ -137,17 +161,46 @@ router.post('/login', loginLimiter, async (req, res) => {
     }
     // Same generic message whether the email or password is wrong.
     if (!user || !(await comparePassword(password, user.passwordHash))) {
+      // Recorded even though the response stays deliberately vague: a run of
+      // failed sign-ins against one address is exactly what an admin reviewing
+      // the audit trail needs to see. The entry names only the address that
+      // was TRIED, which the person at the keyboard already typed.
+      recordActivity(req, 'auth.login_failed', {
+        status: 'failed',
+        actor: user ? { id: user.id, name: user.name, email: user.email, role: user.role } : { name: String(email).trim().slice(0, 160) },
+        targetType: 'account',
+        targetName: String(email).trim().slice(0, 200),
+        description: `Failed sign-in attempt for ${String(email).trim()}.`,
+      })
       return res.status(401).json({ error: 'Invalid email or password.' })
     }
 
     // Balances the client shows must be the EFFECTIVE ones — day/month-period
     // leave types compute their remaining per period rather than storing it.
     await resolveLeaveBalances(user)
+    recordActivity(req, 'auth.login', {
+      actor: user,
+      description: `${user.name} signed in.`,
+    })
     return res.json({ token: signToken(user), user: safeUserJSON(user) })
   } catch (err) {
     console.error('[auth/login]', err)
     return res.status(500).json({ error: 'Something went wrong. Please try again.' })
   }
+})
+
+/**
+ * POST /api/auth/logout — records the sign-out in the activity trail.
+ *
+ * Sessions are stateless JWTs, so there is nothing to invalidate server-side;
+ * the client drops the token either way and this endpoint failing must never
+ * keep someone signed in. It exists purely so "signed out" appears in the
+ * audit trail next to "signed in" — without it the trail shows people arriving
+ * and never leaving.
+ */
+router.post('/logout', requireAuth, (req, res) => {
+  recordActivity(req, 'auth.logout', { description: `${req.user.name} signed out.` })
+  res.json({ ok: true })
 })
 
 /** GET /api/auth/me — resolve the current user from the token (session check). */
@@ -247,6 +300,13 @@ router.post('/register', inviteLimiter, async (req, res, next) => {
 
     const activated = mapUser(rows[0])
     await resolveLeaveBalances(activated)
+    recordActivity(req, 'auth.registered', {
+      actor: activated,
+      targetType: 'employee',
+      targetId: activated.id,
+      targetName: activated.name,
+      description: `${activated.name} activated their account from an invite link.`,
+    })
     res.status(201).json({ token: signToken(activated), user: safeUserJSON(activated) })
   } catch (err) {
     next(err)
@@ -286,6 +346,13 @@ router.post('/forgot', forgotLimiter, async (req, res, next) => {
         to: user.email,
         name: user.name,
         resetUrl: `${appOrigin(req)}/reset-password?token=${encodeURIComponent(reset.token)}`,
+      })
+      // Inside the `if`, so the trail can't be used as the enumeration oracle
+      // the response itself is so careful not to be: no row is written for an
+      // address that doesn't belong to an active account.
+      recordActivity(req, 'auth.password_reset_requested', {
+        actor: user,
+        description: `${user.name} requested a password reset link.`,
       })
     }
 
@@ -349,6 +416,10 @@ router.post('/reset', inviteLimiter, async (req, res, next) => {
 
     const updated = mapUser(rows[0])
     await resolveLeaveBalances(updated)
+    recordActivity(req, 'auth.password_reset', {
+      actor: updated,
+      description: `${updated.name} set a new password using a reset link.`,
+    })
     res.json({ token: signToken(updated), user: safeUserJSON(updated) })
   } catch (err) {
     next(err)

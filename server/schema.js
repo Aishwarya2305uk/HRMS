@@ -209,6 +209,42 @@ create table request_logs (
 );
 create index request_logs_ts_idx on request_logs (ts desc);
 
+-- Append-only record of what PEOPLE did, as opposed to request_logs above,
+-- which records what the SYSTEM did. One row per meaningful HRMS action
+-- ("Priya approved Rahul's casual leave"), never one per API call — a single
+-- action often produces several requests, and only one of them is the action.
+--
+-- The description column is stored PRE-RENDERED rather than composed at read
+-- time on purpose: an audit trail has to stay truthful after what it refers to
+-- changes. If an employee is renamed or an announcement deleted, the entry
+-- must still say what was true at the time; a join would rewrite history
+-- (or lose the row entirely). The structured columns beside it exist for
+-- filtering, not for rebuilding the sentence.
+--
+-- Same append-only discipline as request_logs: no updated_at, no trigger, and
+-- no write API — rows only leave via the retention sweep.
+create table activity_logs (
+  id uuid primary key default gen_random_uuid(),
+  ts timestamptz not null default now(),
+  -- Nulled rather than cascaded when the person is deleted: the fact that the
+  -- action happened outlives the account, and actor_name/email preserve who.
+  actor_id uuid references users(id) on delete set null,
+  actor_name varchar(160) not null default '',
+  actor_email varchar(254),
+  actor_role varchar(20),
+  action varchar(60) not null,
+  category varchar(40) not null,
+  description varchar(500) not null,
+  target_type varchar(40) not null default '',
+  target_id uuid,
+  target_name varchar(200) not null default '',
+  status varchar(10) not null default 'success' check (status in ('success','failed')),
+  ip varchar(64)
+);
+create index activity_logs_ts_idx on activity_logs (ts desc);
+create index activity_logs_category_idx on activity_logs (category, ts desc);
+create index activity_logs_actor_idx on activity_logs (actor_id, ts desc);
+
 -- updated_at triggers on every table.
 do $$
 declare t text;
@@ -234,6 +270,7 @@ alter table announcements enable row level security;
 alter table documents enable row level security;
 alter table app_settings enable row level security;
 alter table request_logs enable row level security;
+alter table activity_logs enable row level security;
 `
 
 /**
@@ -325,6 +362,35 @@ do $$ begin
     alter table leave_types add constraint leave_types_period_check check (period in ('day','month','year'));
   end if;
 end $$;
+
+-- Activity Logs (2026-08): the human-readable audit trail that sits beside
+-- request_logs. Same shape and rationale as the SCHEMA_SQL definition above.
+create table if not exists activity_logs (
+  id uuid primary key default gen_random_uuid(),
+  ts timestamptz not null default now(),
+  actor_id uuid references users(id) on delete set null,
+  actor_name varchar(160) not null default '',
+  actor_email varchar(254),
+  actor_role varchar(20),
+  action varchar(60) not null,
+  category varchar(40) not null,
+  description varchar(500) not null,
+  target_type varchar(40) not null default '',
+  target_id uuid,
+  target_name varchar(200) not null default '',
+  status varchar(10) not null default 'success',
+  ip varchar(64)
+);
+create index if not exists activity_logs_ts_idx on activity_logs (ts desc);
+create index if not exists activity_logs_category_idx on activity_logs (category, ts desc);
+create index if not exists activity_logs_actor_idx on activity_logs (actor_id, ts desc);
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'activity_logs_status_check') then
+    alter table activity_logs add constraint activity_logs_status_check
+      check (status in ('success','failed'));
+  end if;
+end $$;
+alter table activity_logs enable row level security;
 
 -- Check-in origin (2026-08): every check-in records the IP it arrived from
 -- and the coarse city/country that IP resolves to, for the admin/manager

@@ -11,6 +11,7 @@ import {
   mapUser,
 } from '../store.js'
 import { finalizeStaleSessions } from '../services/attendance.js'
+import { recordActivity } from '../services/activityLog.js'
 import {
   perDayFraction,
   periodOverdraft,
@@ -28,6 +29,31 @@ import {
 
 const router = Router()
 router.use(requireAuth)
+
+/**
+ * How a request reads inside an activity-log sentence: "casual leave",
+ * "work-from-home", "attendance fix". Falls back to the raw type key if a
+ * leave type has since been renamed away — the trail should still say
+ * something, never "undefined".
+ */
+function requestNoun(kind, typeLabel, typeKey) {
+  if (kind === 'wfh') return 'work-from-home'
+  if (kind === 'regularize') return 'attendance fix'
+  return typeLabel || typeKey || 'leave'
+}
+
+/** "12 Aug 2026", or "12–14 Aug 2026" for a range. 'en-GB' is pinned so the
+ *  wording doesn't drift with the server's locale. */
+function windowText(startKey, endKey) {
+  const fmt = (k) =>
+    new Date(`${k}T00:00:00.000Z`).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'UTC',
+    })
+  return startKey === endKey ? fmt(startKey) : `${fmt(startKey)} – ${fmt(endKey)}`
+}
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/
 
@@ -289,6 +315,19 @@ router.post('/', async (req, res, next) => {
         }),
       )
     }
+    // ONE activity for the action, even when custom-dates mode split it into
+    // several rows — the person applied once, and that's what the audit trail
+    // should say. The API shape below is unchanged.
+    recordActivity(req, 'leave.applied', {
+      targetType: 'leave',
+      targetId: created[0]?.id,
+      targetName: leaveType.label,
+      description:
+        `${req.user.name} applied for ${describeAmount(totalDays)} of ${leaveType.label} ` +
+        `(${windowText(allDates[0], allDates[allDates.length - 1])})` +
+        `${created.length > 1 ? `, across ${created.length} separate blocks` : ''}.`,
+    })
+
     // Range mode keeps its original single-object shape; custom mode returns
     // the whole batch (one entry per contiguous run).
     res.status(201).json(custom ? created : created[0])
@@ -334,6 +373,16 @@ router.post('/wfh', async (req, res, next) => {
         }),
       )
     }
+
+    const wfhDays = round4(created.reduce((sum, r) => sum + Number(r.days), 0))
+    recordActivity(req, 'wfh.applied', {
+      targetType: 'wfh',
+      targetId: created[0]?.id,
+      description:
+        `${req.user.name} requested to work from home for ${describeAmount(wfhDays)} ` +
+        `(${windowText(dayKey(created[0].startDate), dayKey(created[created.length - 1].endDate))}).`,
+    })
+
     res.status(201).json(custom ? created : created[0])
   } catch (err) {
     next(err)
@@ -409,6 +458,13 @@ router.post('/regularize', async (req, res, next) => {
       endTime: '',
       days: 1,
       reason,
+    })
+    recordActivity(req, 'regularize.applied', {
+      targetType: 'regularize',
+      targetId: created.id,
+      description:
+        `${req.user.name} asked for ${windowText(dateKey, dateKey)} to be counted as present ` +
+        `instead of auto-leave.`,
     })
     res.status(201).json(created)
   } catch (err) {
@@ -578,7 +634,17 @@ router.post('/:id/approve', async (req, res, next) => {
     })
 
     if (result.error) return res.status(result.status).json({ error: result.error })
-    res.json(await shapedLeave(result.id))
+    const approved = await shapedLeave(result.id)
+    recordActivity(req, 'leave.approved', {
+      targetType: approved.kind,
+      targetId: approved.id,
+      targetName: approved.employeeName,
+      description:
+        `${req.user.name} approved ${approved.employeeName}'s ` +
+        `${requestNoun(approved.kind, (await cachedLeaveTypes()).find((t) => t.key === approved.type)?.label, approved.type)} ` +
+        `request (${windowText(dayKey(approved.startDate), dayKey(approved.endDate))}).`,
+    })
+    res.json(approved)
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })
     next(err)
@@ -604,7 +670,19 @@ router.post('/:id/reject', async (req, res, next) => {
       }
       return rows[0]
     })
-    res.json(await shapedLeave(decided.id))
+    const rejected = await shapedLeave(decided.id)
+    const comment = String(req.body?.comment || '').trim()
+    recordActivity(req, 'leave.rejected', {
+      targetType: rejected.kind,
+      targetId: rejected.id,
+      targetName: rejected.employeeName,
+      description:
+        `${req.user.name} rejected ${rejected.employeeName}'s ` +
+        `${requestNoun(rejected.kind, (await cachedLeaveTypes()).find((t) => t.key === rejected.type)?.label, rejected.type)} ` +
+        `request (${windowText(dayKey(rejected.startDate), dayKey(rejected.endDate))})` +
+        `${comment ? ` — "${comment}"` : ''}.`,
+    })
+    res.json(rejected)
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })
     next(err)
@@ -641,6 +719,14 @@ router.delete('/:id', async (req, res, next) => {
       if (!rowCount) {
         return res.status(409).json({ error: 'This request was just decided — refresh to see its status.' })
       }
+      recordActivity(req, 'leave.cancelled', {
+        targetType: leave.kind,
+        targetId: leave.id,
+        description:
+          `${req.user.name} withdrew their pending ` +
+          `${requestNoun(leave.kind, (await cachedLeaveTypes()).find((t) => t.key === leave.type)?.label, leave.type)} ` +
+          `request (${windowText(dayKey(leave.start_date), dayKey(leave.end_date))}).`,
+      })
       return res.json({ id: req.params.id, removed: true })
     }
 
@@ -682,6 +768,15 @@ router.delete('/:id', async (req, res, next) => {
         }
       }
       return flipped[0]
+    })
+    recordActivity(req, 'leave.cancelled', {
+      targetType: leave.kind,
+      targetId: leave.id,
+      description:
+        `${req.user.name} cancelled their approved ` +
+        `${requestNoun(leave.kind, (await cachedLeaveTypes()).find((t) => t.key === leave.type)?.label, leave.type)} ` +
+        `request (${windowText(dayKey(leave.start_date), dayKey(leave.end_date))})` +
+        `${reason ? ` — "${reason}"` : ''}.`,
     })
     res.json(await shapedLeave(cancelled.id))
   } catch (err) {

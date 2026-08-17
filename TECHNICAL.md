@@ -64,6 +64,7 @@ server/
   middleware/auth.js   # requireAuth, requireRole
   routes/               # auth, attendance, leaves, employees, announcements, teams, cron
   services/
+    activityLog.js       # the human audit trail: ACTIVITY_TYPES registry + recordActivity()
     attendance.js       # 8h verdict, finalization, analytics summarization/bucketing
     geoip.js             # check-in origin: client IP + fail-soft IP→city/country lookup
     hierarchy.js         # ancestorChain(), descendantIds() — the two org-tree walks
@@ -145,13 +146,26 @@ users:
    | `ok` | verified, or verification unconfigured | — |
    | `missing` | no token in the request | "The human-verification check hasn't finished…" |
    | `stale` | Cloudflare returned `timeout-or-duplicate` — a spent or expired token | "…already been used. Please reload the page…" |
+   | `misconfigured` | `invalid-input-secret` (not a real secret) or `invalid-input-response` (token doesn't belong to this secret) | "…isn't configured correctly on this site. Please contact your administrator." |
    | `rejected` | Cloudflare said no for any other reason | "CAPTCHA verification failed. Please try again." |
    | `unreachable` | both attempts to reach Cloudflare failed | "We couldn't reach the verification service…" |
 
-   `missing` also logs a pointed warning, because its nastiest cause is a
-   frontend built **without** `VITE_TURNSTILE_SITE_KEY` talking to a server
-   that **has** `TURNSTILE_SECRET_KEY`: no widget renders, no token is posted,
-   and every login fails forever on a page that looks completely normal.
+   `missing` and `misconfigured` both log pointed errors, because both are
+   **permanent** failures that look like a flaky CAPTCHA from the outside and
+   that no user action can clear:
+
+   - `missing` — a frontend built **without** `VITE_TURNSTILE_SITE_KEY` talking
+     to a server that **has** `TURNSTILE_SECRET_KEY`: no widget renders, no
+     token is posted, every login fails on a page that looks normal.
+   - `misconfigured` — the site key and the secret come from **different
+     widgets**. The classic version is a test site key (`1x00…AA`, the one that
+     shows the red "For testing only" banner) in the frontend build against a
+     real secret on the server. The two must always be paired: both from the
+     same Cloudflare widget, or both the matching test pair.
+
+   **`VITE_` variables are baked in at build time**, so changing the site key
+   on the frontend host requires a **redeploy**, not just an env-var edit —
+   a restart alone silently keeps the old key.
 
    **A Turnstile token is single-use**, so `LoginForm` resets the widget after
    every failed attempt — and the new challenge takes a few seconds to solve.
@@ -420,6 +434,63 @@ separate, stricter check in `POST /announcements`:
 | `team` | admin: any root · manager: only themselves as root (their whole downstream org, however deep) |
 | `group` | admin: any `Team` · manager: only `Team`s where `managerId` is themselves |
 
+### The two audit trails
+
+The admin **System Logs** page has two tabs over two *separate* tables. They
+are not two views of one dataset, and neither can be derived from the other.
+
+| | Activity Logs (default tab) | Advanced Logs |
+| --- | --- | --- |
+| Table | `activity_logs` | `request_logs` |
+| Written by | the route that performs the action, via `recordActivity()` | `middleware/requestLog.js`, automatically |
+| Granularity | one row per **meaningful action** | one row per **HTTP call** |
+| Answers | "what did people do?" | "what did the system do?" |
+| Audience | HR / non-technical admins | developers |
+| Retention | 365 days | 30 days |
+| Endpoint | `GET /api/activity-logs` | `GET /api/system-logs` |
+
+**Why two trails and not one derived view.** A single action produces several
+requests, and only one of them *is* the action — approving a leave also fetches
+the queue, the balances and the notifications. Worse, the sentence an HR admin
+needs ("Priya approved Rahul's casual leave for 12–14 Aug") exists only inside
+the handler, where those records are already loaded; a middleware watching
+`POST /api/leaves/:id/approve` could only ever guess it back from a URL. So the
+human trail is written explicitly at the call site, after the write succeeds.
+
+`activity_logs.description` is stored **pre-rendered** rather than composed at
+read time, because an audit trail must stay truthful after what it refers to
+changes. If an employee is renamed or an announcement deleted, a join would
+rewrite history or lose the row; the structured columns beside it
+(`action`, `category`, `target_*`, `status`) exist for filtering, not for
+rebuilding the sentence.
+
+**Adding a new activity** — two steps, no schema or UI change:
+
+1. add a key to `ACTIVITY_TYPES` in `server/services/activityLog.js`
+   (`category` + `label` + `icon`)
+2. call `recordActivity(req, '<key>', { description, targetType, … })` from the
+   route, **after** the write succeeds
+
+The Activity Logs filter bar builds its category dropdown from that registry
+(`GET /api/activity-logs/filters`), so a new category appears on its own.
+
+`recordActivity()` is **fire-and-forget** — an audit write must never fail,
+slow, or roll back the operation it describes. An unknown action key warns
+loudly in the server log rather than writing an unfilterable row.
+
+Categories map to what this codebase actually has: there is no Departments or
+Roles entity to audit (`department` is free text on a user, roles are the fixed
+employee/manager/admin enum), so role changes sit under Employee Management and
+named groups under Teams.
+
+Two deliberate scope calls: `document.downloaded` records a **read**, because
+who opened whose HR file is exactly what an audit trail is for; and attendance
+records only check-in/check-out, since pause/resume would bury the trail in
+noise. `auth.login_failed` is recorded even though the HTTP response stays
+deliberately vague, but only inside the branch that already knows the account
+exists — the trail must not become the enumeration oracle the response refuses
+to be.
+
 ### Presence (`online \| idle \| offline`)
 
 There is no separate presence store — `activityByUser()`
@@ -540,6 +611,28 @@ employees list, and anywhere else a user is embedded:
 
 ---
 
+### Activity logs (`server/routes/activityLogs.js`)
+
+#### `GET /api/activity-logs` — admin only
+The human audit trail (see *The two audit trails*). All params optional;
+unrecognised values are ignored rather than erroring.
+- **Query:** `search` (matches description / actor name / actor email / target
+  name) · `actor` (uuid) · `category` · `action` · `status` (success|failed) ·
+  `from`,`to` (`YYYY-MM-DD`, inclusive; override `days`) · `days`
+  (1|7|30|90|365) · `limit` (≤500, default 200)
+- **200:** `{ id, ts, action, label, icon, category, description, actorId,
+  actorName, actorEmail, actorRole, targetType, targetName, status, ip }[]`
+  — `label`/`icon` are resolved from the registry at read time, so relabelling
+  an action restyles history without rewriting the recorded facts.
+- **403:** non-admin
+
+#### `GET /api/activity-logs/filters` — admin only
+- **200:** `{ categories: string[], actors: {id,name}[], retentionDays }` —
+  actors are the people who actually appear in the trail (including deleted
+  accounts), not the whole roster.
+
+---
+
 ### Auth (`server/routes/auth.js`)
 
 #### `POST /api/auth/login` — public
@@ -549,6 +642,13 @@ employees list, and anywhere else a user is embedded:
   CAPTCHA not verified — one of five outcomes, each with its own message (see
   the `verifyCaptcha()` table under *Authentication & session lifecycle*)
 - **401:** `"Invalid email or password."` (identical for unknown email vs. wrong password)
+
+#### `POST /api/auth/logout` — records the sign-out
+Sessions are stateless JWTs, so there is nothing to invalidate: this exists so
+"signed out" appears in the activity trail beside "signed in". The client fires
+it without awaiting and ignores failure — a dead network must never trap
+someone in a session they asked to leave.
+- **200:** `{ ok: true }`
 
 #### `GET /api/auth/me`
 - **200:** `{ user: SafeUser }`
@@ -986,6 +1086,9 @@ One line each — see the file itself for props/behavior detail.
 | Announcements | `notifications/NotificationsPanel.jsx` | Right-side drawer: urgent + announcements + pending work |
 | Announcements | `notifications/ComposeAnnouncementForm.jsx` | Compose form, audience picker |
 | Announcements | `AllAnnouncements.jsx` | Dedicated management page (compose + sent list) |
+| Admin | `SystemLogs.jsx` | Tab shell: Activity Logs (default) / Advanced Logs |
+| Admin | `logs/ActivityLogs.jsx` | Plain-language record of what people did, with user/type/date/status filters |
+| Admin | `logs/AdvancedLogs.jsx` | The original per-API-call table, unchanged, now the second tab |
 | Auth | `LoginForm.jsx` | Sign-in form, optional reCAPTCHA gating |
 | Auth | `Recaptcha.jsx` | Google reCAPTCHA v2 explicit-render wrapper (see below) |
 | Auth | `ProtectedRoute.jsx` | Route guard (see "App shell & routing" above) |

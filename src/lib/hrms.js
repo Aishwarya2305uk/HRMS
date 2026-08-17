@@ -4,6 +4,12 @@
  */
 import { apiFetch } from './api'
 
+/** Sign-out. Sessions are stateless JWTs so this only records the event in the
+ *  activity trail — the client drops the token regardless of the outcome. */
+export const auth = {
+  logout: () => apiFetch('/auth/logout', { method: 'POST' }),
+}
+
 export const attendance = {
   today: () => apiFetch('/attendance/today'),
   action: (a) => apiFetch(`/attendance/${a}`, { method: 'POST' }),
@@ -112,20 +118,32 @@ export const appSettings = {
   update: (body) => apiFetch('/settings', { method: 'PATCH', body }),
 }
 
-/** Admin-only: the System Logs page — one row per API call, kept 30 days
- *  server-side. Filters become query params; empty/'all' values are omitted
- *  so the URL only carries real constraints. */
-export const systemLogs = {
-  list: (filters = {}) => {
-    const params = new URLSearchParams()
-    for (const [key, value] of Object.entries(filters)) {
-      if (value !== undefined && value !== null && value !== '' && value !== 'all') {
-        params.set(key, value)
-      }
+/** Turns a filter object into a query string, dropping anything that isn't a
+ *  real constraint ('' / null / 'all'), so the URL only carries what's set. */
+function filterQuery(filters = {}) {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== null && value !== '' && value !== 'all') {
+      params.set(key, value)
     }
-    const qs = params.toString()
-    return apiFetch(`/system-logs${qs ? `?${qs}` : ''}`)
-  },
+  }
+  const qs = params.toString()
+  return qs ? `?${qs}` : ''
+}
+
+/** Admin-only: the Advanced Logs tab — one row per API call, kept 30 days
+ *  server-side. The technical half of the audit story. */
+export const systemLogs = {
+  list: (filters = {}) => apiFetch(`/system-logs${filterQuery(filters)}`),
+}
+
+/** Admin-only: the Activity Logs tab — one row per meaningful action a person
+ *  took, in plain language, kept a year. A separate trail from systemLogs
+ *  above, not a view over it (see server/services/activityLog.js). */
+export const activityLogs = {
+  list: (filters = {}) => apiFetch(`/activity-logs${filterQuery(filters)}`),
+  /** Categories + the people who actually appear in the trail, for the filter bar. */
+  filters: () => apiFetch('/activity-logs/filters'),
 }
 
 /** Admin-only: manage employment classifications (Intern/Full-time/Part-time/custom) and their per-leave-type quotas. */

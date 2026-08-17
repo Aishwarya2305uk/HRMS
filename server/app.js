@@ -13,6 +13,7 @@ import employmentTypeRoutes from './routes/employmentTypes.js'
 import documentRoutes from './routes/documents.js'
 import settingsRoutes from './routes/settings.js'
 import systemLogRoutes from './routes/systemLogs.js'
+import activityLogRoutes from './routes/activityLogs.js'
 
 /** Builds the Express app (routes only — no DB connection, no listen). */
 export function createApp() {
@@ -44,6 +45,7 @@ export function createApp() {
   app.use('/api/documents', documentRoutes)
   app.use('/api/settings', settingsRoutes)
   app.use('/api/system-logs', systemLogRoutes)
+  app.use('/api/activity-logs', activityLogRoutes)
 
   // Unknown /api route -> JSON 404. The method/path are logged server-side for
   // debugging but NOT reflected back in the response: echoing raw request input

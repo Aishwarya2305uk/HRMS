@@ -3,6 +3,7 @@ import { q } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { isValidId, teamJSON } from '../store.js'
 import { descendantIds } from '../services/hierarchy.js'
+import { recordActivity } from '../services/activityLog.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -83,6 +84,14 @@ router.post('/', async (req, res, next) => {
       'insert into teams (name, manager_id, member_ids) values ($1, $2, $3) returning *',
       [name, req.user.id, [...new Set(req.body.memberIds.map(String))]],
     )
+    recordActivity(req, 'team.created', {
+      targetType: 'team',
+      targetId: rows[0].id,
+      targetName: rows[0].name,
+      description:
+        `${req.user.name} created the team "${rows[0].name}" with ` +
+        `${rows[0].member_ids.length} ${rows[0].member_ids.length === 1 ? 'member' : 'members'}.`,
+    })
     res.status(201).json(await shapeTeam(rows[0]))
   } catch (err) {
     next(err)
@@ -126,6 +135,15 @@ router.patch('/:id', async (req, res, next) => {
       'update teams set name = $1, member_ids = $2 where id = $3 returning *',
       [name, memberIds, req.params.id],
     )
+    recordActivity(req, 'team.updated', {
+      targetType: 'team',
+      targetId: rows[0].id,
+      targetName: rows[0].name,
+      description:
+        `${req.user.name} updated the team "${rows[0].name}"` +
+        `${team.name !== rows[0].name ? ` (renamed from "${team.name}")` : ''}` +
+        ` — now ${rows[0].member_ids.length} ${rows[0].member_ids.length === 1 ? 'member' : 'members'}.`,
+    })
     res.json(await shapeTeam(rows[0]))
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })
@@ -138,6 +156,12 @@ router.delete('/:id', async (req, res, next) => {
   try {
     const team = await loadOwnedTeam(req)
     await q('delete from teams where id = $1', [team.id])
+    recordActivity(req, 'team.deleted', {
+      targetType: 'team',
+      targetId: team.id,
+      targetName: team.name,
+      description: `${req.user.name} deleted the team "${team.name}".`,
+    })
     res.json({ id: req.params.id })
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })

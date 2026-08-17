@@ -933,6 +933,65 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   cursor: pointer;
 }
 
+/* ---- Logs page shell: Activity / Advanced tabs (admin) ---- */
+.logs__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.logs__tabs .seg__btn { display: inline-flex; align-items: center; gap: 7px; }
+/* Phones: the tab pair takes the full width rather than crowding the title. */
+@media (max-width: 560px) {
+  .logs__tabs { width: 100%; }
+  .logs__tabs .seg__btn { flex: 1; justify-content: center; }
+}
+
+/* ---- Activity Logs (the human audit trail) ---- */
+.activity__table td { font-size: var(--text-xs); vertical-align: top; }
+.activity__when {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+/* Category pill: icon + short action name, tinted per category. */
+.activity__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+.activity__badge.tint-blue { background: var(--primary-soft); color: var(--primary-700); }
+.activity__badge.tint-indigo { background: var(--accent-soft); color: var(--primary-700); }
+.activity__badge.tint-green { background: var(--success-soft); color: var(--success-text); }
+.activity__badge.tint-amber { background: var(--warning-soft); color: var(--warning-text); }
+.activity__cat,
+.activity__target,
+.activity__ip {
+  display: block;
+  font-style: normal;
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+  margin-top: 3px;
+}
+/* The sentence is the point of this table — give it room and normal weight. */
+.activity__desc {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--text);
+  line-height: 1.5;
+  max-width: 62ch;
+}
+.activity__ip { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
 /* ---- System Logs (admin) ---- */
 .syslog__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
 .syslog__sub { color: var(--text-muted); font-size: var(--text-sm); margin-top: 4px; max-width: 62ch; }

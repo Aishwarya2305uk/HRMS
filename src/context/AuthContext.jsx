@@ -89,6 +89,11 @@ export function AuthProvider({ children }) {
   }, [])
 
   const logout = useCallback(() => {
+    // Tell the server first — it needs the still-valid token to know WHO
+    // signed out for the activity trail. Deliberately not awaited and its
+    // failure deliberately ignored: signing out is a local act, and a dead
+    // network must never trap someone in a session they asked to leave.
+    apiFetch('/auth/logout', { method: 'POST' }).catch(() => {})
     setToken(null)
     setUser(null)
     setNotice('')

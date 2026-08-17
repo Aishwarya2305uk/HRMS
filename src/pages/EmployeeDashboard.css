@@ -951,6 +951,10 @@ button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
   transition: --pct 0.8s var(--spring-soft);
 }
 .ring__center {
+  /* Drives both the number's size and how far the caption hangs below it —
+     change this one value and the pair stays aligned (see the span below). */
+  --ring-num: 1.65rem;
+  position: relative;
   width: 100px;
   height: 100px;
   border-radius: 50%;
@@ -961,8 +965,28 @@ button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
   text-align: center;
   line-height: 1.1;
 }
-.ring__center strong { font-size: 1.4rem; font-weight: 750; }
-.ring__center span { display: block; font-size: var(--text-2xs); color: var(--text-muted); }
+/* The number is what people actually read, so it sits on the TRUE centre of
+   the ring. Letting the caption share the flow would centre the PAIR instead,
+   which parks the number visibly above the middle — so the caption is taken
+   out of flow and hung underneath. */
+.ring__center strong {
+  font-size: var(--ring-num);
+  font-weight: 750;
+  white-space: nowrap;
+}
+.ring__center span {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  /* Half the number's line box (1.1 line-height ÷ 2 = 0.55) clears the digits
+     exactly; the extra 0.15 is the breathing gap. Scaling with --ring-num
+     keeps that gap proportional at every ring size. */
+  margin-top: calc(var(--ring-num) * 0.7);
+  display: block;
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
 
 /* The two parallel balance rings — same proportion, one read in days and one
    in hours. Slightly smaller than the old single ring so the pair still fits
@@ -977,8 +1001,9 @@ button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
   color: var(--text-muted);
 }
 .ring-duo .ring { width: 112px; height: 112px; }
-.ring-duo .ring__center { width: 84px; height: 84px; }
-.ring-duo .ring__center strong { font-size: 1.05rem; }
+/* Smaller inner disc, so the number steps down with it — the caption offset
+   follows automatically from --ring-num. */
+.ring-duo .ring__center { width: 84px; height: 84px; --ring-num: 1.3rem; }
 .ring--hours { background: conic-gradient(var(--accent) var(--pct), var(--surface-muted) 0); }
 .leave-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
 .leave-legend li { display: flex; align-items: center; gap: 9px; font-size: var(--text-sm); color: var(--text-muted); }

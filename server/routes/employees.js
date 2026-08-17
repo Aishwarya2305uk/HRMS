@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { q } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
+import { recordActivity } from '../services/activityLog.js'
 import {
   isValidId,
   mapUser,
@@ -27,6 +28,21 @@ const AADHAR_RE = /^\d{12}$/
 // becoming a paragraph-long display name in every roster and dropdown.
 const MAX_NAME_LENGTH = 80
 // Base64 inflates size ~4/3 — this caps the decoded image around ~1MB.
+/** Column -> how it reads in an activity description. Values are never
+ *  recorded, only which fields moved (this endpoint handles PII). */
+const FIELD_LABELS = {
+  name: 'name',
+  dob: 'date of birth',
+  address: 'address',
+  phone: 'phone',
+  education: 'education',
+  aadhar_number: 'Aadhaar number',
+  photo_url: 'photo',
+  employment_type_id: 'employment type',
+  leave_quotas: 'leave quotas',
+  leave_balances: 'leave balances',
+}
+
 const MAX_PHOTO_DATA_URL_LENGTH = 1_400_000
 const PHOTO_DATA_URL_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i
 
@@ -162,9 +178,15 @@ router.patch('/:id/profile', async (req, res, next) => {
 
     const sets = []
     const params = []
+    // Field names in the order they were actually changed — the activity log
+    // reads them back as "updated their phone and address", which is the level
+    // of detail an HR admin wants without recording the VALUES themselves
+    // (this endpoint carries PII: date of birth, address, Aadhaar, photo).
+    const changed = []
     const set = (column, value) => {
       params.push(value)
       sets.push(`${column} = $${params.length}`)
+      if (!changed.includes(column)) changed.push(column)
     }
 
     // Display name is HR record data — an admin typed it when creating the
@@ -282,6 +304,24 @@ router.patch('/:id/profile', async (req, res, next) => {
         params,
       )
       updated = rows[0]
+
+      // Self-edits and admin edits of someone else are genuinely different
+      // events to an auditor, so they get different actions and categories.
+      const fields = changed.map((c) => FIELD_LABELS[c] ?? c.replace(/_/g, ' '))
+      const fieldList =
+        fields.length > 1 ? `${fields.slice(0, -1).join(', ')} and ${fields.at(-1)}` : fields[0]
+      recordActivity(
+        req,
+        isSelf ? 'profile.updated' : 'employee.profile_updated',
+        {
+          targetType: 'employee',
+          targetId: req.params.id,
+          targetName: target.name,
+          description: isSelf
+            ? `${req.user.name} updated their own profile (${fieldList}).`
+            : `${req.user.name} updated ${target.name}'s record (${fieldList}).`,
+        },
+      )
     }
     res.json({ ...profileUserJSON(mapUser(updated)), managerName, employmentTypeName })
   } catch (err) {
@@ -397,8 +437,18 @@ router.post('/', async (req, res, next) => {
       inviteUrl: inviteUrl(req, invite.token),
     })
 
+    const createdUser = mapUser(rows[0])
+    recordActivity(req, 'employee.created', {
+      targetType: 'employee',
+      targetId: createdUser.id,
+      targetName: createdUser.name,
+      description:
+        `${req.user.name} added ${createdUser.name} (${createdUser.email}) as ${createdUser.role}` +
+        `${createdUser.designation ? ` — ${createdUser.designation}` : ''}, and sent an invite.`,
+    })
+
     res.status(201).json({
-      ...safeUserJSON(mapUser(rows[0])),
+      ...safeUserJSON(createdUser),
       managerName: null,
       employmentTypeName: employmentTypeRow?.name ?? null,
       inviteToken: invite.token,
@@ -436,6 +486,12 @@ router.post('/:id/invite', async (req, res, next) => {
       to: user.email,
       name: user.name,
       inviteUrl: inviteUrl(req, invite.token),
+    })
+    recordActivity(req, 'employee.invited', {
+      targetType: 'employee',
+      targetId: user.id,
+      targetName: user.name,
+      description: `${req.user.name} re-sent the invite link to ${user.name} (${user.email}).`,
     })
     res.json({ inviteToken: invite.token, inviteEmailSent })
   } catch (err) {
@@ -486,10 +542,17 @@ router.patch('/:id/role', async (req, res, next) => {
       }
     }
 
+    const previousRole = user.role
     const { rows } = await q('update users set role = $1 where id = $2 returning *', [
       role,
       user.id,
     ])
+    recordActivity(req, 'employee.role_changed', {
+      targetType: 'employee',
+      targetId: user.id,
+      targetName: user.name,
+      description: `${req.user.name} changed ${user.name}'s role from ${previousRole} to ${role}.`,
+    })
     res.json(safeUserJSON(mapUser(rows[0])))
   } catch (err) {
     next(err)
@@ -524,10 +587,22 @@ router.patch('/:id/manager', async (req, res, next) => {
       }
     }
 
+    const previousManager = user.managerId ? await findUserById(user.managerId) : null
     const { rows } = await q('update users set manager_id = $1 where id = $2 returning *', [
       managerId || null,
       user.id,
     ])
+    const nextManager = managerId ? await findUserById(managerId) : null
+    recordActivity(req, 'employee.manager_changed', {
+      targetType: 'employee',
+      targetId: user.id,
+      targetName: user.name,
+      description: nextManager
+        ? `${req.user.name} set ${user.name}'s manager to ${nextManager.name}` +
+          `${previousManager ? ` (was ${previousManager.name})` : ''}.`
+        : `${req.user.name} removed ${user.name}'s manager` +
+          `${previousManager ? ` (was ${previousManager.name})` : ''}.`,
+    })
     res.json(safeUserJSON(mapUser(rows[0])))
   } catch (err) {
     next(err)

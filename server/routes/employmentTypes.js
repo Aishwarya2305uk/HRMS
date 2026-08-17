@@ -3,6 +3,7 @@ import { q } from '../db.js'
 import { cachedEmploymentTypes, invalidate } from '../cache.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { isValidId, employmentTypeJSON } from '../store.js'
+import { recordActivity } from '../services/activityLog.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -46,6 +47,12 @@ router.post('/', async (req, res, next) => {
       [name, JSON.stringify(sanitizeQuotas(req.body?.quotas))],
     )
     invalidate('employment_types')
+    recordActivity(req, 'employment_type.created', {
+      targetType: 'employment_type',
+      targetId: rows[0].id,
+      targetName: name,
+      description: `${req.user.name} created the employment type "${name}".`,
+    })
     res.status(201).json(employmentTypeJSON(rows[0]))
   } catch (err) {
     next(err)
@@ -85,6 +92,14 @@ router.patch('/:id', async (req, res, next) => {
       [name, JSON.stringify(quotas), req.params.id],
     )
     invalidate('employment_types')
+    recordActivity(req, 'employment_type.updated', {
+      targetType: 'employment_type',
+      targetId: rows[0].id,
+      targetName: name,
+      description:
+        `${req.user.name} updated the employment type "${name}"` +
+        `${type.name !== name ? ` (renamed from "${type.name}")` : ''}.`,
+    })
     res.json(employmentTypeJSON(rows[0]))
   } catch (err) {
     next(err)
@@ -108,6 +123,11 @@ router.delete('/:id', async (req, res, next) => {
     const { rowCount } = await q('delete from employment_types where id = $1', [req.params.id])
     if (!rowCount) return res.status(404).json({ error: 'Employment type not found.' })
     invalidate('employment_types')
+    recordActivity(req, 'employment_type.deleted', {
+      targetType: 'employment_type',
+      targetId: req.params.id,
+      description: `${req.user.name} deleted an employment type.`,
+    })
     res.json({ id: req.params.id })
   } catch (err) {
     next(err)

@@ -3,9 +3,18 @@ import { q } from '../db.js'
 import { cachedAppSettings, invalidate } from '../cache.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { settingsJSON } from '../store.js'
+import { recordActivity } from '../services/activityLog.js'
 
 const router = Router()
 router.use(requireAuth)
+
+/** Setting key -> how it reads in an activity description. */
+const SETTING_LABELS = {
+  feedbackFormUrl: 'feedback form link',
+  hrRequestFormUrl: 'HR request form link',
+  attendanceTimerEnabled: 'check-in timer',
+  attendanceQuickCheckinEnabled: 'one-tap check-in',
+}
 
 const URL_MAX = 2048
 // API field → column, one entry per admin-editable link.
@@ -65,6 +74,9 @@ router.patch('/', requireRole('admin'), async (req, res, next) => {
   try {
     const sets = []
     const params = []
+    // Which settings moved, for the activity description — the values
+    // themselves stay out of the trail (form URLs can carry tokens).
+    const changed = []
     for (const [field, column] of Object.entries(LINK_FIELDS)) {
       if (req.body?.[field] === undefined) continue
       const url = cleanUrl(req.body[field])
@@ -75,6 +87,7 @@ router.patch('/', requireRole('admin'), async (req, res, next) => {
       }
       params.push(url)
       sets.push(`${column} = $${params.length}`)
+      changed.push(SETTING_LABELS[field] ?? field)
     }
     for (const [field, column] of Object.entries(TOGGLE_FIELDS)) {
       if (req.body?.[field] === undefined) continue
@@ -83,6 +96,7 @@ router.patch('/', requireRole('admin'), async (req, res, next) => {
       }
       params.push(req.body[field])
       sets.push(`${column} = $${params.length}`)
+      changed.push(`${SETTING_LABELS[field] ?? field} ${req.body[field] ? 'on' : 'off'}`)
     }
     if (sets.length === 0) {
       return res.status(400).json({ error: 'Nothing to update.' })
@@ -91,6 +105,10 @@ router.patch('/', requireRole('admin'), async (req, res, next) => {
     await getSingleton()
     const { rows } = await q(`update app_settings set ${sets.join(', ')} where id = 1 returning *`, params)
     invalidate('app_settings')
+    recordActivity(req, 'settings.updated', {
+      targetType: 'settings',
+      description: `${req.user.name} changed organisation settings: ${changed.join(', ')}.`,
+    })
     res.json(settingsJSON(rows[0]))
   } catch (err) {
     next(err)

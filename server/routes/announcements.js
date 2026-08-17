@@ -3,6 +3,7 @@ import { q } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { isValidId, announcementJSON } from '../store.js'
 import { ancestorChain } from '../services/hierarchy.js'
+import { recordActivity } from '../services/activityLog.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -247,6 +248,14 @@ router.post('/', async (req, res, next) => {
       [cleanTitle, cleanBody, type, req.user.id, audienceScope, finalAudienceRole, finalRootId, finalGroupId],
     )
     console.log(`[announcements] ${req.user.email} posted "${cleanTitle}" (${audienceScope})`)
+    recordActivity(req, 'announcement.created', {
+      targetType: 'announcement',
+      targetId: rows[0].id,
+      targetName: rows[0].title,
+      description:
+        `${req.user.name} posted ${rows[0].type === 'urgent' ? 'an urgent message' : 'an announcement'}: ` +
+        `"${rows[0].title}".`,
+    })
     res.status(201).json({
       ...announcementJSON({ ...rows[0], audience_group_name: groupName }),
       authorName: req.user.name,
@@ -274,6 +283,12 @@ router.delete('/:id', async (req, res, next) => {
     }
     await q('delete from announcements where id = $1', [req.params.id])
     console.log(`[announcements] ${req.user.email} removed announcement ${req.params.id}`)
+    recordActivity(req, 'announcement.deleted', {
+      targetType: 'announcement',
+      targetId: item.id,
+      targetName: item.title,
+      description: `${req.user.name} removed the announcement "${item.title}".`,
+    })
     res.json({ id: req.params.id })
   } catch (err) {
     next(err)

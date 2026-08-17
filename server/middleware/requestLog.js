@@ -48,9 +48,14 @@ export function requestLog(req, res, next) {
 
   res.on('finish', () => {
     const path = (req.originalUrl || req.url || '').split('?')[0]
-    // Watching the logs page shouldn't itself fill the table — only failed
-    // calls to it earn a row.
-    if (path.startsWith('/api/system-logs') && res.statusCode < 400) return
+    // Watching either logs page shouldn't itself fill the table — only failed
+    // calls to them earn a row.
+    if (
+      (path.startsWith('/api/system-logs') || path.startsWith('/api/activity-logs')) &&
+      res.statusCode < 400
+    ) {
+      return
+    }
 
     const status = res.statusCode
     const failed = status >= 400

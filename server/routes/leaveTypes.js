@@ -3,6 +3,7 @@ import { q } from '../db.js'
 import { cachedLeaveTypes, invalidate } from '../cache.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { isValidId, leaveTypeJSON } from '../store.js'
+import { recordActivity } from '../services/activityLog.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -61,6 +62,12 @@ router.post('/', async (req, res, next) => {
       [key, label, unit, period],
     )
     invalidate('leave_types')
+    recordActivity(req, 'leave_type.created', {
+      targetType: 'leave_type',
+      targetId: rows[0].id,
+      targetName: label,
+      description: `${req.user.name} created the leave type "${label}" (${unit} per ${period}).`,
+    })
     res.status(201).json(leaveTypeJSON(rows[0]))
   } catch (err) {
     next(err)
@@ -106,6 +113,19 @@ router.patch('/:id', async (req, res, next) => {
       [label, active, unit, period, req.params.id],
     )
     invalidate('leave_types')
+    // Retiring/reactivating is the change an HR admin most needs to see in the
+    // trail — it silently changes what everyone can apply for.
+    const retireNote =
+      type.active === active ? '' : active ? ' and reactivated it' : ' and retired it'
+    recordActivity(req, 'leave_type.updated', {
+      targetType: 'leave_type',
+      targetId: req.params.id,
+      targetName: label,
+      description:
+        `${req.user.name} updated the leave type "${label}"` +
+        `${type.label !== label ? ` (renamed from "${type.label}")` : ''}` +
+        `${retireNote} — now ${unit} per ${period}.`,
+    })
     res.json(leaveTypeJSON(rows[0]))
   } catch (err) {
     next(err)

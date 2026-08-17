@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { q } from '../db.js'
 import { requireAuth } from '../middleware/auth.js'
 import { isValidId, documentJSON } from '../store.js'
+import { recordActivity } from '../services/activityLog.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -33,7 +34,11 @@ async function loadAuthorizedOwner(req, res) {
     res.status(400).json({ error: 'Invalid employee id.' })
     return null
   }
-  const { rows } = await q('select id, manager_id from users where id = $1', [req.params.userId])
+  // `name` is here for the activity-log description ("… to Priya's file");
+  // canViewDocuments below only needs id + manager_id.
+  const { rows } = await q('select id, name, manager_id from users where id = $1', [
+    req.params.userId,
+  ])
   const owner = rows[0]
   if (!owner) {
     res.status(404).json({ error: 'Employee not found.' })
@@ -112,6 +117,15 @@ router.post('/user/:userId', async (req, res, next) => {
         req.user.id,
       ],
     )
+    recordActivity(req, 'document.uploaded', {
+      targetType: 'document',
+      targetId: rows[0].id,
+      targetName: trimmedName,
+      description:
+        owner.id === req.user.id
+          ? `${req.user.name} uploaded "${trimmedName}" to their own file.`
+          : `${req.user.name} uploaded "${trimmedName}" to ${owner.name}'s file.`,
+    })
     // so the response carries the uploader's name
     res.status(201).json(documentJSON({ ...rows[0], uploaded_by_name: req.user.name }))
   } catch (err) {
@@ -127,7 +141,7 @@ router.get('/:id/file', async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid document id.' })
     }
     const { rows } = await q(
-      `select d.*, u.id as owner_id, u.manager_id as owner_manager_id
+      `select d.*, u.id as owner_id, u.name as owner_name, u.manager_id as owner_manager_id
          from documents d
          join users u on u.id = d.user_id
         where d.id = $1`,
@@ -138,6 +152,17 @@ router.get('/:id/file', async (req, res, next) => {
     if (!canViewDocuments(req.user, { id: doc.owner_id, manager_id: doc.owner_manager_id })) {
       return res.status(403).json({ error: 'You do not have access to this document.' })
     }
+    // Reads are normally not activities, but who opened whose HR file is
+    // exactly the kind of access an audit trail exists to answer.
+    recordActivity(req, 'document.downloaded', {
+      targetType: 'document',
+      targetId: doc.id,
+      targetName: doc.name,
+      description:
+        doc.owner_id === req.user.id
+          ? `${req.user.name} opened their own document "${doc.name}".`
+          : `${req.user.name} opened "${doc.name}" from ${doc.owner_name}'s file.`,
+    })
     res.json({ id: doc.id, name: doc.name, mimeType: doc.mime_type, dataUrl: doc.data_url })
   } catch (err) {
     next(err)
@@ -154,8 +179,21 @@ router.delete('/:id', async (req, res, next) => {
     if (!isValidId(req.params.id)) {
       return res.status(400).json({ error: 'Invalid document id.' })
     }
+    const { rows: doomed } = await q(
+      `select d.name, u.name as owner_name from documents d
+         join users u on u.id = d.user_id where d.id = $1`,
+      [req.params.id],
+    )
     const { rowCount } = await q('delete from documents where id = $1', [req.params.id])
     if (!rowCount) return res.status(404).json({ error: 'Document not found.' })
+    recordActivity(req, 'document.deleted', {
+      targetType: 'document',
+      targetId: req.params.id,
+      targetName: doomed[0]?.name ?? '',
+      description:
+        `${req.user.name} deleted "${doomed[0]?.name ?? 'a document'}" from ` +
+        `${doomed[0]?.owner_name ?? 'an employee'}'s file.`,
+    })
     res.json({ id: req.params.id })
   } catch (err) {
     next(err)
