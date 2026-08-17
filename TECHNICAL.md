@@ -130,11 +130,36 @@ users:
 **Login (`POST /api/auth/login`):**
 1. The CAPTCHA (Cloudflare Turnstile) is checked *before* touching the
    database — a failed challenge never costs a bcrypt comparison or reveals
-   whether the email exists. `verifyCaptcha()` returns `true` unconditionally
+   whether the email exists. `verifyCaptcha()` returns `'ok'` unconditionally
    if `TURNSTILE_SECRET_KEY` isn't set (fail-open when unconfigured); once
    configured, it fails **closed** — a missing token, a Cloudflare "not
    verified" response, or even a network error calling Cloudflare all reject
    the login.
+
+   It returns an **outcome string**, not a boolean, because the failures are
+   not interchangeable and one generic message made a self-inflicted bug
+   undiagnosable:
+
+   | Outcome | Cause | Told to the user |
+   | --- | --- | --- |
+   | `ok` | verified, or verification unconfigured | — |
+   | `missing` | no token in the request | "The human-verification check hasn't finished…" |
+   | `stale` | Cloudflare returned `timeout-or-duplicate` — a spent or expired token | "…already been used. Please reload the page…" |
+   | `rejected` | Cloudflare said no for any other reason | "CAPTCHA verification failed. Please try again." |
+   | `unreachable` | both attempts to reach Cloudflare failed | "We couldn't reach the verification service…" |
+
+   `missing` also logs a pointed warning, because its nastiest cause is a
+   frontend built **without** `VITE_TURNSTILE_SITE_KEY` talking to a server
+   that **has** `TURNSTILE_SECRET_KEY`: no widget renders, no token is posted,
+   and every login fails forever on a page that looks completely normal.
+
+   **A Turnstile token is single-use**, so `LoginForm` resets the widget after
+   every failed attempt — and the new challenge takes a few seconds to solve.
+   Two consequences the code handles deliberately: the form reads the token
+   from the widget (`captchaRef.current.getResponse()`) rather than from React
+   state, which lags behind it and would post a `null`; and the disabled Sign
+   in button gets a visible "verifying" line, so the wait reads as a wait
+   instead of a dead button.
 2. The user is looked up by lowercased/trimmed email; `bcrypt.compare`
    checks the password. **Wrong email and wrong password return the exact
    same message** (`Invalid email or password.`) — no user enumeration.
@@ -521,7 +546,8 @@ employees list, and anywhere else a user is embedded:
 - **Body:** `{ email, password, captchaToken? }`
 - **200:** `{ token, user: SafeUser }`
 - **400:** missing email/password (`"Email and password are required."`) ·
-  failed CAPTCHA (`"CAPTCHA verification failed. Please try again."`)
+  CAPTCHA not verified — one of five outcomes, each with its own message (see
+  the `verifyCaptcha()` table under *Authentication & session lifecycle*)
 - **401:** `"Invalid email or password."` (identical for unknown email vs. wrong password)
 
 #### `GET /api/auth/me`

@@ -56,6 +56,17 @@ const Turnstile = forwardRef(function Turnstile({ onChange, onError }, ref) {
     reset() {
       if (widgetIdRef.current != null) window.turnstile?.reset(widgetIdRef.current)
     },
+    /**
+     * The token the WIDGET currently holds, which is the only trustworthy
+     * answer at submit time. React state lags it: `reset()` clears the token
+     * and the widget takes a few seconds to solve the new challenge, so a
+     * form that trusts its own state can submit `null` and be told its CAPTCHA
+     * "failed" when really it just wasn't finished yet.
+     */
+    getResponse() {
+      if (widgetIdRef.current == null) return null
+      return window.turnstile?.getResponse(widgetIdRef.current) || null
+    },
   }))
 
   useEffect(() => {
@@ -68,7 +79,11 @@ const Turnstile = forwardRef(function Turnstile({ onChange, onError }, ref) {
         widgetIdRef.current = turnstile.render(containerRef.current, {
           sitekey: SITE_KEY,
           callback: (token) => onChange(token),
+          // A token is only valid for ~5 minutes. Both of these hand the form
+          // a null so it stops believing it holds a usable token; Turnstile
+          // then re-solves on its own and `callback` fires again.
           'expired-callback': () => onChange(null),
+          'timeout-callback': () => onChange(null),
           'error-callback': () => {
             onError?.('Could not verify — please retry.')
             return true // tell Turnstile the error was handled (no console spam)

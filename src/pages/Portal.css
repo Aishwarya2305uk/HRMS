@@ -1906,6 +1906,15 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   font-weight: 600;
 }
 
+/* Quiet "the CAPTCHA is still working" line under the widget — explains why
+   Sign in is briefly disabled instead of letting it look broken. */
+.auth-hint {
+  margin: -4px 0 12px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-align: center;
+}
+
 /* ---- Field-level validation ---- */
 .field-error {
   font-size: var(--text-xs);

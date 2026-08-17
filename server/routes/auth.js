@@ -41,9 +41,22 @@ const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/sit
 async function verifyCaptcha(token, remoteIp) {
   if (!TURNSTILE_SECRET_KEY) {
     console.warn('[auth/login] TURNSTILE_SECRET_KEY is not set — skipping CAPTCHA verification.')
-    return true
+    return 'ok'
   }
-  if (!token) return false
+  // No token at all is a DIFFERENT failure from Cloudflare saying no, and
+  // conflating them sent us hunting a broken CAPTCHA when the real answer was
+  // "the widget hadn't finished yet". It also catches the nastiest
+  // misconfiguration: a frontend built WITHOUT VITE_TURNSTILE_SITE_KEY renders
+  // no widget and posts no token, so every login here fails forever while the
+  // login page looks perfectly normal.
+  if (!token) {
+    console.warn(
+      '[auth/login] no CAPTCHA token in the request. If the sign-in page shows no ' +
+        'Turnstile widget at all, the FRONTEND was built without VITE_TURNSTILE_SITE_KEY ' +
+        'while this server has TURNSTILE_SECRET_KEY set — set both, or neither.',
+    )
+    return 'missing'
+  }
   const params = new URLSearchParams({ secret: TURNSTILE_SECRET_KEY, response: token })
   if (remoteIp) params.set('remoteip', remoteIp)
   // Two attempts: one flaky-network timeout shouldn't fail a login. Only
@@ -62,15 +75,27 @@ async function verifyCaptcha(token, remoteIp) {
       if (data.success !== true) {
         // error-codes make misconfiguration (wrong secret, hostname mismatch)
         // diagnosable from the server logs instead of a generic login failure.
-        console.warn('[auth/login] Turnstile rejected the token:', data['error-codes'] ?? [])
-        return false
+        const codes = data['error-codes'] ?? []
+        console.warn('[auth/login] Turnstile rejected the token:', codes)
+        // A spent or expired token is the user's page being stale, not a
+        // failed challenge — worth its own message so they reload instead of
+        // retrying the same dead token.
+        return codes.includes('timeout-or-duplicate') ? 'stale' : 'rejected'
       }
-      return true
+      return 'ok'
     } catch (err) {
       console.error(`[auth/login] Turnstile verify attempt ${attempt} failed:`, err.message)
     }
   }
-  return false
+  return 'unreachable'
+}
+
+/** User-facing copy per verifyCaptcha outcome — each one names a next step. */
+const CAPTCHA_ERRORS = {
+  missing: 'The human-verification check hasn’t finished. Wait for it to complete, then sign in.',
+  stale: 'That verification had already been used. Please reload the page and sign in again.',
+  rejected: 'CAPTCHA verification failed. Please try again.',
+  unreachable: "We couldn't reach the verification service. Please try again in a moment.",
 }
 
 function signToken(user) {
@@ -94,8 +119,9 @@ router.post('/login', loginLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required.' })
     }
 
-    if (!(await verifyCaptcha(captchaToken, req.ip))) {
-      return res.status(400).json({ error: 'CAPTCHA verification failed. Please try again.' })
+    const captcha = await verifyCaptcha(captchaToken, req.ip)
+    if (captcha !== 'ok') {
+      return res.status(400).json({ error: CAPTCHA_ERRORS[captcha] ?? CAPTCHA_ERRORS.rejected })
     }
 
     const user = await findUserByEmail(email)

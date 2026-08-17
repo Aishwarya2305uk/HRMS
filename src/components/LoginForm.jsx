@@ -30,8 +30,15 @@ export default function LoginForm() {
     setError('')
     clearNotice() // they're acting on it now — the explanation has done its job
 
-    if (REQUIRE_CAPTCHA && !captchaToken) {
-      setError('Please complete the CAPTCHA verification.')
+    // Ask the WIDGET for the token, not our own state. After a failed attempt
+    // we reset the widget, and it takes a few seconds to solve the new
+    // challenge — during which `captchaToken` is null while the widget may
+    // already hold a fresh token. Trusting state here is what made a second
+    // sign-in attempt come back as "CAPTCHA verification failed" when nothing
+    // had actually failed.
+    const token = captchaRef.current?.getResponse?.() ?? captchaToken
+    if (REQUIRE_CAPTCHA && !token) {
+      setError('Still verifying you’re human — give it a moment, then sign in.')
       return
     }
 
@@ -48,7 +55,7 @@ export default function LoginForm() {
     setEmail(emailVal)
     setPassword(passwordVal)
 
-    const result = await login(emailVal, passwordVal, captchaToken)
+    const result = await login(emailVal, passwordVal, token)
     setSubmitting(false)
 
     if (!result.ok) {
@@ -135,6 +142,16 @@ export default function LoginForm() {
 
         {REQUIRE_CAPTCHA && (
           <Turnstile ref={captchaRef} onChange={setCaptchaToken} onError={setError} />
+        )}
+
+        {/* The challenge takes a few seconds — on first load, and again after
+            every failed attempt (a token is single-use, so we reset it). The
+            button is disabled for that whole window; saying why turns "the
+            button randomly does nothing" into an obvious short wait. */}
+        {REQUIRE_CAPTCHA && !captchaToken && !submitting && (
+          <p className="auth-hint" role="status">
+            Verifying you’re human — Sign in unlocks in a moment.
+          </p>
         )}
 
         <button
