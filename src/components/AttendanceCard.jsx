@@ -6,7 +6,7 @@ import { checkInOriginLabel, formatElapsed, formatHours, formatTime, formatRange
 import { attendance } from '../lib/hrms'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import { InlineError } from './States'
+import { InlineError, SkeletonBlock } from './States'
 
 /**
  * Zoho-style check-in timer, backed by the server event log.
@@ -164,16 +164,48 @@ export default function AttendanceCard({ onChange, settings }) {
             ? 'On leave'
             : 'Not started'
 
+  // FIRST load only (session still null and the fetch hasn't failed). Until
+  // today's session arrives there is no truth to show: `state` falls back to
+  // 'out' and the timer to 00:00:00, so the card used to render a confident
+  // "Not started" — complete with check-in buttons — at someone who was
+  // already checked in, then swap to their real elapsed time a moment later.
+  // A placeholder states the truth ("we don't know yet") instead of a wrong
+  // one. Deliberately keyed on `session`, not on a loading flag, so the 30s
+  // background refresh and every post-action re-read leave the card intact.
+  //
+  // Swapped INSIDE the card rather than as an early return, so the shell —
+  // and TeamCheckins below, which owns its own fetch — stays mounted and
+  // isn't torn down and refetched the moment the session lands.
+  const firstLoad = session === null && !loadFailed
+
   return (
-    <section className={`card attendance pop${running ? ' is-active' : ''}`} style={{ '--d': '300ms' }}>
+    <section
+      className={`card attendance pop${running ? ' is-active' : ''}`}
+      style={{ '--d': '300ms' }}
+      aria-busy={firstLoad || undefined}
+    >
       <div className="attendance__head">
         <h2>Attendance</h2>
-        <span className={`live ${running ? 'on' : 'off'}`}>
-          <span className="live__dot" />
-          {statusLabel}
-        </span>
+        {firstLoad ? (
+          <SkeletonBlock width={82} height={20} radius={999} />
+        ) : (
+          <span className={`live ${running ? 'on' : 'off'}`}>
+            <span className="live__dot" />
+            {statusLabel}
+          </span>
+        )}
       </div>
 
+      {firstLoad ? (
+        <div className="attendance__skeleton">
+          <span className="sr-only">Loading today’s attendance…</span>
+          {/* Mirrors the timer readout, the hint line, and one action button. */}
+          <SkeletonBlock width="58%" height={40} radius={10} />
+          <SkeletonBlock width="76%" height={11} delay={90} />
+          <SkeletonBlock width="100%" height={42} radius={12} delay={180} />
+        </div>
+      ) : (
+      <>
       <div className="attendance__timer" aria-live="polite">
         {elapsed}
       </div>
@@ -284,6 +316,8 @@ export default function AttendanceCard({ onChange, settings }) {
             ? `"Check in for today" marks your whole day present at 8h. Logging in doesn't mark attendance.`
             : `Your attendance history stays saved — marking will be back when your admin turns it on.`}
       </p>
+      </>
+      )}
 
       {/* Manager/admin only. The panel fetches its own data and the SERVER
           decides whose names it may contain, so rendering it here is a UI

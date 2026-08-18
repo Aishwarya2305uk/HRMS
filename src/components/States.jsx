@@ -28,6 +28,24 @@ export function Skeleton({ rows = 3, className = '' }) {
   )
 }
 
+/**
+ * One shimmer rectangle — the primitive the row/card skeletons above are made
+ * of, exported so a view whose shape ISN'T "avatar + two lines" can compose a
+ * placeholder that actually matches it (a big timer readout, a stat value, a
+ * calendar chip). Sizes are inline because they're per-placement, not a theme
+ * decision; everything else (the gradient, the shimmer, reduced-motion) comes
+ * from the shared .skeleton__block class.
+ */
+export function SkeletonBlock({ width, height = 12, radius, className = '', delay = 0 }) {
+  return (
+    <span
+      className={`skeleton__block ${className}`}
+      aria-hidden="true"
+      style={{ width, height, borderRadius: radius, '--i': `${delay}ms` }}
+    />
+  )
+}
+
 /** A full-card skeleton used while a whole section loads. */
 export function SkeletonCard({ rows = 4 }) {
   return (

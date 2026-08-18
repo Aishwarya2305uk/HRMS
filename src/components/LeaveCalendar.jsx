@@ -5,11 +5,15 @@ import { haptic, tactile } from '../lib/haptics'
 import { leaves as leavesApi } from '../lib/hrms'
 import { formatRange, formatDate, formatLeaveAmount } from '../lib/format'
 import { useSessionState } from '../lib/useSessionState'
-import { InlineError } from './States'
+import { InlineError, SkeletonBlock } from './States'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 /** Entries shown directly in a cell before the rest collapse into a "+N" chip. */
 const MAX_VISIBLE_CHIPS = 2
+
+/** Stable "no entries yet" identity, so a loading month doesn't allocate a new
+ *  empty array per cell on every render. */
+const EMPTY_ENTRIES = []
 
 const STATUS_LABEL = {
   approved: 'Approved',
@@ -211,7 +215,12 @@ export default function LeaveCalendar({ typeLabels = {} }) {
       <div className={`cal-grid${loading ? ' is-loading' : ''}`} aria-busy={loading}>
         {cells.map((key, i) => {
           if (!key) return <div key={`e${i}`} className="cal-cell empty" />
-          const entries = days[key] || []
+          // While a month is in flight `days` still holds the PREVIOUS month's
+          // entries, which would otherwise render against this month's dates —
+          // right names, wrong days. Treat the month as unknown until its own
+          // data lands, and show placeholder chips so an in-flight month reads
+          // as loading rather than as "nobody is on leave".
+          const entries = loading ? EMPTY_ENTRIES : days[key] || []
           const mine = entries.filter((e) => e.self)
           const dayNum = Number(key.slice(-2))
           const isWeekend = weekdayOf(key) === 0 || weekdayOf(key) === 6
@@ -236,6 +245,14 @@ export default function LeaveCalendar({ typeLabels = {} }) {
               >
                 {dayNum}
               </button>
+              {/* Scattered on purpose: a shimmer chip in every cell would
+                  imply the whole month is booked. Every third weekday is
+                  enough to read as "entries are coming". */}
+              {loading && !isWeekend && dayNum % 3 === 1 && (
+                <div className="cal-chips">
+                  <SkeletonBlock width="82%" height={16} radius={999} delay={(dayNum % 9) * 60} />
+                </div>
+              )}
               {entries.length > 0 && (
                 <div className="cal-chips">
                   {visible.map((e, j) => (

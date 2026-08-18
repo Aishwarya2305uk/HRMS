@@ -40,7 +40,7 @@ import SystemLogs from '../components/SystemLogs'
 import FormLinkSection from '../components/FormLinkSection'
 import Profile from '../components/Profile'
 import DocumentsCard from '../components/DocumentsCard'
-import { SkeletonCard, ErrorState, InlineError } from '../components/States'
+import { SkeletonCard, SkeletonBlock, ErrorState, InlineError } from '../components/States'
 import Sidebar from '../components/dashboard/Sidebar'
 import TopBar from '../components/dashboard/TopBar'
 import NotificationsPanel from '../components/notifications/NotificationsPanel'
@@ -566,6 +566,15 @@ export default function Portal() {
   }
 
   // ---- Stats for the dashboard header ----
+  // Each tile carries its OWN `loading` flag rather than one flag for the row:
+  // the four values come from three different queries, so a shared flag would
+  // either hold back figures that are already known or, worse, show a
+  // computed-from-nothing "0 days" as if it were the answer (the same wrong-
+  // then-corrected flash the attendance timer had). A tile shows a placeholder
+  // only until ITS source has landed.
+  const historyPending = historyQ.loading && historyQ.data === null
+  const pendingPending = pendingQ.loading && pendingQ.data === null
+  const myLeavesPending = myLeavesQ.loading && myLeavesQ.data === null
   const stats = useMemo(() => {
     const month = thisMonthKey()
     const monthDays = history.filter((h) => h.date?.startsWith(month))
@@ -576,17 +585,17 @@ export default function Portal() {
       : 0
     const list = [
       // Balances can be fractional now (hours-based leave, 8h = 1 day).
-      { icon: 'leaf', tint: 'indigo', label: 'Leave balance', value: Math.round((user?.leaveBalance ?? 0) * 100) / 100, unit: 'days' },
-      { icon: 'check', tint: 'green', label: 'Present this month', value: presentDays, unit: 'days' },
-      { icon: 'clock', tint: 'blue', label: 'Avg. hours / day', value: avgSec ? formatHours(avgSec) : '—', unit: '' },
+      { icon: 'leaf', tint: 'indigo', label: 'Leave balance', value: Math.round((user?.leaveBalance ?? 0) * 100) / 100, unit: 'days', loading: !user },
+      { icon: 'check', tint: 'green', label: 'Present this month', value: presentDays, unit: 'days', loading: historyPending },
+      { icon: 'clock', tint: 'blue', label: 'Avg. hours / day', value: avgSec ? formatHours(avgSec) : '—', unit: '', loading: historyPending },
     ]
     if (isManager) {
-      list.push({ icon: 'users', tint: 'amber', label: 'Pending approvals', value: pending.length, unit: '' })
+      list.push({ icon: 'users', tint: 'amber', label: 'Pending approvals', value: pending.length, unit: '', loading: pendingPending })
     } else {
-      list.push({ icon: 'trending', tint: 'amber', label: 'My pending requests', value: myPendingLeaves.length, unit: '' })
+      list.push({ icon: 'trending', tint: 'amber', label: 'My pending requests', value: myPendingLeaves.length, unit: '', loading: myLeavesPending })
     }
     return list
-  }, [history, myPendingLeaves, pending, user, isManager])
+  }, [history, myPendingLeaves, pending, user, isManager, historyPending, pendingPending, myLeavesPending])
 
   const firstName = user?.name?.split(' ')[0] ?? 'there'
   const dateLabel = new Date().toLocaleDateString(undefined, {
@@ -665,7 +674,13 @@ export default function Portal() {
                     <span className="stat__icon"><Icon name={s.icon} size={20} /></span>
                     <div className="stat__meta">
                       <span className="stat__label">{s.label}</span>
-                      <span className="stat__value">{s.value}{s.unit && <em>{s.unit}</em>}</span>
+                      <span className="stat__value">
+                        {s.loading ? (
+                          <SkeletonBlock width={52} height={20} radius={6} delay={i * 70} />
+                        ) : (
+                          <>{s.value}{s.unit && <em>{s.unit}</em>}</>
+                        )}
+                      </span>
                     </div>
                   </article>
                 ))}

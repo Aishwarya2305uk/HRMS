@@ -1552,7 +1552,10 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
   min-height: 0;
   transition: opacity 0.2s;
 }
-.cal-grid.is-loading { opacity: 0.5; }
+/* Dim only the date numbers while a month loads — the grid itself carries
+   shimmer placeholder chips now, and fading those to half opacity just made
+   them look broken. */
+.cal-grid.is-loading .cal-date { opacity: 0.45; }
 
 .cal-cell {
   min-height: 96px;
@@ -1899,7 +1902,8 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
 .skeleton__row { display: flex; align-items: center; gap: 12px; }
 .skeleton__avatar,
 .skeleton__line,
-.skeleton__title {
+.skeleton__title,
+.skeleton__block {
   background: linear-gradient(
     90deg,
     var(--surface-sunken) 25%,
@@ -1916,13 +1920,27 @@ button.cell-name--btn:hover strong { color: var(--primary-600); text-decoration:
 .skeleton__line { height: 11px; }
 .skeleton__line.short { width: 55%; }
 .skeleton__title { height: 15px; width: 38%; margin-bottom: 18px; }
+/* Free-form placeholder — width/height/radius come from the call site. */
+.skeleton__block { display: block; }
+
+/* Attendance card placeholder. Mirrors the real card's vertical rhythm (head,
+   big timer readout, hint line, action button) so nothing shifts when today's
+   session lands — the card previously rendered a real 00:00:00 "Not started"
+   state during the fetch, which read as fact rather than as loading. */
+.attendance__skeleton { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.attendance__skeleton .skeleton__block:first-child { margin: 4px 0 2px; }
+
+/* Stat tile value placeholder — sits in the same box as .stat__value so the
+   tile keeps its height. */
+.stat__value .skeleton__block { margin: 4px 0; }
+
 @keyframes shimmer {
   from { background-position: 100% 50%; }
   to   { background-position: 0 50%; }
 }
 /* Respect users who ask for less motion. */
 @media (prefers-reduced-motion: reduce) {
-  .skeleton__avatar, .skeleton__line, .skeleton__title { animation: none; }
+  .skeleton__avatar, .skeleton__line, .skeleton__title, .skeleton__block { animation: none; }
   .toast { animation: none; }
 }
 
