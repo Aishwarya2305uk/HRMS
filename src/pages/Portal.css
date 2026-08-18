@@ -631,6 +631,68 @@
 }
 .notif-section--urgent .notif-section__head h3 { color: var(--danger-text); }
 
+/* ---- Day-grouped feed (Today / Yesterday / weekday) ---- */
+/* Spacing between groups comes from the parent's flex gap (.notif-page__body
+   and .notif-drawer__body both set it) — no margin here, or the two stack. */
+.notif-day { min-width: 0; }
+.notif-day__head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.notif-day__head h3 {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+/* The rule fills the rest of the row, so the day reads as a divider across
+   the feed rather than as another item heading. */
+.notif-day__rule { flex: 1; height: 1px; background: var(--border); }
+
+/* "What this is" line — replaces the category heading each row used to sit
+   under, now that rows are ordered by time and mixed together. */
+.notif-item__kind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+  margin-bottom: 7px;
+}
+.notif-item__kind-label { font-weight: 600; }
+.notif-item__kind time { margin-left: auto; white-space: nowrap; }
+.notif-item__kind-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.notif-item__kind-icon.is-urgent { background: var(--danger-soft); color: var(--danger-text); }
+.notif-item__kind-icon.is-action { background: var(--accent-soft); color: var(--accent); }
+
+/* Routes into the full queues — the per-category "View all" links had nowhere
+   left to live once the category headings went away. */
+.notif-jump { display: flex; flex-wrap: wrap; gap: 8px; }
+.notif-jump__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+.notif-jump__btn:hover { color: var(--text); border-color: var(--border-strong); }
+.notif-jump__caret { transform: rotate(180deg); }
+
 .notif-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .notif-item {
   padding: 12px 14px;

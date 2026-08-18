@@ -34,6 +34,37 @@ export function formatDate(value, withYear = false) {
   })
 }
 
+/**
+ * The day-header label for a notification feed grouped chronologically:
+ * "Today", "Yesterday", a weekday name for the rest of the past week, then a
+ * plain date ("Jul 22", with the year once it's a different one).
+ *
+ * Compared on CALENDAR days, not elapsed hours — something posted at 11pm
+ * last night belongs under "Yesterday" even though it's only a couple of
+ * hours old, which is the whole point of a day header. A future timestamp
+ * (clock skew between the server and the viewer's machine) reads as "Today"
+ * rather than falling through to a negative-day branch.
+ */
+export function formatDayGroup(value) {
+  if (!value) return ''
+  const then = new Date(value)
+  if (Number.isNaN(then.getTime())) return ''
+
+  const startOfToday = new Date()
+  startOfToday.setHours(0, 0, 0, 0)
+  const startOfThen = new Date(then)
+  startOfThen.setHours(0, 0, 0, 0)
+
+  const daysAgo = Math.round((startOfToday - startOfThen) / 86400000)
+  if (daysAgo <= 0) return 'Today'
+  if (daysAgo === 1) return 'Yesterday'
+  // Inside the last week a weekday name ("Monday") is easier to place than a
+  // date; past that it's ambiguous — last Monday or the one before? — so it
+  // becomes a real date.
+  if (daysAgo < 7) return then.toLocaleDateString(undefined, { weekday: 'long' })
+  return formatDate(value, startOfToday.getFullYear() !== then.getFullYear())
+}
+
 /** ISO datetime -> "09:04 AM" clock time, or "—" when absent. */
 export function formatTime(value) {
   if (!value) return '—'
