@@ -35,15 +35,32 @@ function warnOnce(message) {
   console.warn(`[geoip] ${message} — check-ins will record the IP without a city/country.`)
 }
 
+/** Strip the IPv4-mapped-IPv6 prefix ('::ffff:203.0.113.4') so what we store
+ *  reads like an address people recognise. */
+function cleanIp(value) {
+  const ip = String(value || '').trim()
+  return ip.startsWith('::ffff:') ? ip.slice(7) : ip
+}
+
 /**
- * The client's IP for this request. Express already resolves proxy hops via
- * `trust proxy` (see app.js); this only strips the IPv4-mapped-IPv6 prefix
- * ('::ffff:203.0.113.4') so what we store reads like an address people
- * recognise.
+ * The client's IP for this request.
+ *
+ * `req.ip` (Express `trust proxy`) needs the exact proxy hop count to be
+ * right, and that count differs per deployment: 0 in local dev, 1 on a
+ * single-app host, 2+ behind Vercel→Render (whose edge adds internal 10.x
+ * hops). Get it wrong and the "client" is a proxy — which is how deployed
+ * check-ins ended up located at the hosting data center. So for this
+ * informational origin field we don't count hops at all: proxies only ever
+ * APPEND to X-Forwarded-For, so the first public address in the chain is the
+ * real client (or their network's egress) under every topology. A client
+ * calling the API directly can forge the header — but they'd only be
+ * misreporting their own whereabouts on a field that's advisory anyway; the
+ * login rate limiter still keys on `req.ip`, not on this.
  */
 export function clientIp(req) {
-  const ip = String(req.ip || req.socket?.remoteAddress || '').trim()
-  return ip.startsWith('::ffff:') ? ip.slice(7) : ip
+  const chain = String(req.headers?.['x-forwarded-for'] || '').split(',').map(cleanIp)
+  const firstPublic = chain.find((ip) => ip && !isPrivateIp(ip))
+  return firstPublic || cleanIp(req.ip || req.socket?.remoteAddress)
 }
 
 /**
