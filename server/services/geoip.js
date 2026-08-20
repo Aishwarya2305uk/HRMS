@@ -47,18 +47,31 @@ function cleanIp(value) {
  *
  * `req.ip` (Express `trust proxy`) needs the exact proxy hop count to be
  * right, and that count differs per deployment: 0 in local dev, 1 on a
- * single-app host, 2+ behind Vercel→Render (whose edge adds internal 10.x
- * hops). Get it wrong and the "client" is a proxy — which is how deployed
- * check-ins ended up located at the hosting data center. So for this
- * informational origin field we don't count hops at all: proxies only ever
- * APPEND to X-Forwarded-For, so the first public address in the chain is the
- * real client (or their network's egress) under every topology. A client
- * calling the API directly can forge the header — but they'd only be
- * misreporting their own whereabouts on a field that's advisory anyway; the
- * login rate limiter still keys on `req.ip`, not on this.
+ * single-app host, 3+ behind the production chain (Vercel rewrite →
+ * Cloudflare → Render edge, plus internal 10.x hops). Get it wrong and the
+ * "client" is a proxy — which is how deployed check-ins ended up located at
+ * the hosting data center. So this informational origin field doesn't count
+ * hops. In order of trust:
+ *
+ *  1. Headers the front-door platforms stamp with the real visitor and that
+ *     can't be spoofed through them: x-vercel-forwarded-for (Vercel sets it
+ *     on proxied rewrites), cf-connecting-ip / true-client-ip (Cloudflare, in
+ *     front of Render, sets it to whoever reached it).
+ *  2. The first PUBLIC address in X-Forwarded-For — proxies only ever append,
+ *     so under any topology that's the client or their network's egress.
+ *  3. `req.ip` as the last resort (correct in dev and single-app setups).
+ *
+ * A caller hitting the API directly (bypassing the front door) can forge any
+ * of these — but they'd only be misreporting their own whereabouts on a field
+ * that's advisory anyway; the login rate limiter keys on `req.ip`, not this.
  */
 export function clientIp(req) {
-  const chain = String(req.headers?.['x-forwarded-for'] || '').split(',').map(cleanIp)
+  const headers = req.headers || {}
+  for (const name of ['x-vercel-forwarded-for', 'cf-connecting-ip', 'true-client-ip']) {
+    const ip = cleanIp(String(headers[name] || '').split(',')[0])
+    if (ip && !isPrivateIp(ip)) return ip
+  }
+  const chain = String(headers['x-forwarded-for'] || '').split(',').map(cleanIp)
   const firstPublic = chain.find((ip) => ip && !isPrivateIp(ip))
   return firstPublic || cleanIp(req.ip || req.socket?.remoteAddress)
 }
@@ -162,10 +175,24 @@ export async function lookupLocation(ip) {
 /**
  * Everything to stamp on a check-in: the request's IP plus its resolved
  * location. One await, one shape, used by both check-in routes.
+ *
+ * A private client IP means two very different things depending on how the
+ * request arrived. With no forwarding headers at all, the client really is on
+ * this server's own network (local dev, on-prem LAN) — the network's shared
+ * egress location is the right answer, so the lookup's egress fallback runs.
+ * But when forwarding headers ARE present (Vercel/Cloudflare/Render in
+ * front), a private result means the real client IP got lost in the proxy
+ * chain — resolving OUR egress would pin the check-in to the hosting data
+ * center, which is exactly wrong, so the location stays blank instead.
  */
 export async function captureCheckInOrigin(req) {
   const ip = clientIp(req)
-  const location = await lookupLocation(ip)
+  const headers = req.headers || {}
+  const proxied = Boolean(
+    headers['x-forwarded-for'] || headers['x-vercel-forwarded-for'] || headers['cf-connecting-ip'],
+  )
+  const location =
+    isPrivateIp(ip) && proxied ? EMPTY_LOCATION : await lookupLocation(ip)
   return { ip: ip.slice(0, 64) || null, ...location }
 }
 
