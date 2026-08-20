@@ -47,9 +47,10 @@ export function clientIp(req) {
 }
 
 /**
- * Addresses that can't have a public location: loopback, RFC1918 / RFC4193
- * private ranges, link-local. Local dev and same-host requests land here, and
- * we skip the lookup entirely rather than burning quota on a guaranteed miss.
+ * Addresses that can't have a public location of their own: loopback, RFC1918 /
+ * RFC4193 private ranges, link-local. Local dev, same-host and LAN requests
+ * land here — lookupLocation resolves these to the network's shared egress
+ * location instead of asking the provider about an unroutable address.
  */
 export function isPrivateIp(ip) {
   if (!ip) return true
@@ -88,34 +89,50 @@ function normalize(data) {
 }
 
 /**
+ * Cache key for "this network's own public location" — the egress lookup
+ * below. Not a valid IP, so it can never collide with a real cache entry.
+ */
+const EGRESS_KEY = '@egress'
+
+/**
  * City/country for an IP, or EMPTY_LOCATION when it can't be determined —
- * disabled by config, a private address, a provider error, or a timeout.
- * Never throws.
+ * disabled by config, a provider error, or a timeout. Never throws.
+ *
+ * A private/loopback IP (LAN check-ins, local dev, on-prem deployments) has
+ * no public location of its own — but the network it sits on does. For those
+ * we ask the provider for the CALLER's location instead (URL with an empty
+ * {ip}): the server's public egress IP, which everyone on the same network
+ * shares. That's the right coarse answer exactly when private client IPs
+ * occur — client and server on one network behind one internet connection.
  */
 export async function lookupLocation(ip) {
-  if (!GEOIP_ENABLED || isPrivateIp(ip)) return EMPTY_LOCATION
+  if (!GEOIP_ENABLED) return EMPTY_LOCATION
   if (!GEOIP_URL.includes('{ip}')) {
     warnOnce('GEOIP_URL has no {ip} placeholder')
     return EMPTY_LOCATION
   }
 
-  const hit = cache.get(ip)
+  const key = isPrivateIp(ip) ? EGRESS_KEY : ip
+  const hit = cache.get(key)
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value
 
   const abort = new AbortController()
   const timer = setTimeout(() => abort.abort(), LOOKUP_TIMEOUT_MS)
   try {
-    const res = await fetch(GEOIP_URL.replace('{ip}', encodeURIComponent(ip)), {
-      signal: abort.signal,
-      headers: { accept: 'application/json' },
-    })
+    const res = await fetch(
+      GEOIP_URL.replace('{ip}', key === EGRESS_KEY ? '' : encodeURIComponent(ip)),
+      {
+        signal: abort.signal,
+        headers: { accept: 'application/json' },
+      },
+    )
     if (!res.ok) {
       warnOnce(`lookup provider returned HTTP ${res.status}`)
       return EMPTY_LOCATION
     }
     const location = normalize(await res.json())
     if (!location) return EMPTY_LOCATION
-    cache.set(ip, { at: Date.now(), value: location })
+    cache.set(key, { at: Date.now(), value: location })
     return location
   } catch (err) {
     warnOnce(err?.name === 'AbortError' ? 'lookup timed out' : `lookup failed (${err?.message})`)

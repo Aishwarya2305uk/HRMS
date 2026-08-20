@@ -249,8 +249,8 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
       {showCheckIn && filtered.length > 0 && (
         <p className="attendance__note">
           The place and IP under each check-in time are estimated from the check-in IP address —
-          approximate, and wrong on a VPN or mobile network. Check-ins made over localhost or a
-          private network have no public location to resolve.
+          approximate, and wrong on a VPN or mobile network. Check-ins from a private/office
+          network show the location of that network&apos;s shared internet connection.
         </p>
       )}
     </section>
