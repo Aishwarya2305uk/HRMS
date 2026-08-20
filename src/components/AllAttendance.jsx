@@ -30,10 +30,11 @@ const FILTER_LABELS = { all: 'All', present: 'Present', leave: 'Auto-leave', che
  * check-in times shown); clearing it restores the month view (and Check-in
  * back to today).
  *
- * The Check-in column carries three stacked facts: the time, the city/country
- * the check-in IP resolves to, and the IP itself. That lookup is city-level at
- * best and wrong behind a VPN or mobile network — the footnote under the table
- * says so, since a location reads as harder evidence than it is.
+ * Whenever check-in times show, so does an "IP City/Country" column: the
+ * city/country the check-in IP resolves to, with the IP itself under it. That
+ * lookup is city-level at best and wrong behind a VPN or mobile network — the
+ * footnote under the table says so, since a location column reads as harder
+ * evidence than it is.
  * @param {Array}  props.rows            from /attendance/all
  * @param {string} [props.searchQuery]   filters rows by employee name
  * @param {string} props.month           'YYYY-MM' currently selected
@@ -199,6 +200,7 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
                 <th>Department</th>
                 <th>Date</th>
                 {showCheckIn && <th>Check-in</th>}
+                {showCheckIn && <th>IP City/Country</th>}
                 <th>Worked</th>
                 <th>Status</th>
               </tr>
@@ -214,18 +216,16 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
                   </td>
                   <td>{r.department || '—'}</td>
                   <td>{formatDate(r.date, true)}</td>
+                  {showCheckIn && <td>{formatTime(r.checkInAt)}</td>}
                   {showCheckIn && (
                     <td>
-                      {formatTime(r.checkInAt)}
-                      {/* Where the check-in came from, stacked under the time
-                          rather than in its own column: the three facts answer
-                          one question ("when and from where did they start?")
-                          and reading them together beats scanning across. */}
-                      {r.checkInAt && (
+                      {r.checkInAt ? (
                         <>
-                          <em className="cell-sub">{checkInOriginLabel(r) || 'Location unavailable'}</em>
+                          {checkInOriginLabel(r) || 'Location unavailable'}
                           {r.checkInIp && <em className="cell-sub cell-sub--mono">{r.checkInIp}</em>}
                         </>
+                      ) : (
+                        '—'
                       )}
                     </td>
                   )}
@@ -248,9 +248,9 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
 
       {showCheckIn && filtered.length > 0 && (
         <p className="attendance__note">
-          The place and IP under each check-in time are estimated from the check-in IP address —
-          approximate, and wrong on a VPN or mobile network. Check-ins from a private/office
-          network show the location of that network&apos;s shared internet connection.
+          IP City/Country is estimated from the check-in IP address — approximate, and wrong on a
+          VPN or mobile network. Check-ins from a private/office network show the location of that
+          network&apos;s shared internet connection.
         </p>
       )}
     </section>
