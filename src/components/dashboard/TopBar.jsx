@@ -70,7 +70,13 @@ export default function TopBar({
           {...tactile('light')}
         >
           <Icon name="bell" size={18} />
-          {notificationCount > 0 && <span className="dot" aria-hidden="true" />}
+          {/* aria-hidden: the button's aria-label above already announces the
+              count, so the visual badge would only be read out twice. */}
+          {notificationCount > 0 && (
+            <span className="dot" aria-hidden="true">
+              {notificationCount > 99 ? '99+' : notificationCount}
+            </span>
+          )}
         </button>
 
         <Menu

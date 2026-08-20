@@ -699,14 +699,23 @@ button.mini-profile:hover { background: rgba(255, 255, 255, 0.14); }
 .icon-btn:active {
   background: var(--surface-sunken);
 }
+/* Unread-count badge on the bell: a red pill carrying the number, sized for
+   one digit and stretching for "99+". */
 .icon-btn .dot {
   position: absolute;
-  top: 9px;
-  right: 10px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  top: 3px;
+  right: 3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--r-pill);
   background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
   box-shadow: 0 0 0 2px var(--surface-1);
 }
 /* Hamburger that opens the nav drawer — phone-only (see the 760px block). */
