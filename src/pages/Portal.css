@@ -965,8 +965,14 @@
 .cell-name { display: flex; align-items: center; gap: 10px; }
 .cell-name strong { font-size: var(--text-sm); }
 .cell-name em { display: block; font-style: normal; font-size: var(--text-xs); color: var(--text-muted); }
-/* Secondary line under a table cell's main value (e.g. the IP under a city). */
+/* Secondary lines under a table cell's main value (e.g. the place and IP
+   stacked under a check-in time). */
 .cell-sub { display: block; font-style: normal; font-size: var(--text-xs); color: var(--text-faint); }
+.cell-sub--mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
 /* Rendered as a <button> in the roster table — opens that person's profile. */
 button.cell-name--btn {
   width: 100%;

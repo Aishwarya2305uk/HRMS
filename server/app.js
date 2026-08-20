@@ -1,4 +1,7 @@
 import express from 'express'
+import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 import { securityHeaders, corsPolicy } from './middleware/security.js'
 import { requestLog } from './middleware/requestLog.js'
 import authRoutes from './routes/auth.js'
@@ -54,6 +57,19 @@ export function createApp() {
     console.warn(`[api] 404 ${req.method} ${req.originalUrl}`)
     res.status(404).json({ error: 'That endpoint does not exist.' })
   })
+
+  // Single-app deployments (e.g. a Hostinger Node.js Web App) serve the built
+  // frontend from this same process: dist/ exists there because the platform
+  // runs `npm run build` before starting the server. In dev there is no dist/
+  // — the Vite dev server owns the frontend — so this block is skipped.
+  const distDir = resolve(dirname(fileURLToPath(import.meta.url)), '../dist')
+  if (existsSync(distDir)) {
+    app.use(express.static(distDir))
+    // SPA fallback: any non-API GET (e.g. /dashboard) loads index.html and
+    // React Router takes it from there. `/{*splat}` is Express 5 wildcard
+    // syntax — the bare `*` of Express 4 no longer parses.
+    app.get('/{*splat}', (_req, res) => res.sendFile(resolve(distDir, 'index.html')))
+  }
 
   // Catch-all error handler. Full details go to the server log; the client only
   // ever gets a generic line, so DB/stack/internal messages can never leak

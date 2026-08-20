@@ -9,8 +9,22 @@ import { CORS_ORIGINS } from '../env.js'
  * import from here, so policy changes never require touching route files.
  */
 
-/** Defensive HTTP headers. Helmet's defaults suit a JSON-only API. */
-export const securityHeaders = helmet()
+/**
+ * Defensive HTTP headers. Helmet's defaults suit a JSON-only API, but in
+ * single-app deployments this process also serves the built frontend
+ * (see app.js), so the CSP must additionally allow Cloudflare Turnstile —
+ * its loader script and challenge iframe both come from
+ * challenges.cloudflare.com. Everything else keeps Helmet's defaults
+ * (Google Fonts is already covered by `style-src https:` / `font-src https:`).
+ */
+export const securityHeaders = helmet({
+  contentSecurityPolicy: {
+    directives: {
+      'script-src': ["'self'", 'https://challenges.cloudflare.com'],
+      'frame-src': ["'self'", 'https://challenges.cloudflare.com'],
+    },
+  },
+})
 
 const allowedOrigins = new Set(CORS_ORIGINS)
 if (allowedOrigins.size === 0) {
