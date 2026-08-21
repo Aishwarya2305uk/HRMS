@@ -965,6 +965,27 @@
 .cell-name { display: flex; align-items: center; gap: 10px; }
 .cell-name strong { font-size: var(--text-sm); }
 .cell-name em { display: block; font-style: normal; font-size: var(--text-xs); color: var(--text-muted); }
+/* Sortable column header — a button filling the th so the whole cell is the
+   hit target, with the arrow only emphasised on the active column. */
+.th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.th-sort:hover { color: var(--primary-600); }
+.th-sort__mark { font-size: 0.85em; color: var(--text-faint); line-height: 1; }
+.th-sort.is-active { color: var(--primary-600); }
+.th-sort.is-active .th-sort__mark { color: var(--primary-600); }
+
 /* Secondary lines under a table cell's main value (e.g. the place and IP
    stacked under a check-in time). */
 .cell-sub { display: block; font-style: normal; font-size: var(--text-xs); color: var(--text-faint); }

@@ -21,6 +21,42 @@ function monthLabel(key) {
 const FILTER_LABELS = { all: 'All', present: 'Present', leave: 'Auto-leave', checkin: 'Check-in' }
 
 /**
+ * The number a row is ordered by, per sort key. Both keys are timestamps, so
+ * one subtraction handles either.
+ *
+ * 'checkin' falls back to the row's own date at midnight when nobody checked
+ * in. That keeps days grouped in the right order either way, and — since
+ * midnight precedes every real check-in time — parks the didn't-check-in rows
+ * at the end of their own day rather than clumping them all at one end of the
+ * table.
+ */
+function sortValue(row, key) {
+  const midnight = Date.parse(`${row.date}T00:00:00.000Z`)
+  if (key === 'date') return midnight
+  return row.checkInAt ? Date.parse(row.checkInAt) : midnight
+}
+
+/** A column header that sorts the table. `dir` only renders on the active one. */
+function SortHeader({ label, sortKey, sort, onSort }) {
+  const active = sort.key === sortKey
+  return (
+    <th aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button
+        type="button"
+        className={`th-sort${active ? ' is-active' : ''}`}
+        onClick={() => onSort(sortKey)}
+        title={`Sort by ${label.toLowerCase()}`}
+      >
+        {label}
+        <span className="th-sort__mark" aria-hidden="true">
+          {active ? (sort.dir === 'asc' ? '↑' : '↓') : '↕'}
+        </span>
+      </button>
+    </th>
+  )
+}
+
+/**
  * Admin company-wide attendance view: every employee's daily worked hours
  * and present/leave verdict for the selected month. The Check-in filter is
  * the arrival lens for ONE day — today by default: who has checked in so
@@ -45,6 +81,16 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
   const [filter, setFilter] = useSessionState('ui.allAttendance.filter', 'all')
   // '' = whole month; a 'YYYY-MM-DD' narrows every card and the table to that day.
   const [day, setDay] = useSessionState('ui.allAttendance.day', '')
+  // Newest check-in first by default — the question this table is usually
+  // opened to answer is "who came in most recently". Click a header to flip
+  // the direction or sort by calendar date instead; the choice survives a
+  // refresh like the other lenses here.
+  const [sort, setSort] = useSessionState('ui.allAttendance.sort', { key: 'checkin', dir: 'desc' })
+
+  function toggleSort(key) {
+    haptic('light')
+    setSort((s) => (s.key === key ? { key, dir: s.dir === 'desc' ? 'asc' : 'desc' } : { key, dir: 'desc' }))
+  }
 
   function shiftMonth(delta) {
     haptic('light')
@@ -62,16 +108,12 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
   // right after a cross-month pick, `rows` still holds the previous month.
   const activeDay = day && day.startsWith(month) ? day : ''
 
-  // Under a day lens the rows read like an arrival log: earliest check-in first.
-  const dayRows = useMemo(() => {
-    if (!activeDay) return rows
-    return rows
-      .filter((r) => r.date === activeDay)
-      .sort((a, b) => {
-        if (!a.checkInAt || !b.checkInAt) return a.checkInAt ? -1 : b.checkInAt ? 1 : 0
-        return new Date(a.checkInAt) - new Date(b.checkInAt)
-      })
-  }, [rows, activeDay])
+  // Pure filters — every ordering decision lives in `sorted` below, so there
+  // is exactly one place that decides what appears at the top.
+  const dayRows = useMemo(
+    () => (activeDay ? rows.filter((r) => r.date === activeDay) : rows),
+    [rows, activeDay],
+  )
   const rowsWithStatus = useMemo(() => dayRows.filter((r) => r.dayStatus), [dayRows])
   // Check-in is a one-day arrival log: the picked date if there is one,
   // otherwise TODAY — never the whole month. Everyone who checked in that day
@@ -80,10 +122,7 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
   const today = todayKey()
   const checkInDay = activeDay || today
   const checkedIn = useMemo(
-    () =>
-      dayRows
-        .filter((r) => r.checkInAt && r.date === checkInDay)
-        .sort((a, b) => new Date(a.checkInAt) - new Date(b.checkInAt)),
+    () => dayRows.filter((r) => r.checkInAt && r.date === checkInDay),
     [dayRows, checkInDay],
   )
   // Browsing a past/future month with no date picked: today isn't in `rows`,
@@ -118,6 +157,18 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
   }, [dayRows, rowsWithStatus, checkedIn, activeDay])
   // Check-in times also show whenever one specific date is under the lens.
   const showCheckIn = filter === 'checkin' || Boolean(activeDay)
+
+  const sorted = useMemo(() => {
+    const dir = sort.dir === 'asc' ? 1 : -1
+    // Sort on a copy: `filtered` can be `rows` itself (the props array), and
+    // Array.sort mutates in place.
+    return [...filtered].sort((a, b) => {
+      const diff = sortValue(a, sort.key) - sortValue(b, sort.key)
+      // Same instant, or the same calendar day under the date sort — fall back
+      // to name so the order is stable instead of shifting between renders.
+      return diff ? diff * dir : a.employeeName.localeCompare(b.employeeName)
+    })
+  }, [filtered, sort])
 
   return (
     <section className="card pop" style={{ '--d': '120ms' }}>
@@ -198,15 +249,17 @@ export default function AllAttendance({ rows, searchQuery = '', month, onMonthCh
               <tr>
                 <th>Employee</th>
                 <th>Department</th>
-                <th>Date</th>
-                {showCheckIn && <th>Check-in</th>}
+                <SortHeader label="Date" sortKey="date" sort={sort} onSort={toggleSort} />
+                {showCheckIn && (
+                  <SortHeader label="Check-in" sortKey="checkin" sort={sort} onSort={toggleSort} />
+                )}
                 {showCheckIn && <th>IP City/Country</th>}
                 <th>Worked</th>
                 <th>Status</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => (
+              {sorted.map((r) => (
                 <tr key={`${r.employeeId}-${r.date}`}>
                   <td>
                     <div className="cell-name">
